@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
+import heroImage from './assets/hero.png'
+import {
+  appendLayer,
+  createDocument,
+  createGroupLayer,
+  createImageLayer,
+  createShapeLayer,
+  createTextLayer,
+  findLayer,
+  moveLayer,
+  removeLayer,
+  selectLayer,
+  updateLayer,
+} from './lib/layers'
 
 const HANDLE_DIRECTIONS = [
   { key: 'nw', x: -1, y: -1 },
@@ -12,38 +26,102 @@ const HANDLE_DIRECTIONS = [
   { key: 'w', x: -1, y: 0 },
 ]
 
-const DEFAULT_TEXT_WIDTH = 64
-const DEFAULT_TEXT_HEIGHT = 32
-const DEFAULT_FONT_SIZE = 32
-const MIN_TEXT_WIDTH = 24
-const MIN_TEXT_HEIGHT = 24
-const MIN_FONT_SIZE = 12
-const RESIZE_DAMPING = 0.35
+const MIN_LAYER_WIDTH = 72
+const MIN_LAYER_HEIGHT = 48
+
+function getFrameDimensions(layer) {
+  return {
+    width: Math.max(MIN_LAYER_WIDTH, layer.width * Math.max(Math.abs(layer.scaleX), 0.1)),
+    height: Math.max(MIN_LAYER_HEIGHT, layer.height * Math.max(Math.abs(layer.scaleY), 0.1)),
+  }
+}
+
+function createInitialDocument() {
+  const background = createImageLayer({
+    name: 'Hero Image',
+    x: 76,
+    y: 62,
+    width: 360,
+    height: 260,
+    src: heroImage,
+  })
+  const card = createShapeLayer({
+    name: 'Color Block',
+    x: 340,
+    y: 120,
+    width: 220,
+    height: 220,
+    fill: '#f97316',
+    radius: 34,
+  })
+  const title = createTextLayer({
+    name: 'Headline',
+    x: 126,
+    y: 114,
+    width: 300,
+    height: 120,
+    text: 'A cleaner\nlayer stack',
+    fontSize: 40,
+  })
+  const group = createGroupLayer({
+    name: 'Empty Group',
+    x: 460,
+    y: 78,
+    width: 180,
+    height: 120,
+  })
+
+  return createDocument(
+    [background, card, title, group],
+    title.id,
+  )
+}
+
+function loadImageDimensions(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      })
+    }
+
+    image.onerror = () => {
+      reject(new Error('Image could not be loaded'))
+    }
+
+    image.src = src
+  })
+}
+
+function getImportedImageFrame(width, height) {
+  const maxWidth = 340
+  const maxHeight = 260
+  const scale = Math.min(maxWidth / width, maxHeight / height, 1)
+
+  return {
+    width: Math.max(MIN_LAYER_WIDTH, Math.round(width * scale)),
+    height: Math.max(MIN_LAYER_HEIGHT, Math.round(height * scale)),
+  }
+}
 
 function App() {
   const canvasRef = useRef(null)
-  const editorRef = useRef(null)
+  const imageInputRef = useRef(null)
   const interactionRef = useRef(null)
-  const blockCanvasClickRef = useRef(false)
-  const layerRef = useRef(0)
-  const measureRef = useRef(null)
-  const [tool, setTool] = useState('text')
-  const [placedTexts, setPlacedTexts] = useState([])
-  const [editingTextId, setEditingTextId] = useState(null)
-  const [selectedTextId, setSelectedTextId] = useState(null)
+  const [documentState, setDocumentState] = useState(() => createInitialDocument())
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false)
 
-  useEffect(() => {
-    if (editingTextId !== null) {
-      editorRef.current?.focus()
-    }
-  }, [editingTextId])
+  const selectedLayer = findLayer(documentState, documentState.selectedLayerId)
 
   useEffect(() => {
     function handlePointerMove(event) {
       const interaction = interactionRef.current
       const canvas = canvasRef.current
 
-      if (!interaction || !canvas || editingTextId !== null || tool !== 'pointer') {
+      if (!interaction || !canvas) {
         return
       }
 
@@ -51,110 +129,73 @@ function App() {
       const pointerX = event.clientX - rect.left
       const pointerY = event.clientY - rect.top
 
-      interactionRef.current = {
-        ...interaction,
-        moved: true,
-      }
-
       if (interaction.type === 'move') {
         const nextX = Math.min(
           Math.max(pointerX - interaction.offsetX, 0),
-          rect.width - interaction.start.width,
+          rect.width - interaction.frameWidth,
         )
         const nextY = Math.min(
           Math.max(pointerY - interaction.offsetY, 0),
-          rect.height - interaction.start.height,
+          rect.height - interaction.frameHeight,
         )
 
-        updateText(interaction.id, {
-          x: nextX,
-          y: nextY,
-        })
+        setDocumentState((currentDocument) =>
+          updateLayer(currentDocument, interaction.layerId, {
+            x: nextX,
+            y: nextY,
+          }),
+        )
       }
 
       if (interaction.type === 'resize') {
         const deltaX = pointerX - interaction.pointerStart.x
         const deltaY = pointerY - interaction.pointerStart.y
-        const next = {
-          x: interaction.start.x,
-          y: interaction.start.y,
-          width: interaction.start.width,
-          height: interaction.start.height,
-          fontSize: interaction.start.fontSize,
-        }
+        let nextFrameWidth = interaction.frameWidth
+        let nextFrameHeight = interaction.frameHeight
+        let nextX = interaction.startX
+        let nextY = interaction.startY
 
         if (interaction.handle.x === 1) {
-          next.width = Math.max(MIN_TEXT_WIDTH, interaction.start.width + deltaX)
+          nextFrameWidth = Math.max(MIN_LAYER_WIDTH, interaction.frameWidth + deltaX)
         }
 
         if (interaction.handle.x === -1) {
-          const rawWidth = interaction.start.width - deltaX
-          next.width = Math.max(MIN_TEXT_WIDTH, rawWidth)
-          next.x = interaction.start.x + (interaction.start.width - next.width)
+          nextFrameWidth = Math.max(MIN_LAYER_WIDTH, interaction.frameWidth - deltaX)
+          nextX = interaction.startX + (interaction.frameWidth - nextFrameWidth)
         }
 
         if (interaction.handle.y === 1) {
-          next.height = Math.max(MIN_TEXT_HEIGHT, interaction.start.height + deltaY)
+          nextFrameHeight = Math.max(MIN_LAYER_HEIGHT, interaction.frameHeight + deltaY)
         }
 
         if (interaction.handle.y === -1) {
-          const rawHeight = interaction.start.height - deltaY
-          next.height = Math.max(MIN_TEXT_HEIGHT, rawHeight)
-          next.y = interaction.start.y + (interaction.start.height - next.height)
+          nextFrameHeight = Math.max(MIN_LAYER_HEIGHT, interaction.frameHeight - deltaY)
+          nextY = interaction.startY + (interaction.frameHeight - nextFrameHeight)
         }
 
-        const scaleX = next.width / interaction.start.width
-        const scaleY = next.height / interaction.start.height
-        const dampedScaleX = dampScale(scaleX)
-        const dampedScaleY = dampScale(scaleY)
-        let scale = 1
+        nextX = Math.min(Math.max(nextX, 0), rect.width - nextFrameWidth)
+        nextY = Math.min(Math.max(nextY, 0), rect.height - nextFrameHeight)
 
-        if (interaction.handle.x !== 0 && interaction.handle.y === 0) {
-          scale = dampedScaleX
-        }
-
-        if (interaction.handle.x === 0 && interaction.handle.y !== 0) {
-          scale = dampedScaleY
-        }
-
-        if (interaction.handle.x !== 0 && interaction.handle.y !== 0) {
-          scale = (dampedScaleX + dampedScaleY) / 2
-        }
-
-        next.fontSize = Math.max(
-          MIN_FONT_SIZE,
-          Math.round(interaction.start.fontSize * scale),
+        setDocumentState((currentDocument) =>
+          updateLayer(currentDocument, interaction.layerId, (layer) => ({
+            ...layer,
+            x: nextX,
+            y: nextY,
+            width: Math.max(
+              MIN_LAYER_WIDTH,
+              nextFrameWidth / Math.max(Math.abs(layer.scaleX), 0.1),
+            ),
+            height: Math.max(
+              MIN_LAYER_HEIGHT,
+              nextFrameHeight / Math.max(Math.abs(layer.scaleY), 0.1),
+            ),
+          })),
         )
-
-        const measured = measureTextBox(interaction.start.text, next.fontSize)
-        next.width = Math.max(next.width, measured.width)
-        next.height = Math.max(next.height, measured.height)
-        next.x = Math.min(Math.max(next.x, 0), rect.width - next.width)
-        next.y = Math.min(Math.max(next.y, 0), rect.height - next.height)
-
-        updateText(interaction.id, next)
       }
     }
 
     function handlePointerUp() {
-      const interaction = interactionRef.current
-
-      if (!interaction) {
-        return
-      }
-
-      if (interaction.type === 'move' && !interaction.moved && tool === 'pointer') {
-        setSelectedTextId(interaction.id)
-      }
-
-      interactionRef.current = {
-        ...interaction,
-        suppressCanvasClick: interaction.moved,
-      }
-
-      window.setTimeout(() => {
-        interactionRef.current = null
-      }, 0)
+      interactionRef.current = null
     }
 
     window.addEventListener('pointermove', handlePointerMove)
@@ -164,106 +205,59 @@ function App() {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [editingTextId, tool])
+  }, [])
 
-  function dampScale(scale) {
-    return 1 + (scale - 1) * RESIZE_DAMPING
+  function addLayer(factory) {
+    const nextLayer = factory()
+    setDocumentState((currentDocument) => appendLayer(currentDocument, nextLayer))
   }
 
-  function measureTextBox(text, fontSize) {
-    const node = measureRef.current
+  async function handleImageImport(event) {
+    const file = event.target.files?.[0]
 
-    if (!node) {
-      return { width: DEFAULT_TEXT_WIDTH, height: DEFAULT_TEXT_HEIGHT }
-    }
-
-    node.style.fontSize = `${fontSize}px`
-    node.textContent = text || 'Text'
-
-    return {
-      width: Math.max(MIN_TEXT_WIDTH, Math.ceil(node.scrollWidth)),
-      height: Math.max(MIN_TEXT_HEIGHT, Math.ceil(node.scrollHeight)),
-    }
-  }
-
-  function updateText(id, patch) {
-    setPlacedTexts((currentTexts) =>
-      currentTexts.map((item) => (item.id === id ? { ...item, ...patch } : item)),
-    )
-  }
-
-  function syncTextBounds(id, nextText, nextFontSize) {
-    const measured = measureTextBox(nextText, nextFontSize)
-    updateText(id, measured)
-  }
-
-  function bringLayerToFront(id) {
-    const nextLayer = layerRef.current + 1
-    layerRef.current = nextLayer
-    updateText(id, { layer: nextLayer })
-    return nextLayer
-  }
-
-  function handleCanvasClick(event) {
-    if (blockCanvasClickRef.current) {
-      blockCanvasClickRef.current = false
+    if (!file) {
       return
     }
 
-    if (tool !== 'text') {
+    const imageUrl = URL.createObjectURL(file)
+    const resetInput = () => {
+      event.target.value = ''
+    }
+
+    try {
+      const { width, height } = await loadImageDimensions(imageUrl)
+      const frame = getImportedImageFrame(width, height)
+
+      addLayer(() =>
+        createImageLayer({
+          x: 180,
+          y: 80,
+          width: frame.width,
+          height: frame.height,
+          name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
+          src: imageUrl,
+          fit: 'contain',
+        }),
+      )
+    } catch {
+      URL.revokeObjectURL(imageUrl)
+    }
+
+    resetInput()
+  }
+
+  function updateSelectedLayer(patch) {
+    if (!documentState.selectedLayerId) {
       return
     }
 
-    if (interactionRef.current?.suppressCanvasClick) {
-      return
-    }
-
-    const rect = event.currentTarget.getBoundingClientRect()
-    const x = Math.min(
-      Math.max(event.clientX - rect.left, 0),
-      rect.width - DEFAULT_TEXT_WIDTH,
+    setDocumentState((currentDocument) =>
+      updateLayer(currentDocument, currentDocument.selectedLayerId, patch),
     )
-    const y = Math.min(
-      Math.max(event.clientY - rect.top, 0),
-      rect.height - DEFAULT_TEXT_HEIGHT,
-    )
-    const nextLayer = layerRef.current + 1
-    const nextId = crypto.randomUUID()
-
-    layerRef.current = nextLayer
-    setSelectedTextId(nextId)
-    setEditingTextId(nextId)
-    setPlacedTexts((currentTexts) => [
-      ...currentTexts,
-      {
-        id: nextId,
-        text: '',
-        x,
-        y,
-        width: DEFAULT_TEXT_WIDTH,
-        height: DEFAULT_TEXT_HEIGHT,
-        fontSize: DEFAULT_FONT_SIZE,
-        layer: nextLayer,
-      },
-    ])
   }
 
-  function handleCanvasPointerDown() {
-    if (editingTextId === null) {
-      setSelectedTextId(null)
-    }
-  }
-
-  function startMove(event, item) {
+  function startMove(event, layer) {
     event.stopPropagation()
-    blockCanvasClickRef.current = true
-
-    if (tool !== 'pointer' || editingTextId === item.id) {
-      return
-    }
-
-    bringLayerToFront(item.id)
-    setSelectedTextId(item.id)
 
     const canvas = canvasRef.current
 
@@ -272,30 +266,22 @@ function App() {
     }
 
     const rect = canvas.getBoundingClientRect()
+    const { width, height } = getFrameDimensions(layer)
 
+    setDocumentState((currentDocument) => selectLayer(currentDocument, layer.id))
     interactionRef.current = {
       type: 'move',
-      id: item.id,
-      offsetX: event.clientX - rect.left - item.x,
-      offsetY: event.clientY - rect.top - item.y,
-      start: item,
-      moved: false,
-      suppressCanvasClick: false,
+      layerId: layer.id,
+      offsetX: event.clientX - rect.left - layer.x,
+      offsetY: event.clientY - rect.top - layer.y,
+      frameWidth: width,
+      frameHeight: height,
     }
   }
 
-  function startResize(event, item, handle) {
+  function startResize(event, layer, handle) {
     event.stopPropagation()
     event.preventDefault()
-    blockCanvasClickRef.current = true
-
-    if (tool !== 'pointer') {
-      return
-    }
-
-    bringLayerToFront(item.id)
-    setSelectedTextId(item.id)
-    setEditingTextId(null)
 
     const canvas = canvasRef.current
 
@@ -304,203 +290,501 @@ function App() {
     }
 
     const rect = canvas.getBoundingClientRect()
+    const { width, height } = getFrameDimensions(layer)
 
+    setDocumentState((currentDocument) => selectLayer(currentDocument, layer.id))
     interactionRef.current = {
       type: 'resize',
-      id: item.id,
+      layerId: layer.id,
       handle,
       pointerStart: {
         x: event.clientX - rect.left,
         y: event.clientY - rect.top,
       },
-      start: item,
-      moved: false,
-      suppressCanvasClick: false,
+      startX: layer.x,
+      startY: layer.y,
+      frameWidth: width,
+      frameHeight: height,
     }
   }
 
-  function handleTextChange(id, value) {
-    setPlacedTexts((currentTexts) =>
-      currentTexts.map((item) => {
-        if (item.id !== id) {
-          return item
-        }
+  function handleCanvasPointerDown(event) {
+    if (event.target === event.currentTarget) {
+      setDocumentState((currentDocument) => selectLayer(currentDocument, null))
+    }
+  }
 
-        const measured = measureTextBox(value, item.fontSize)
+  function handleNumericChange(key, value, minimum = null) {
+    if (!selectedLayer) {
+      return
+    }
 
-        return {
-          ...item,
-          text: value,
-          width: measured.width,
-          height: measured.height,
-        }
-      }),
+    const numericValue = Number(value)
+
+    if (!Number.isFinite(numericValue)) {
+      return
+    }
+
+    updateSelectedLayer({
+      [key]: minimum === null ? numericValue : Math.max(minimum, numericValue),
+    })
+  }
+
+  function renderLayer(layer, index) {
+    if (!layer.visible) {
+      return null
+    }
+
+    const isSelected = layer.id === documentState.selectedLayerId
+
+    return (
+      <div
+        key={layer.id}
+        className={isSelected ? 'canvas-layer selected' : 'canvas-layer'}
+        style={{
+          left: `${layer.x}px`,
+          top: `${layer.y}px`,
+          width: `${layer.width}px`,
+          height: `${layer.height}px`,
+          transform: `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
+          opacity: layer.opacity,
+          zIndex: index + 1,
+        }}
+        onPointerDown={(event) => startMove(event, layer)}
+      >
+        {layer.type === 'text' && (
+          <div
+            className="layer-body text-layer-body"
+            style={{
+              fontFamily: layer.fontFamily,
+              fontSize: `${layer.fontSize}px`,
+              color: layer.color,
+            }}
+          >
+            {layer.text}
+          </div>
+        )}
+        {layer.type === 'shape' && (
+          <div
+            className="layer-body shape-layer-body"
+            style={{
+              background: layer.fill,
+              borderRadius: `${layer.radius}px`,
+            }}
+          />
+        )}
+        {layer.type === 'image' && (
+          <div className="layer-body image-layer-body">
+            {layer.src ? (
+              <img
+                className="layer-image"
+                src={layer.src}
+                alt={layer.name}
+                style={{ objectFit: layer.fit }}
+                draggable="false"
+              />
+            ) : (
+              <div className="image-placeholder">Image</div>
+            )}
+          </div>
+        )}
+        {layer.type === 'group' && (
+          <div className="layer-body group-layer-body">
+            <span>Group</span>
+            <small>{layer.childIds.length} child layers</small>
+          </div>
+        )}
+
+        {isSelected && (
+          <div className="selection-frame" aria-hidden="true">
+            {HANDLE_DIRECTIONS.map((handle) => (
+              <button
+                key={handle.key}
+                className={`resize-handle handle-${handle.key}`}
+                type="button"
+                onPointerDown={(event) => startResize(event, layer, handle)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     )
   }
 
-  function finishEditing(id) {
-    const currentItem = placedTexts.find((item) => item.id === id)
-
-    if (!currentItem) {
-      setEditingTextId(null)
-      return
-    }
-
-    if (!currentItem.text.trim()) {
-      setPlacedTexts((currentTexts) => currentTexts.filter((item) => item.id !== id))
-      if (selectedTextId === id) {
-        setSelectedTextId(null)
-      }
-    } else {
-      syncTextBounds(id, currentItem.text, currentItem.fontSize)
-    }
-
-    setEditingTextId(null)
-  }
-
-  function handleEditorKeyDown(event, id) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      finishEditing(id)
-    }
-  }
-
-  function handleEditorPointerDown(event, id) {
-    event.stopPropagation()
-    blockCanvasClickRef.current = true
-    bringLayerToFront(id)
-    setSelectedTextId(id)
-  }
-
-  function handleTextClick(event, item) {
-    event.stopPropagation()
-    blockCanvasClickRef.current = true
-
-    if (tool === 'text') {
-      bringLayerToFront(item.id)
-      setSelectedTextId(item.id)
-      setEditingTextId(item.id)
-      return
-    }
-
-    if (tool === 'pointer') {
-      bringLayerToFront(item.id)
-      setSelectedTextId(item.id)
-    }
-  }
-
-  function handleResetCanvas() {
-    interactionRef.current = null
-    layerRef.current = 0
-    setEditingTextId(null)
-    setSelectedTextId(null)
-    setPlacedTexts([])
-  }
-
   return (
-    <main className="app">
-      <section className="editor-shell">
-        <header className="toolbar">
-          <button
-            className={tool === 'pointer' ? 'tool-button active' : 'tool-button'}
-            type="button"
-            onClick={() => {
-              setTool('pointer')
-              setEditingTextId(null)
-            }}
-          >
-            Pointer
-          </button>
-          <button
-            className={tool === 'text' ? 'tool-button active' : 'tool-button'}
-            type="button"
-            onClick={() => setTool('text')}
-          >
-            Text Tool
-          </button>
-          <button className="tool-button" type="button" onClick={handleResetCanvas}>
-            Rest
-          </button>
-          <p className="toolbar-note">
-            `Text Tool` creates and edits text. `Pointer` selects, moves, and scales text layers.
-          </p>
+    <main className="app-shell">
+      <section className="editor-panel">
+        <header className="editor-topbar">
+          <div>
+            <p className="eyebrow">Design Editor MVP</p>
+            <h1>Layered document architecture</h1>
+          </div>
+          <div className="toolbar-actions">
+            <button
+              className="action-button"
+              type="button"
+              onClick={() =>
+                addLayer(() =>
+                  createTextLayer({
+                    x: 120,
+                    y: 100,
+                    name: 'New Text',
+                  }),
+                )
+              }
+            >
+              Add Text
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              onClick={() =>
+                addLayer(() =>
+                  createShapeLayer({
+                    x: 150,
+                    y: 140,
+                    name: 'New Shape',
+                    fill: '#0f766e',
+                  }),
+                )
+              }
+            >
+              Add Shape
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+            >
+              Add Image
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              onClick={() =>
+                addLayer(() =>
+                  createGroupLayer({
+                    x: 220,
+                    y: 120,
+                    name: 'New Group',
+                  }),
+                )
+              }
+            >
+              Add Group
+            </button>
+          </div>
         </header>
 
-        <div className="workspace">
-          <div
-            ref={canvasRef}
-            className={tool === 'pointer' ? 'canvas pointer-mode' : 'canvas'}
-            onClick={handleCanvasClick}
-            onPointerDown={handleCanvasPointerDown}
-            role="presentation"
-          >
-            {placedTexts.map((item) => {
-              const isEditing = item.id === editingTextId
-              const isSelected = item.id === selectedTextId
+        <div className="workspace-grid">
+          <section className="canvas-panel">
+            <div
+              ref={canvasRef}
+              className="canvas-stage"
+              onPointerDown={handleCanvasPointerDown}
+              role="presentation"
+            >
+              <div className="canvas-surface">{documentState.layers.map(renderLayer)}</div>
+            </div>
+          </section>
 
-              return (
-                <div
-                  key={item.id}
-                  className={isSelected ? 'text-layer selected' : 'text-layer'}
-                  style={{
-                    left: `${item.x}px`,
-                    top: `${item.y}px`,
-                    width: `${item.width}px`,
-                    height: `${item.height}px`,
-                    zIndex: item.layer,
-                  }}
-                >
-                  {isEditing ? (
-                    <textarea
-                      ref={editorRef}
-                      className="text-editor"
-                      style={{
-                        fontSize: `${item.fontSize}px`,
-                      }}
-                      value={item.text}
-                      onChange={(event) => handleTextChange(item.id, event.target.value)}
-                      onBlur={() => finishEditing(item.id)}
-                      onKeyDown={(event) => handleEditorKeyDown(event, item.id)}
-                      onPointerDown={(event) => handleEditorPointerDown(event, item.id)}
-                    />
-                  ) : (
+          <aside className="sidebar">
+            <input
+              ref={imageInputRef}
+              className="sr-only"
+              type="file"
+              accept="image/*"
+              onChange={handleImageImport}
+            />
+            <section className="panel-card">
+              <div className="layer-list">
+                {[...documentState.layers].reverse().map((layer) => {
+                  const actualIndex = documentState.layers.findIndex(
+                    (candidate) => candidate.id === layer.id,
+                  )
+                  const isTop = actualIndex === documentState.layers.length - 1
+                  const isBottom = actualIndex === 0
+                  const isSelected = layer.id === documentState.selectedLayerId
+
+                  return (
                     <div
-                      className={tool === 'pointer' ? 'placed-text pointer-active' : 'placed-text'}
-                      style={{
-                        fontSize: `${item.fontSize}px`,
+                      key={layer.id}
+                      className={isSelected ? 'layer-row selected' : 'layer-row'}
+                      onClick={() =>
+                        setDocumentState((currentDocument) => selectLayer(currentDocument, layer.id))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          setDocumentState((currentDocument) =>
+                            selectLayer(currentDocument, layer.id),
+                          )
+                        }
                       }}
-                      onClick={(event) => handleTextClick(event, item)}
-                      onPointerDown={(event) => startMove(event, item)}
+                      role="button"
+                      tabIndex={0}
                     >
-                      {item.text || 'Text'}
-                    </div>
-                  )}
+                      <button
+                        className={layer.visible ? 'icon-button' : 'icon-button muted'}
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setDocumentState((currentDocument) =>
+                            updateLayer(currentDocument, layer.id, {
+                              visible: !layer.visible,
+                            }),
+                          )
+                        }}
+                      >
+                        {layer.visible ? 'Hide' : 'Show'}
+                      </button>
 
-                  {isSelected && !isEditing && tool === 'pointer' && (
-                    <div className="selection-frame" aria-hidden="true">
-                      {HANDLE_DIRECTIONS.map((handle) => (
-                        <button
-                          key={handle.key}
-                          className={`resize-handle handle-${handle.key}`}
-                          type="button"
-                          onPointerDown={(event) => startResize(event, item, handle)}
+                      <div className="layer-meta">
+                        <input
+                          className="layer-name-input"
+                          type="text"
+                          value={layer.name}
+                          onChange={(event) =>
+                            setDocumentState((currentDocument) =>
+                              updateLayer(currentDocument, layer.id, {
+                                name: event.target.value,
+                              }),
+                            )
+                          }
+                          onClick={(event) => event.stopPropagation()}
                         />
-                      ))}
+                        <span className="layer-type-chip">{layer.type}</span>
+                      </div>
+
+                      <div className="row-actions">
+                        <button
+                          className="icon-button"
+                          type="button"
+                          disabled={isTop}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setDocumentState((currentDocument) =>
+                              moveLayer(currentDocument, layer.id, 'up'),
+                            )
+                          }}
+                        >
+                          Up
+                        </button>
+                        <button
+                          className="icon-button"
+                          type="button"
+                          disabled={isBottom}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setDocumentState((currentDocument) =>
+                              moveLayer(currentDocument, layer.id, 'down'),
+                            )
+                          }}
+                        >
+                          Down
+                        </button>
+                        <button
+                          className="icon-button danger"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setDocumentState((currentDocument) =>
+                              removeLayer(currentDocument, layer.id),
+                            )
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
+                  )
+                })}
+              </div>
+            </section>
+
+            <button
+              className="inspector-toggle"
+              type="button"
+              onClick={() => setIsInspectorOpen((currentValue) => !currentValue)}
+            >
+              {isInspectorOpen ? 'Hide Selected Layer' : 'Show Selected Layer'}
+            </button>
+
+            {isInspectorOpen && (
+              <section className="panel-card">
+                <div className="panel-header">
+                  <div>
+                    <p className="eyebrow">Selected Layer</p>
+                    <h2>{selectedLayer ? selectedLayer.name : 'Nothing selected'}</h2>
+                  </div>
+                  {selectedLayer && (
+                    <button
+                      className="delete-button"
+                      type="button"
+                      onClick={() =>
+                        setDocumentState((currentDocument) =>
+                          removeLayer(currentDocument, selectedLayer.id),
+                        )
+                      }
+                    >
+                      Delete
+                    </button>
                   )}
                 </div>
-              )
-            })}
-            <div ref={measureRef} className="text-measurer" aria-hidden="true" />
-          </div>
-        </div>
 
-        <input
-          className="prompt-input"
-          type="text"
-          placeholder="enter prompt"
-          readOnly
-        />
+                {selectedLayer ? (
+                  <div className="property-grid">
+                    <label className="property-field">
+                      <span>X</span>
+                      <input
+                        type="number"
+                        value={selectedLayer.x}
+                        onChange={(event) => handleNumericChange('x', event.target.value)}
+                      />
+                    </label>
+                    <label className="property-field">
+                      <span>Y</span>
+                      <input
+                        type="number"
+                        value={selectedLayer.y}
+                        onChange={(event) => handleNumericChange('y', event.target.value)}
+                      />
+                    </label>
+                    <label className="property-field">
+                      <span>Width</span>
+                      <input
+                        type="number"
+                        min={MIN_LAYER_WIDTH}
+                        value={selectedLayer.width}
+                        onChange={(event) => handleNumericChange('width', event.target.value, MIN_LAYER_WIDTH)}
+                      />
+                    </label>
+                    <label className="property-field">
+                      <span>Height</span>
+                      <input
+                        type="number"
+                        min={MIN_LAYER_HEIGHT}
+                        value={selectedLayer.height}
+                        onChange={(event) => handleNumericChange('height', event.target.value, MIN_LAYER_HEIGHT)}
+                      />
+                    </label>
+                    <label className="property-field">
+                      <span>Rotation</span>
+                      <input
+                        type="number"
+                        value={selectedLayer.rotation}
+                        onChange={(event) => handleNumericChange('rotation', event.target.value)}
+                      />
+                    </label>
+                    <label className="property-field">
+                      <span>Opacity</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.1"
+                        value={selectedLayer.opacity}
+                        onChange={(event) => handleNumericChange('opacity', event.target.value, 0)}
+                      />
+                    </label>
+                    <label className="property-field">
+                      <span>Scale X</span>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={selectedLayer.scaleX}
+                        onChange={(event) => handleNumericChange('scaleX', event.target.value, 0.1)}
+                      />
+                    </label>
+                    <label className="property-field">
+                      <span>Scale Y</span>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={selectedLayer.scaleY}
+                        onChange={(event) => handleNumericChange('scaleY', event.target.value, 0.1)}
+                      />
+                    </label>
+
+                    {selectedLayer.type === 'text' && (
+                      <>
+                        <label className="property-field full-width">
+                          <span>Text</span>
+                          <textarea
+                            value={selectedLayer.text}
+                            onChange={(event) => updateSelectedLayer({ text: event.target.value })}
+                          />
+                        </label>
+                        <label className="property-field">
+                          <span>Font Size</span>
+                          <input
+                            type="number"
+                            min="8"
+                            value={selectedLayer.fontSize}
+                            onChange={(event) => handleNumericChange('fontSize', event.target.value, 8)}
+                          />
+                        </label>
+                        <label className="property-field">
+                          <span>Color</span>
+                          <input
+                            type="color"
+                            value={selectedLayer.color}
+                            onChange={(event) => updateSelectedLayer({ color: event.target.value })}
+                          />
+                        </label>
+                      </>
+                    )}
+
+                    {selectedLayer.type === 'shape' && (
+                      <>
+                        <label className="property-field">
+                          <span>Fill</span>
+                          <input
+                            type="color"
+                            value={selectedLayer.fill}
+                            onChange={(event) => updateSelectedLayer({ fill: event.target.value })}
+                          />
+                        </label>
+                        <label className="property-field">
+                          <span>Radius</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={selectedLayer.radius}
+                            onChange={(event) => handleNumericChange('radius', event.target.value, 0)}
+                          />
+                        </label>
+                      </>
+                    )}
+
+                    {selectedLayer.type === 'image' && (
+                      <label className="property-field full-width">
+                        <span>Image Source</span>
+                        <input
+                          type="text"
+                          value={selectedLayer.src}
+                          onChange={(event) => updateSelectedLayer({ src: event.target.value })}
+                        />
+                      </label>
+                    )}
+
+                    {selectedLayer.type === 'group' && (
+                      <div className="group-note full-width">
+                        Groups are modeled as layers already, but nested child management is intentionally left out of this MVP.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="empty-state">
+                    Select a layer from the canvas or the stack to edit its properties.
+                  </p>
+                )}
+              </section>
+            )}
+          </aside>
+        </div>
       </section>
     </main>
   )
