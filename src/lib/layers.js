@@ -58,7 +58,7 @@ export function createImageLayer(overrides = {}) {
     width: 300,
     height: 220,
     src: '',
-    fit: 'contain',
+    fit: 'fill',
     ...overrides,
   })
 }

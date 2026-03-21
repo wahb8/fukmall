@@ -130,14 +130,8 @@ function App() {
       const pointerY = event.clientY - rect.top
 
       if (interaction.type === 'move') {
-        const nextX = Math.min(
-          Math.max(pointerX - interaction.offsetX, 0),
-          rect.width - interaction.frameWidth,
-        )
-        const nextY = Math.min(
-          Math.max(pointerY - interaction.offsetY, 0),
-          rect.height - interaction.frameHeight,
-        )
+        const nextX = pointerX - interaction.offsetX
+        const nextY = pointerY - interaction.offsetY
 
         setDocumentState((currentDocument) =>
           updateLayer(currentDocument, interaction.layerId, {
@@ -150,31 +144,53 @@ function App() {
       if (interaction.type === 'resize') {
         const deltaX = pointerX - interaction.pointerStart.x
         const deltaY = pointerY - interaction.pointerStart.y
-        let nextFrameWidth = interaction.frameWidth
-        let nextFrameHeight = interaction.frameHeight
+        const startFrameWidth = interaction.frameWidth
+        const startFrameHeight = interaction.frameHeight
+        let nextFrameWidth = startFrameWidth
+        let nextFrameHeight = startFrameHeight
         let nextX = interaction.startX
         let nextY = interaction.startY
 
         if (interaction.handle.x === 1) {
-          nextFrameWidth = Math.max(MIN_LAYER_WIDTH, interaction.frameWidth + deltaX)
+          nextFrameWidth = Math.max(MIN_LAYER_WIDTH, startFrameWidth + deltaX)
         }
 
         if (interaction.handle.x === -1) {
-          nextFrameWidth = Math.max(MIN_LAYER_WIDTH, interaction.frameWidth - deltaX)
-          nextX = interaction.startX + (interaction.frameWidth - nextFrameWidth)
+          nextFrameWidth = Math.max(MIN_LAYER_WIDTH, startFrameWidth - deltaX)
+          nextX = interaction.startX + (startFrameWidth - nextFrameWidth)
         }
 
         if (interaction.handle.y === 1) {
-          nextFrameHeight = Math.max(MIN_LAYER_HEIGHT, interaction.frameHeight + deltaY)
+          nextFrameHeight = Math.max(MIN_LAYER_HEIGHT, startFrameHeight + deltaY)
         }
 
         if (interaction.handle.y === -1) {
-          nextFrameHeight = Math.max(MIN_LAYER_HEIGHT, interaction.frameHeight - deltaY)
-          nextY = interaction.startY + (interaction.frameHeight - nextFrameHeight)
+          nextFrameHeight = Math.max(MIN_LAYER_HEIGHT, startFrameHeight - deltaY)
+          nextY = interaction.startY + (startFrameHeight - nextFrameHeight)
         }
 
-        nextX = Math.min(Math.max(nextX, 0), rect.width - nextFrameWidth)
-        nextY = Math.min(Math.max(nextY, 0), rect.height - nextFrameHeight)
+        if (interaction.handle.x !== 0 && interaction.handle.y !== 0) {
+          const widthRatio = nextFrameWidth / startFrameWidth
+          const heightRatio = nextFrameHeight / startFrameHeight
+          const dominantRatio =
+            Math.abs(widthRatio - 1) > Math.abs(heightRatio - 1) ? widthRatio : heightRatio
+          const minimumUniformRatio = Math.max(
+            MIN_LAYER_WIDTH / startFrameWidth,
+            MIN_LAYER_HEIGHT / startFrameHeight,
+          )
+          const uniformRatio = Math.max(dominantRatio, minimumUniformRatio)
+
+          nextFrameWidth = startFrameWidth * uniformRatio
+          nextFrameHeight = startFrameHeight * uniformRatio
+
+          if (interaction.handle.x === -1) {
+            nextX = interaction.startX + (startFrameWidth - nextFrameWidth)
+          }
+
+          if (interaction.handle.y === -1) {
+            nextY = interaction.startY + (startFrameHeight - nextFrameHeight)
+          }
+        }
 
         setDocumentState((currentDocument) =>
           updateLayer(currentDocument, interaction.layerId, (layer) => ({
@@ -236,7 +252,7 @@ function App() {
           height: frame.height,
           name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
           src: imageUrl,
-          fit: 'contain',
+          fit: 'fill',
         }),
       )
     } catch {
@@ -434,22 +450,6 @@ function App() {
               }
             >
               Add Text
-            </button>
-            <button
-              className="action-button"
-              type="button"
-              onClick={() =>
-                addLayer(() =>
-                  createShapeLayer({
-                    x: 150,
-                    y: 140,
-                    name: 'New Shape',
-                    fill: '#0f766e',
-                  }),
-                )
-              }
-            >
-              Add Shape
             </button>
             <button
               className="action-button"
@@ -784,6 +784,16 @@ function App() {
               </section>
             )}
           </aside>
+        </div>
+
+        <div className="canvas-prompt-row">
+          <div className="canvas-prompt-shell">
+            <input
+              className="canvas-prompt-input"
+              type="text"
+              placeholder="Describe what you want to create..."
+            />
+          </div>
         </div>
       </section>
     </main>
