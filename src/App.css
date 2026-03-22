@@ -68,6 +68,15 @@
   font-size: 1.35rem;
 }
 
+.title-subline {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .canvas-panel-header p,
 .empty-state,
 .group-note,
@@ -116,6 +125,15 @@
   border-color: var(--accent);
 }
 
+.action-button:disabled,
+.icon-button:disabled,
+.delete-button:disabled,
+.inspector-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
 .delete-button {
   color: #991b1b;
 }
@@ -131,9 +149,10 @@
   align-items: start;
 }
 
-.canvas-prompt-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(340px, 420px);
+.workspace-main-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 1.25rem;
 }
 
@@ -173,7 +192,6 @@
 .canvas-prompt-shell {
   display: flex;
   justify-content: center;
-  grid-column: 1;
 }
 
 .canvas-prompt-input {
@@ -216,6 +234,14 @@
   align-items: flex-start;
   white-space: pre-wrap;
   line-height: 0.95;
+}
+
+.text-layer-editor {
+  border: 1px dashed rgba(15, 118, 110, 0.45);
+  padding: 0;
+  resize: none;
+  outline: none;
+  background: rgba(255, 254, 249, 0.96);
 }
 
 .shape-layer-body,
@@ -364,6 +390,12 @@
   font-size: 0.82rem;
 }
 
+.button-icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
+}
+
 .icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
@@ -454,10 +486,6 @@
 
 @media (max-width: 1120px) {
   .workspace-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .canvas-prompt-row {
     grid-template-columns: 1fr;
   }
 

@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
+import closeIcon from './assets/Close (X).svg'
+import downIcon from './assets/down.svg'
 import heroImage from './assets/hero.png'
+import hiddenIcon from './assets/Hidden.svg'
+import upIcon from './assets/up.svg'
+import visibleIcon from './assets/Visible.svg'
+import { useHistory } from './hooks/useHistory'
 import {
   appendLayer,
   createDocument,
@@ -28,6 +34,11 @@ const HANDLE_DIRECTIONS = [
 
 const MIN_LAYER_WIDTH = 72
 const MIN_LAYER_HEIGHT = 48
+
+function getTextLayerName(text) {
+  const normalizedText = text.replace(/\s+/g, ' ').trim()
+  return normalizedText || 'New Text'
+}
 
 function getFrameDimensions(layer) {
   return {
@@ -107,12 +118,31 @@ function getImportedImageFrame(width, height) {
   }
 }
 
+function isEditableTarget(target) {
+  return target instanceof HTMLElement && (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.isContentEditable
+  )
+}
+
 function App() {
   const canvasRef = useRef(null)
   const imageInputRef = useRef(null)
   const interactionRef = useRef(null)
-  const [documentState, setDocumentState] = useState(() => createInitialDocument())
+  const {
+    present: documentState,
+    commit,
+    setTransient,
+    commitTransientChange,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useHistory(createInitialDocument())
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
+  const [editingTextLayerId, setEditingTextLayerId] = useState(null)
+  const [textDraft, setTextDraft] = useState('')
 
   const selectedLayer = findLayer(documentState, documentState.selectedLayerId)
 
@@ -132,8 +162,12 @@ function App() {
       if (interaction.type === 'move') {
         const nextX = pointerX - interaction.offsetX
         const nextY = pointerY - interaction.offsetY
+        interactionRef.current = {
+          ...interaction,
+          hasChanged: true,
+        }
 
-        setDocumentState((currentDocument) =>
+        setTransient((currentDocument) =>
           updateLayer(currentDocument, interaction.layerId, {
             x: nextX,
             y: nextY,
@@ -192,7 +226,12 @@ function App() {
           }
         }
 
-        setDocumentState((currentDocument) =>
+        interactionRef.current = {
+          ...interaction,
+          hasChanged: true,
+        }
+
+        setTransient((currentDocument) =>
           updateLayer(currentDocument, interaction.layerId, (layer) => ({
             ...layer,
             x: nextX,
@@ -211,6 +250,12 @@ function App() {
     }
 
     function handlePointerUp() {
+      const interaction = interactionRef.current
+
+      if (interaction?.originDocument && interaction.hasChanged) {
+        commitTransientChange(interaction.originDocument)
+      }
+
       interactionRef.current = null
     }
 
@@ -221,11 +266,52 @@ function App() {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [])
+  }, [commitTransientChange, setTransient])
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (!(event.metaKey || event.ctrlKey) || isEditableTarget(event.target)) {
+        return
+      }
+
+      const lowerKey = event.key.toLowerCase()
+
+      if (lowerKey === 'z' && event.shiftKey) {
+        event.preventDefault()
+        redo()
+        return
+      }
+
+      if (lowerKey === 'z') {
+        event.preventDefault()
+        undo()
+        return
+      }
+
+      if (lowerKey === 'y' && event.ctrlKey) {
+        event.preventDefault()
+        redo()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [redo, undo])
+
+  function applyDocumentChange(updater) {
+    commit((currentDocument) => updater(currentDocument))
+  }
+
+  function selectDocumentLayer(layerId) {
+    setTransient((currentDocument) => selectLayer(currentDocument, layerId))
+  }
 
   function addLayer(factory) {
     const nextLayer = factory()
-    setDocumentState((currentDocument) => appendLayer(currentDocument, nextLayer))
+    applyDocumentChange((currentDocument) => appendLayer(currentDocument, nextLayer))
   }
 
   async function handleImageImport(event) {
@@ -267,12 +353,16 @@ function App() {
       return
     }
 
-    setDocumentState((currentDocument) =>
+    applyDocumentChange((currentDocument) =>
       updateLayer(currentDocument, currentDocument.selectedLayerId, patch),
     )
   }
 
   function startMove(event, layer) {
+    if (editingTextLayerId === layer.id) {
+      return
+    }
+
     event.stopPropagation()
 
     const canvas = canvasRef.current
@@ -284,7 +374,7 @@ function App() {
     const rect = canvas.getBoundingClientRect()
     const { width, height } = getFrameDimensions(layer)
 
-    setDocumentState((currentDocument) => selectLayer(currentDocument, layer.id))
+    selectDocumentLayer(layer.id)
     interactionRef.current = {
       type: 'move',
       layerId: layer.id,
@@ -292,6 +382,8 @@ function App() {
       offsetY: event.clientY - rect.top - layer.y,
       frameWidth: width,
       frameHeight: height,
+      originDocument: documentState,
+      hasChanged: false,
     }
   }
 
@@ -308,7 +400,7 @@ function App() {
     const rect = canvas.getBoundingClientRect()
     const { width, height } = getFrameDimensions(layer)
 
-    setDocumentState((currentDocument) => selectLayer(currentDocument, layer.id))
+    selectDocumentLayer(layer.id)
     interactionRef.current = {
       type: 'resize',
       layerId: layer.id,
@@ -321,12 +413,14 @@ function App() {
       startY: layer.y,
       frameWidth: width,
       frameHeight: height,
+      originDocument: documentState,
+      hasChanged: false,
     }
   }
 
   function handleCanvasPointerDown(event) {
     if (event.target === event.currentTarget) {
-      setDocumentState((currentDocument) => selectLayer(currentDocument, null))
+      selectDocumentLayer(null)
     }
   }
 
@@ -346,12 +440,42 @@ function App() {
     })
   }
 
+  function beginTextEditing(layer) {
+    if (layer.type !== 'text') {
+      return
+    }
+
+    selectDocumentLayer(layer.id)
+    setEditingTextLayerId(layer.id)
+    setTextDraft(layer.text)
+    interactionRef.current = null
+  }
+
+  function commitTextEditing(layerId) {
+    const nextText = textDraft.trim() ? textDraft : 'New Text'
+
+    applyDocumentChange((currentDocument) =>
+      updateLayer(currentDocument, layerId, {
+        text: nextText,
+        name: getTextLayerName(nextText),
+      }),
+    )
+    setEditingTextLayerId(null)
+    setTextDraft('')
+  }
+
+  function cancelTextEditing() {
+    setEditingTextLayerId(null)
+    setTextDraft('')
+  }
+
   function renderLayer(layer, index) {
     if (!layer.visible) {
       return null
     }
 
     const isSelected = layer.id === documentState.selectedLayerId
+    const isEditingText = layer.type === 'text' && layer.id === editingTextLayerId
 
     return (
       <div
@@ -369,16 +493,47 @@ function App() {
         onPointerDown={(event) => startMove(event, layer)}
       >
         {layer.type === 'text' && (
-          <div
-            className="layer-body text-layer-body"
-            style={{
-              fontFamily: layer.fontFamily,
-              fontSize: `${layer.fontSize}px`,
-              color: layer.color,
-            }}
-          >
-            {layer.text}
-          </div>
+          isEditingText ? (
+            <textarea
+              className="layer-body text-layer-body text-layer-editor"
+              value={textDraft}
+              style={{
+                fontFamily: layer.fontFamily,
+                fontSize: `${layer.fontSize}px`,
+                color: layer.color,
+              }}
+              onChange={(event) => setTextDraft(event.target.value)}
+              onBlur={() => commitTextEditing(layer.id)}
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  cancelTextEditing()
+                }
+
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  commitTextEditing(layer.id)
+                }
+              }}
+              autoFocus
+            />
+          ) : (
+            <div
+              className="layer-body text-layer-body"
+              style={{
+                fontFamily: layer.fontFamily,
+                fontSize: `${layer.fontSize}px`,
+                color: layer.color,
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+                beginTextEditing(layer)
+              }}
+            >
+              {layer.text}
+            </div>
+          )
         )}
         {layer.type === 'shape' && (
           <div
@@ -432,10 +587,26 @@ function App() {
       <section className="editor-panel">
         <header className="editor-topbar">
           <div>
-            <p className="eyebrow">Design Editor MVP</p>
-            <h1>Layered document architecture</h1>
+            <h1>Fukmall</h1>
+            <p className="title-subline">MVP</p>
           </div>
           <div className="toolbar-actions">
+            <button
+              className="action-button"
+              type="button"
+              disabled={!canUndo}
+              onClick={undo}
+            >
+              Undo
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              disabled={!canRedo}
+              onClick={redo}
+            >
+              Redo
+            </button>
             <button
               className="action-button"
               type="button"
@@ -477,16 +648,26 @@ function App() {
         </header>
 
         <div className="workspace-grid">
-          <section className="canvas-panel">
-            <div
-              ref={canvasRef}
-              className="canvas-stage"
-              onPointerDown={handleCanvasPointerDown}
-              role="presentation"
-            >
-              <div className="canvas-surface">{documentState.layers.map(renderLayer)}</div>
+          <div className="workspace-main-column">
+            <section className="canvas-panel">
+              <div
+                ref={canvasRef}
+                className="canvas-stage"
+                onPointerDown={handleCanvasPointerDown}
+                role="presentation"
+              >
+                <div className="canvas-surface">{documentState.layers.map(renderLayer)}</div>
+              </div>
+            </section>
+
+            <div className="canvas-prompt-shell">
+              <input
+                className="canvas-prompt-input"
+                type="text"
+                placeholder="Describe what you want to create..."
+              />
             </div>
-          </section>
+          </div>
 
           <aside className="sidebar">
             <input
@@ -510,15 +691,11 @@ function App() {
                     <div
                       key={layer.id}
                       className={isSelected ? 'layer-row selected' : 'layer-row'}
-                      onClick={() =>
-                        setDocumentState((currentDocument) => selectLayer(currentDocument, layer.id))
-                      }
+                      onClick={() => selectDocumentLayer(layer.id)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
-                          setDocumentState((currentDocument) =>
-                            selectLayer(currentDocument, layer.id),
-                          )
+                          selectDocumentLayer(layer.id)
                         }
                       }}
                       role="button"
@@ -529,14 +706,20 @@ function App() {
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation()
-                          setDocumentState((currentDocument) =>
+                          applyDocumentChange((currentDocument) =>
                             updateLayer(currentDocument, layer.id, {
                               visible: !layer.visible,
                             }),
                           )
                         }}
+                        aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
                       >
-                        {layer.visible ? 'Hide' : 'Show'}
+                        <img
+                          className="button-icon"
+                          src={layer.visible ? visibleIcon : hiddenIcon}
+                          alt=""
+                          aria-hidden="true"
+                        />
                       </button>
 
                       <div className="layer-meta">
@@ -545,7 +728,7 @@ function App() {
                           type="text"
                           value={layer.name}
                           onChange={(event) =>
-                            setDocumentState((currentDocument) =>
+                            applyDocumentChange((currentDocument) =>
                               updateLayer(currentDocument, layer.id, {
                                 name: event.target.value,
                               }),
@@ -563,12 +746,11 @@ function App() {
                           disabled={isTop}
                           onClick={(event) => {
                             event.stopPropagation()
-                            setDocumentState((currentDocument) =>
-                              moveLayer(currentDocument, layer.id, 'up'),
-                            )
+                          applyDocumentChange((currentDocument) => moveLayer(currentDocument, layer.id, 'up'))
                           }}
+                          aria-label="Move layer up"
                         >
-                          Up
+                          <img className="button-icon" src={upIcon} alt="" aria-hidden="true" />
                         </button>
                         <button
                           className="icon-button"
@@ -576,24 +758,22 @@ function App() {
                           disabled={isBottom}
                           onClick={(event) => {
                             event.stopPropagation()
-                            setDocumentState((currentDocument) =>
-                              moveLayer(currentDocument, layer.id, 'down'),
-                            )
+                          applyDocumentChange((currentDocument) => moveLayer(currentDocument, layer.id, 'down'))
                           }}
+                          aria-label="Move layer down"
                         >
-                          Down
+                          <img className="button-icon" src={downIcon} alt="" aria-hidden="true" />
                         </button>
                         <button
                           className="icon-button danger"
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation()
-                            setDocumentState((currentDocument) =>
-                              removeLayer(currentDocument, layer.id),
-                            )
+                          applyDocumentChange((currentDocument) => removeLayer(currentDocument, layer.id))
                           }}
+                          aria-label="Delete layer"
                         >
-                          Delete
+                          <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
                         </button>
                       </div>
                     </div>
@@ -621,13 +801,10 @@ function App() {
                     <button
                       className="delete-button"
                       type="button"
-                      onClick={() =>
-                        setDocumentState((currentDocument) =>
-                          removeLayer(currentDocument, selectedLayer.id),
-                        )
-                      }
+                      onClick={() => applyDocumentChange((currentDocument) => removeLayer(currentDocument, selectedLayer.id))}
+                      aria-label="Delete selected layer"
                     >
-                      Delete
+                      <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
                     </button>
                   )}
                 </div>
@@ -714,7 +891,12 @@ function App() {
                           <span>Text</span>
                           <textarea
                             value={selectedLayer.text}
-                            onChange={(event) => updateSelectedLayer({ text: event.target.value })}
+                            onChange={(event) =>
+                              updateSelectedLayer({
+                                text: event.target.value,
+                                name: getTextLayerName(event.target.value),
+                              })
+                            }
                           />
                         </label>
                         <label className="property-field">
@@ -784,16 +966,6 @@ function App() {
               </section>
             )}
           </aside>
-        </div>
-
-        <div className="canvas-prompt-row">
-          <div className="canvas-prompt-shell">
-            <input
-              className="canvas-prompt-input"
-              type="text"
-              placeholder="Describe what you want to create..."
-            />
-          </div>
         </div>
       </section>
     </main>

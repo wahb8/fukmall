@@ -27,11 +27,11 @@ export function createDocument(layers = [], selectedLayerId = null) {
 
 export function createTextLayer(overrides = {}) {
   return createBaseLayer({
-    name: 'Headline',
+    name: 'New Text',
     type: 'text',
     width: 280,
     height: 96,
-    text: 'New Collection',
+    text: 'New Text',
     fontFamily: '"Space Grotesk", "Segoe UI", sans-serif',
     fontSize: 42,
     color: '#0f172a',
