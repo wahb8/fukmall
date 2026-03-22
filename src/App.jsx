@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import closeIcon from './assets/Close (X).svg'
 import downIcon from './assets/down.svg'
@@ -7,6 +7,7 @@ import hiddenIcon from './assets/Hidden.svg'
 import upIcon from './assets/up.svg'
 import visibleIcon from './assets/Visible.svg'
 import { useHistory } from './hooks/useHistory'
+import { eraseDot, eraseStroke } from './lib/eraserTool'
 import {
   appendLayer,
   createDocument,
@@ -15,11 +16,20 @@ import {
   createShapeLayer,
   createTextLayer,
   findLayer,
+  isRasterLayer,
   moveLayer,
   removeLayer,
   selectLayer,
   updateLayer,
 } from './lib/layers'
+import {
+  canvasToBitmap,
+  cloneCanvas,
+  createCanvasFromSource,
+  paintCanvas,
+  readFileAsDataUrl,
+  toLayerCoordinates,
+} from './lib/raster'
 
 const HANDLE_DIRECTIONS = [
   { key: 'nw', x: -1, y: -1 },
@@ -34,6 +44,7 @@ const HANDLE_DIRECTIONS = [
 
 const MIN_LAYER_WIDTH = 72
 const MIN_LAYER_HEIGHT = 48
+const DEFAULT_ERASER_SIZE = 28
 
 function getTextLayerName(text) {
   const normalizedText = text.replace(/\s+/g, ' ').trim()
@@ -55,6 +66,7 @@ function createInitialDocument() {
     width: 360,
     height: 260,
     src: heroImage,
+    bitmap: heroImage,
   })
   const card = createShapeLayer({
     name: 'Color Block',
@@ -84,7 +96,7 @@ function createInitialDocument() {
 
   return createDocument(
     [background, card, title, group],
-    title.id,
+    background.id,
   )
 }
 
@@ -126,10 +138,21 @@ function isEditableTarget(target) {
   )
 }
 
+function createRasterSurfaceEntry() {
+  return {
+    offscreenCanvas: null,
+    visibleCanvas: null,
+    layerElement: null,
+    bitmapKey: null,
+    syncToken: 0,
+  }
+}
+
 function App() {
   const canvasRef = useRef(null)
   const imageInputRef = useRef(null)
   const interactionRef = useRef(null)
+  const rasterSurfacesRef = useRef(new Map())
   const {
     present: documentState,
     commit,
@@ -143,8 +166,78 @@ function App() {
   const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
+  const [activeTool, setActiveTool] = useState('select')
+  const [eraserSize, setEraserSize] = useState(DEFAULT_ERASER_SIZE)
 
   const selectedLayer = findLayer(documentState, documentState.selectedLayerId)
+  const canEraseSelectedLayer = isRasterLayer(selectedLayer)
+  const currentTool = activeTool === 'eraser' && canEraseSelectedLayer ? 'eraser' : 'select'
+
+  const getRasterSurfaceEntry = useCallback((layerId) => {
+    const existingEntry = rasterSurfacesRef.current.get(layerId)
+
+    if (existingEntry) {
+      return existingEntry
+    }
+
+    const nextEntry = createRasterSurfaceEntry()
+    rasterSurfacesRef.current.set(layerId, nextEntry)
+    return nextEntry
+  }, [])
+
+  const drawRasterLayer = useCallback((layerId) => {
+    const entry = rasterSurfacesRef.current.get(layerId)
+
+    if (!entry?.offscreenCanvas || !entry.visibleCanvas) {
+      return
+    }
+
+    paintCanvas(entry.visibleCanvas, entry.offscreenCanvas)
+  }, [])
+
+  const ensureRasterLayerSurface = useCallback(async (layer) => {
+    if (!isRasterLayer(layer) || !layer.bitmap) {
+      return null
+    }
+
+    const entry = getRasterSurfaceEntry(layer.id)
+
+    if (entry.offscreenCanvas && entry.bitmapKey === layer.bitmap) {
+      drawRasterLayer(layer.id)
+      return entry.offscreenCanvas
+    }
+
+    const nextToken = entry.syncToken + 1
+    entry.syncToken = nextToken
+
+    const { canvas } = await createCanvasFromSource(layer.bitmap)
+
+    if (entry.syncToken !== nextToken) {
+      return entry.offscreenCanvas
+    }
+
+    entry.offscreenCanvas = canvas
+    entry.bitmapKey = layer.bitmap
+    drawRasterLayer(layer.id)
+
+    return entry.offscreenCanvas
+  }, [drawRasterLayer, getRasterSurfaceEntry])
+
+  useEffect(() => {
+    const currentLayerIds = new Set(documentState.layers.map((layer) => layer.id))
+
+    for (const [layerId] of rasterSurfacesRef.current) {
+      if (!currentLayerIds.has(layerId)) {
+        rasterSurfacesRef.current.delete(layerId)
+      }
+    }
+
+    for (const layer of documentState.layers) {
+      if (isRasterLayer(layer) && layer.bitmap) {
+        ensureRasterLayerSurface(layer).catch(() => {})
+      }
+    }
+  }, [documentState.layers, ensureRasterLayerSurface])
 
   useEffect(() => {
     function handlePointerMove(event) {
@@ -247,10 +340,70 @@ function App() {
           })),
         )
       }
+
+      if (interaction.type === 'erase') {
+        const currentLayer = findLayer(documentState, interaction.layerId)
+        const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+        const layerPoint = currentLayer && surfaceEntry?.offscreenCanvas
+          ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceEntry.offscreenCanvas)
+          : null
+
+        if (!currentLayer || !surfaceEntry?.offscreenCanvas || !layerPoint) {
+          return
+        }
+
+        const context = surfaceEntry.offscreenCanvas.getContext('2d')
+
+        if (!context) {
+          return
+        }
+
+        eraseStroke(
+          context,
+          interaction.lastPoint.x,
+          interaction.lastPoint.y,
+          layerPoint.x,
+          layerPoint.y,
+          interaction.size,
+        )
+        drawRasterLayer(interaction.layerId)
+
+        interactionRef.current = {
+          ...interaction,
+          lastPoint: layerPoint,
+          hasChanged: true,
+        }
+      }
     }
 
     function handlePointerUp() {
       const interaction = interactionRef.current
+
+      if (interaction?.type === 'erase') {
+        if (interaction.hasChanged) {
+          const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+
+          if (surfaceEntry?.offscreenCanvas) {
+            const nextBitmap = canvasToBitmap(surfaceEntry.offscreenCanvas)
+
+            commit((currentDocument) =>
+              updateLayer(currentDocument, interaction.layerId, {
+                bitmap: nextBitmap,
+              }),
+            )
+          }
+        } else if (interaction.restoreCanvas) {
+          const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+
+          if (surfaceEntry?.offscreenCanvas) {
+            surfaceEntry.offscreenCanvas = interaction.restoreCanvas
+            drawRasterLayer(interaction.layerId)
+          }
+        }
+
+        interactionRef.current = null
+        return
+      }
 
       if (interaction?.originDocument && interaction.hasChanged) {
         commitTransientChange(interaction.originDocument)
@@ -261,12 +414,14 @@ function App() {
 
     window.addEventListener('pointermove', handlePointerMove)
     window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [commitTransientChange, setTransient])
+  }, [commit, commitTransientChange, documentState, drawRasterLayer, setTransient])
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -321,13 +476,13 @@ function App() {
       return
     }
 
-    const imageUrl = URL.createObjectURL(file)
     const resetInput = () => {
       event.target.value = ''
     }
 
     try {
-      const { width, height } = await loadImageDimensions(imageUrl)
+      const imageDataUrl = await readFileAsDataUrl(file)
+      const { width, height } = await loadImageDimensions(imageDataUrl)
       const frame = getImportedImageFrame(width, height)
 
       addLayer(() =>
@@ -337,12 +492,13 @@ function App() {
           width: frame.width,
           height: frame.height,
           name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
-          src: imageUrl,
+          src: imageDataUrl,
+          bitmap: imageDataUrl,
           fit: 'fill',
         }),
       )
     } catch {
-      URL.revokeObjectURL(imageUrl)
+      // Ignore failed imports for the MVP.
     }
 
     resetInput()
@@ -418,6 +574,55 @@ function App() {
     }
   }
 
+  async function beginErase(event, layer) {
+    event.stopPropagation()
+    event.preventDefault()
+
+    selectDocumentLayer(layer.id)
+
+    if (!isRasterLayer(layer)) {
+      return
+    }
+
+    const surfaceCanvas = await ensureRasterLayerSurface(layer)
+    const surfaceEntry = rasterSurfacesRef.current.get(layer.id)
+    const layerPoint = surfaceCanvas && surfaceEntry?.layerElement
+      ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceCanvas)
+      : null
+
+    if (!surfaceCanvas || !surfaceEntry || !layerPoint) {
+      return
+    }
+
+    const context = surfaceCanvas.getContext('2d')
+
+    if (!context) {
+      return
+    }
+
+    const restoreCanvas = cloneCanvas(surfaceCanvas)
+    eraseDot(context, layerPoint.x, layerPoint.y, eraserSize)
+    drawRasterLayer(layer.id)
+
+    interactionRef.current = {
+      type: 'erase',
+      layerId: layer.id,
+      lastPoint: layerPoint,
+      size: eraserSize,
+      restoreCanvas,
+      hasChanged: true,
+    }
+  }
+
+  function handleLayerPointerDown(event, layer) {
+    if (currentTool === 'eraser') {
+      beginErase(event, layer)
+      return
+    }
+
+    startMove(event, layer)
+  }
+
   function handleCanvasPointerDown(event) {
     if (event.target === event.currentTarget) {
       selectDocumentLayer(null)
@@ -469,6 +674,17 @@ function App() {
     setTextDraft('')
   }
 
+  function registerLayerElement(layerId, node) {
+    const entry = getRasterSurfaceEntry(layerId)
+    entry.layerElement = node
+  }
+
+  function registerVisibleCanvas(layerId, node) {
+    const entry = getRasterSurfaceEntry(layerId)
+    entry.visibleCanvas = node
+    drawRasterLayer(layerId)
+  }
+
   function renderLayer(layer, index) {
     if (!layer.visible) {
       return null
@@ -476,11 +692,13 @@ function App() {
 
     const isSelected = layer.id === documentState.selectedLayerId
     const isEditingText = layer.type === 'text' && layer.id === editingTextLayerId
+    const showEraserCursor = currentTool === 'eraser' && isRasterLayer(layer)
 
     return (
       <div
         key={layer.id}
-        className={isSelected ? 'canvas-layer selected' : 'canvas-layer'}
+        ref={(node) => registerLayerElement(layer.id, node)}
+        className={showEraserCursor ? 'canvas-layer eraser-enabled' : 'canvas-layer'}
         style={{
           left: `${layer.x}px`,
           top: `${layer.y}px`,
@@ -490,7 +708,7 @@ function App() {
           opacity: layer.opacity,
           zIndex: index + 1,
         }}
-        onPointerDown={(event) => startMove(event, layer)}
+        onPointerDown={(event) => handleLayerPointerDown(event, layer)}
       >
         {layer.type === 'text' && (
           isEditingText ? (
@@ -546,17 +764,10 @@ function App() {
         )}
         {layer.type === 'image' && (
           <div className="layer-body image-layer-body">
-            {layer.src ? (
-              <img
-                className="layer-image"
-                src={layer.src}
-                alt={layer.name}
-                style={{ objectFit: layer.fit }}
-                draggable="false"
-              />
-            ) : (
-              <div className="image-placeholder">Image</div>
-            )}
+            <canvas
+              ref={(node) => registerVisibleCanvas(layer.id, node)}
+              className="layer-image raster-layer-canvas"
+            />
           </div>
         )}
         {layer.type === 'group' && (
@@ -591,6 +802,33 @@ function App() {
             <p className="title-subline">MVP</p>
           </div>
           <div className="toolbar-actions">
+            <button
+              className={currentTool === 'select' ? 'action-button active' : 'action-button'}
+              type="button"
+              onClick={() => setActiveTool('select')}
+            >
+              Select
+            </button>
+            <button
+              className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
+              type="button"
+              disabled={!canEraseSelectedLayer}
+              onClick={() => setActiveTool('eraser')}
+            >
+              Eraser
+            </button>
+            <label className="toolbar-range">
+              <span>Eraser</span>
+              <input
+                type="range"
+                min="8"
+                max="96"
+                step="1"
+                value={eraserSize}
+                onChange={(event) => setEraserSize(Number(event.target.value))}
+              />
+              <strong>{eraserSize}px</strong>
+            </label>
             <button
               className="action-button"
               type="button"
@@ -736,7 +974,9 @@ function App() {
                           }
                           onClick={(event) => event.stopPropagation()}
                         />
-                        <span className="layer-type-chip">{layer.type}</span>
+                        <span className="layer-type-chip">
+                          {isRasterLayer(layer) ? 'raster' : layer.type}
+                        </span>
                       </div>
 
                       <div className="row-actions">
@@ -746,7 +986,9 @@ function App() {
                           disabled={isTop}
                           onClick={(event) => {
                             event.stopPropagation()
-                          applyDocumentChange((currentDocument) => moveLayer(currentDocument, layer.id, 'up'))
+                            applyDocumentChange((currentDocument) =>
+                              moveLayer(currentDocument, layer.id, 'up'),
+                            )
                           }}
                           aria-label="Move layer up"
                         >
@@ -758,7 +1000,9 @@ function App() {
                           disabled={isBottom}
                           onClick={(event) => {
                             event.stopPropagation()
-                          applyDocumentChange((currentDocument) => moveLayer(currentDocument, layer.id, 'down'))
+                            applyDocumentChange((currentDocument) =>
+                              moveLayer(currentDocument, layer.id, 'down'),
+                            )
                           }}
                           aria-label="Move layer down"
                         >
@@ -769,7 +1013,9 @@ function App() {
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation()
-                          applyDocumentChange((currentDocument) => removeLayer(currentDocument, layer.id))
+                            applyDocumentChange((currentDocument) =>
+                              removeLayer(currentDocument, layer.id),
+                            )
                           }}
                           aria-label="Delete layer"
                         >
@@ -801,7 +1047,11 @@ function App() {
                     <button
                       className="delete-button"
                       type="button"
-                      onClick={() => applyDocumentChange((currentDocument) => removeLayer(currentDocument, selectedLayer.id))}
+                      onClick={() =>
+                        applyDocumentChange((currentDocument) =>
+                          removeLayer(currentDocument, selectedLayer.id),
+                        )
+                      }
                       aria-label="Delete selected layer"
                     >
                       <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
@@ -833,7 +1083,9 @@ function App() {
                         type="number"
                         min={MIN_LAYER_WIDTH}
                         value={selectedLayer.width}
-                        onChange={(event) => handleNumericChange('width', event.target.value, MIN_LAYER_WIDTH)}
+                        onChange={(event) =>
+                          handleNumericChange('width', event.target.value, MIN_LAYER_WIDTH)
+                        }
                       />
                     </label>
                     <label className="property-field">
@@ -842,7 +1094,9 @@ function App() {
                         type="number"
                         min={MIN_LAYER_HEIGHT}
                         value={selectedLayer.height}
-                        onChange={(event) => handleNumericChange('height', event.target.value, MIN_LAYER_HEIGHT)}
+                        onChange={(event) =>
+                          handleNumericChange('height', event.target.value, MIN_LAYER_HEIGHT)
+                        }
                       />
                     </label>
                     <label className="property-field">
@@ -905,7 +1159,9 @@ function App() {
                             type="number"
                             min="8"
                             value={selectedLayer.fontSize}
-                            onChange={(event) => handleNumericChange('fontSize', event.target.value, 8)}
+                            onChange={(event) =>
+                              handleNumericChange('fontSize', event.target.value, 8)
+                            }
                           />
                         </label>
                         <label className="property-field">
@@ -942,19 +1198,31 @@ function App() {
                     )}
 
                     {selectedLayer.type === 'image' && (
-                      <label className="property-field full-width">
-                        <span>Image Source</span>
-                        <input
-                          type="text"
-                          value={selectedLayer.src}
-                          onChange={(event) => updateSelectedLayer({ src: event.target.value })}
-                        />
-                      </label>
+                      <>
+                        <label className="property-field full-width">
+                          <span>Image Source</span>
+                          <input
+                            type="text"
+                            value={selectedLayer.src}
+                            onChange={(event) =>
+                              updateSelectedLayer({
+                                src: event.target.value,
+                                bitmap: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                        <div className="group-note full-width">
+                          Raster layers are editable with the eraser tool and store transparency in
+                          their bitmap.
+                        </div>
+                      </>
                     )}
 
                     {selectedLayer.type === 'group' && (
                       <div className="group-note full-width">
-                        Groups are modeled as layers already, but nested child management is intentionally left out of this MVP.
+                        Groups are modeled as layers already, but nested child management is
+                        intentionally left out of this MVP.
                       </div>
                     )}
                   </div>

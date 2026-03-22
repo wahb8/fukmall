@@ -58,6 +58,7 @@ export function createImageLayer(overrides = {}) {
     width: 300,
     height: 220,
     src: '',
+    bitmap: overrides.bitmap ?? overrides.src ?? '',
     fit: 'fill',
     ...overrides,
   })
@@ -135,4 +136,8 @@ export function moveLayer(documentState, layerId, direction) {
     ...documentState,
     layers: nextLayers,
   }
+}
+
+export function isRasterLayer(layer) {
+  return layer?.type === 'image'
 }
