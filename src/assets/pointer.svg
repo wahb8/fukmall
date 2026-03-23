@@ -1,0 +1,7 @@
+<svg width="48" height="48" viewBox="0 0 20 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Pointer/cursor shape -->
+  <path d="M1 1L1 25L7 19L11 29L15 27L11 17L19 17L1 1Z" fill="black" stroke="black" stroke-width="2" stroke-linejoin="round"/>
+  
+  <!-- Inner detail -->
+  <path d="M1 1L1 25L7 19L11 29L15 27L11 17L19 17L1 1Z" fill="white" opacity="0.3"/>
+</svg>

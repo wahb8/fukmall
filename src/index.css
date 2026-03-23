@@ -18,3 +18,13 @@ body,
   margin: 0;
   min-height: 100%;
 }
+
+body {
+  cursor: url('./assets/pointer.svg') 4 4, default;
+}
+
+*,
+*::before,
+*::after {
+  cursor: inherit !important;
+}

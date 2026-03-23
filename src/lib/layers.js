@@ -35,6 +35,7 @@ export function createTextLayer(overrides = {}) {
     fontFamily: '"Space Grotesk", "Segoe UI", sans-serif',
     fontSize: 42,
     color: '#0f172a',
+    eraseMask: '',
     ...overrides,
   })
 }
@@ -60,6 +61,19 @@ export function createImageLayer(overrides = {}) {
     src: '',
     bitmap: overrides.bitmap ?? overrides.src ?? '',
     fit: 'fill',
+    ...overrides,
+  })
+}
+
+export function createRasterLayer(overrides = {}) {
+  return createBaseLayer({
+    name: 'Drawing',
+    type: 'raster',
+    x: 0,
+    y: 0,
+    width: 760,
+    height: 570,
+    bitmap: '',
     ...overrides,
   })
 }
@@ -95,6 +109,26 @@ export function updateLayer(documentState, layerId, updater) {
 export function appendLayer(documentState, layer) {
   return {
     layers: [...documentState.layers, layer],
+    selectedLayerId: layer.id,
+  }
+}
+
+export function insertLayer(documentState, layer, afterLayerId = null) {
+  if (!afterLayerId) {
+    return appendLayer(documentState, layer)
+  }
+
+  const currentIndex = documentState.layers.findIndex((candidate) => candidate.id === afterLayerId)
+
+  if (currentIndex === -1) {
+    return appendLayer(documentState, layer)
+  }
+
+  const nextLayers = [...documentState.layers]
+  nextLayers.splice(currentIndex + 1, 0, layer)
+
+  return {
+    layers: nextLayers,
     selectedLayerId: layer.id,
   }
 }
@@ -139,5 +173,9 @@ export function moveLayer(documentState, layerId, direction) {
 }
 
 export function isRasterLayer(layer) {
-  return layer?.type === 'image'
+  return layer?.type === 'image' || layer?.type === 'raster'
+}
+
+export function isErasableLayer(layer) {
+  return isRasterLayer(layer) || layer?.type === 'text'
 }

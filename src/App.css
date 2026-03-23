@@ -265,6 +265,10 @@
   line-height: 0.95;
 }
 
+.text-layer-canvas {
+  display: block;
+}
+
 .text-layer-editor {
   border: 1px dashed rgba(15, 118, 110, 0.45);
   padding: 0;
@@ -427,6 +431,11 @@
   width: 0.9rem;
   height: 0.9rem;
   display: block;
+}
+
+.toolbar-actions .action-button .button-icon {
+  width: 1.6rem;
+  height: 1.6rem;
 }
 
 .icon-button:disabled {

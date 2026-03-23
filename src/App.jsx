@@ -1,21 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
+import addImageIcon from './assets/add image.svg'
+import addTextIcon from './assets/add text.svg'
 import closeIcon from './assets/Close (X).svg'
 import downIcon from './assets/down.svg'
 import heroImage from './assets/hero.png'
 import hiddenIcon from './assets/Hidden.svg'
+import redoIcon from './assets/redo.svg'
+import undoIcon from './assets/undo.svg'
 import upIcon from './assets/up.svg'
 import visibleIcon from './assets/Visible.svg'
 import { useHistory } from './hooks/useHistory'
-import { eraseDot, eraseStroke } from './lib/eraserTool'
+import { eraseDot, eraseStroke, paintMaskDot, paintMaskStroke } from './lib/eraserTool'
 import {
   appendLayer,
   createDocument,
   createGroupLayer,
   createImageLayer,
+  createRasterLayer,
   createShapeLayer,
   createTextLayer,
+  isErasableLayer,
   findLayer,
+  insertLayer,
   isRasterLayer,
   moveLayer,
   removeLayer,
@@ -23,13 +30,22 @@ import {
   updateLayer,
 } from './lib/layers'
 import {
+  applyEraseMask,
   canvasToBitmap,
   cloneCanvas,
+  cropCanvasToBounds,
   createCanvasFromSource,
+  createTransparentCanvas,
+  createMaskCanvasFromSource,
+  createEmptyMaskCanvas,
+  getCanvasAlphaBounds,
+  measureTextLayerBounds,
   paintCanvas,
   readFileAsDataUrl,
+  renderTextLayerToCanvas,
   toLayerCoordinates,
 } from './lib/raster'
+import { drawDot, drawStroke } from './lib/penTool'
 
 const HANDLE_DIRECTIONS = [
   { key: 'nw', x: -1, y: -1 },
@@ -45,6 +61,10 @@ const HANDLE_DIRECTIONS = [
 const MIN_LAYER_WIDTH = 72
 const MIN_LAYER_HEIGHT = 48
 const DEFAULT_ERASER_SIZE = 28
+const DEFAULT_PEN_SIZE = 16
+const DEFAULT_PEN_COLOR = '#0f172a'
+const DOCUMENT_WIDTH = 760
+const DOCUMENT_HEIGHT = 570
 
 function getTextLayerName(text) {
   const normalizedText = text.replace(/\s+/g, ' ').trim()
@@ -55,6 +75,19 @@ function getFrameDimensions(layer) {
   return {
     width: Math.max(MIN_LAYER_WIDTH, layer.width * Math.max(Math.abs(layer.scaleX), 0.1)),
     height: Math.max(MIN_LAYER_HEIGHT, layer.height * Math.max(Math.abs(layer.scaleY), 0.1)),
+  }
+}
+
+function getTextLayerSize(layer, text = layer.text, fontSize = layer.fontSize) {
+  const bounds = measureTextLayerBounds({
+    ...layer,
+    text,
+    fontSize,
+  })
+
+  return {
+    width: Math.max(MIN_LAYER_WIDTH, bounds.width),
+    height: Math.max(MIN_LAYER_HEIGHT, bounds.height),
   }
 }
 
@@ -141,6 +174,7 @@ function isEditableTarget(target) {
 function createRasterSurfaceEntry() {
   return {
     offscreenCanvas: null,
+    maskCanvas: null,
     visibleCanvas: null,
     layerElement: null,
     bitmapKey: null,
@@ -148,8 +182,41 @@ function createRasterSurfaceEntry() {
   }
 }
 
+function toDocumentCoordinates(pointerEvent, element) {
+  if (!element) {
+    return null
+  }
+
+  const rect = element.getBoundingClientRect()
+
+  if (rect.width === 0 || rect.height === 0) {
+    return null
+  }
+
+  const normalizedX = (pointerEvent.clientX - rect.left) / rect.width
+  const normalizedY = (pointerEvent.clientY - rect.top) / rect.height
+
+  return {
+    x: Math.min(Math.max(normalizedX, 0), 1) * DOCUMENT_WIDTH,
+    y: Math.min(Math.max(normalizedY, 0), 1) * DOCUMENT_HEIGHT,
+  }
+}
+
+function getPointerSamples(pointerEvent) {
+  if (typeof pointerEvent.getCoalescedEvents === 'function') {
+    const samples = pointerEvent.getCoalescedEvents()
+
+    if (samples.length > 0) {
+      return samples
+    }
+  }
+
+  return [pointerEvent]
+}
+
 function App() {
   const canvasRef = useRef(null)
+  const canvasSurfaceRef = useRef(null)
   const imageInputRef = useRef(null)
   const interactionRef = useRef(null)
   const rasterSurfacesRef = useRef(new Map())
@@ -167,11 +234,20 @@ function App() {
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
   const [activeTool, setActiveTool] = useState('select')
+  const [penDrawingLayerId, setPenDrawingLayerId] = useState(null)
+  const [penColor, setPenColor] = useState(DEFAULT_PEN_COLOR)
+  const [penSize, setPenSize] = useState(DEFAULT_PEN_SIZE)
   const [eraserSize, setEraserSize] = useState(DEFAULT_ERASER_SIZE)
 
   const selectedLayer = findLayer(documentState, documentState.selectedLayerId)
-  const canEraseSelectedLayer = isRasterLayer(selectedLayer)
-  const currentTool = activeTool === 'eraser' && canEraseSelectedLayer ? 'eraser' : 'select'
+  const canEraseSelectedLayer = isErasableLayer(selectedLayer)
+  const currentTool = (
+    activeTool === 'pen'
+      ? 'pen'
+      : activeTool === 'eraser' && canEraseSelectedLayer
+        ? 'eraser'
+        : 'select'
+  )
 
   const getRasterSurfaceEntry = useCallback((layerId) => {
     const existingEntry = rasterSurfacesRef.current.get(layerId)
@@ -195,14 +271,41 @@ function App() {
     paintCanvas(entry.visibleCanvas, entry.offscreenCanvas)
   }, [])
 
+  const getLayerSurfaceKey = useCallback((layer) => {
+    if (isRasterLayer(layer)) {
+      return JSON.stringify({
+        type: layer.type,
+        bitmap: layer.bitmap ?? '',
+        width: layer.type === 'raster' ? layer.width : null,
+        height: layer.type === 'raster' ? layer.height : null,
+      })
+    }
+
+    if (layer.type === 'text') {
+      return JSON.stringify({
+        type: layer.type,
+        width: layer.width,
+        height: layer.height,
+        text: layer.text,
+        fontFamily: layer.fontFamily,
+        fontSize: layer.fontSize,
+        color: layer.color,
+        eraseMask: layer.eraseMask ?? '',
+      })
+    }
+
+    return `${layer.id}:${layer.type}`
+  }, [])
+
   const ensureRasterLayerSurface = useCallback(async (layer) => {
-    if (!isRasterLayer(layer) || !layer.bitmap) {
+    if (!isErasableLayer(layer)) {
       return null
     }
 
     const entry = getRasterSurfaceEntry(layer.id)
+    const surfaceKey = getLayerSurfaceKey(layer)
 
-    if (entry.offscreenCanvas && entry.bitmapKey === layer.bitmap) {
+    if (entry.offscreenCanvas && entry.bitmapKey === surfaceKey) {
       drawRasterLayer(layer.id)
       return entry.offscreenCanvas
     }
@@ -210,18 +313,46 @@ function App() {
     const nextToken = entry.syncToken + 1
     entry.syncToken = nextToken
 
-    const { canvas } = await createCanvasFromSource(layer.bitmap)
+    let canvas = null
+    let maskCanvas = null
+
+    if (layer.type === 'image') {
+      const imageSurface = await createCanvasFromSource(layer.bitmap)
+      canvas = imageSurface.canvas
+      maskCanvas = null
+    }
+
+    if (layer.type === 'raster') {
+      if (layer.bitmap) {
+        const rasterSurface = await createCanvasFromSource(layer.bitmap)
+        canvas = rasterSurface.canvas
+      } else {
+        canvas = createTransparentCanvas(layer.width, layer.height)
+      }
+      maskCanvas = null
+    }
+
+    if (layer.type === 'text') {
+      const baseCanvas = renderTextLayerToCanvas(layer)
+      maskCanvas = await createMaskCanvasFromSource(
+        layer.eraseMask ?? '',
+        baseCanvas.width,
+        baseCanvas.height,
+      )
+      canvas = applyEraseMask(baseCanvas, maskCanvas)
+    }
 
     if (entry.syncToken !== nextToken) {
       return entry.offscreenCanvas
     }
 
     entry.offscreenCanvas = canvas
-    entry.bitmapKey = layer.bitmap
+    entry.maskCanvas = maskCanvas
+    entry.bitmapKey = surfaceKey
     drawRasterLayer(layer.id)
 
     return entry.offscreenCanvas
-  }, [drawRasterLayer, getRasterSurfaceEntry])
+  }, [drawRasterLayer, getLayerSurfaceKey, getRasterSurfaceEntry])
 
   useEffect(() => {
     const currentLayerIds = new Set(documentState.layers.map((layer) => layer.id))
@@ -233,7 +364,7 @@ function App() {
     }
 
     for (const layer of documentState.layers) {
-      if (isRasterLayer(layer) && layer.bitmap) {
+      if (isErasableLayer(layer)) {
         ensureRasterLayerSurface(layer).catch(() => {})
       }
     }
@@ -325,20 +456,88 @@ function App() {
         }
 
         setTransient((currentDocument) =>
-          updateLayer(currentDocument, interaction.layerId, (layer) => ({
-            ...layer,
-            x: nextX,
-            y: nextY,
-            width: Math.max(
+          updateLayer(currentDocument, interaction.layerId, (layer) => {
+            const nextWidth = Math.max(
               MIN_LAYER_WIDTH,
               nextFrameWidth / Math.max(Math.abs(layer.scaleX), 0.1),
-            ),
-            height: Math.max(
+            )
+            const nextHeight = Math.max(
               MIN_LAYER_HEIGHT,
               nextFrameHeight / Math.max(Math.abs(layer.scaleY), 0.1),
-            ),
-          })),
+            )
+
+            if (interaction.layerType === 'text' && interaction.startFontSize) {
+              const widthRatio = nextWidth / Math.max(interaction.startWidth, 1)
+              const heightRatio = nextHeight / Math.max(interaction.startHeight, 1)
+              const scaleRatio = interaction.handle.x !== 0 && interaction.handle.y !== 0
+                ? Math.max(widthRatio, heightRatio)
+                : interaction.handle.y !== 0
+                  ? heightRatio
+                  : widthRatio
+
+              return {
+                ...layer,
+                x: nextX,
+                y: nextY,
+                width: nextWidth,
+                height: nextHeight,
+                fontSize: Math.max(8, Math.round(interaction.startFontSize * scaleRatio)),
+              }
+            }
+
+            return {
+              ...layer,
+              x: nextX,
+              y: nextY,
+              width: nextWidth,
+              height: nextHeight,
+            }
+          }),
         )
+      }
+
+      if (interaction.type === 'pen') {
+        const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+        const pointerSamples = getPointerSamples(event)
+
+        if (!surfaceEntry?.offscreenCanvas || pointerSamples.length === 0) {
+          return
+        }
+
+        const context = surfaceEntry.offscreenCanvas.getContext('2d')
+
+        if (!context) {
+          return
+        }
+
+        let lastPoint = interaction.lastPoint
+
+        for (const pointerSample of pointerSamples) {
+          const layerPoint = toDocumentCoordinates(pointerSample, canvasSurfaceRef.current)
+
+          if (!layerPoint) {
+            continue
+          }
+
+          drawStroke(
+            context,
+            lastPoint.x,
+            lastPoint.y,
+            layerPoint.x,
+            layerPoint.y,
+            interaction.color,
+            interaction.size,
+          )
+          lastPoint = layerPoint
+        }
+
+        drawRasterLayer(interaction.layerId)
+
+        interactionRef.current = {
+          ...interaction,
+          lastPoint,
+          hasChanged: true,
+        }
       }
 
       if (interaction.type === 'erase') {
@@ -358,14 +557,37 @@ function App() {
           return
         }
 
-        eraseStroke(
-          context,
-          interaction.lastPoint.x,
-          interaction.lastPoint.y,
-          layerPoint.x,
-          layerPoint.y,
-          interaction.size,
-        )
+        if (interaction.layerType === 'text') {
+          const maskContext = surfaceEntry.maskCanvas?.getContext('2d')
+
+          if (!maskContext) {
+            return
+          }
+
+          maskContext.fillStyle = '#000000'
+          maskContext.strokeStyle = '#000000'
+          paintMaskStroke(
+            maskContext,
+            interaction.lastPoint.x,
+            interaction.lastPoint.y,
+            layerPoint.x,
+            layerPoint.y,
+            interaction.size,
+          )
+
+          const baseCanvas = renderTextLayerToCanvas(currentLayer)
+          surfaceEntry.offscreenCanvas = applyEraseMask(baseCanvas, surfaceEntry.maskCanvas)
+        } else {
+          eraseStroke(
+            context,
+            interaction.lastPoint.x,
+            interaction.lastPoint.y,
+            layerPoint.x,
+            layerPoint.y,
+            interaction.size,
+          )
+        }
+
         drawRasterLayer(interaction.layerId)
 
         interactionRef.current = {
@@ -379,16 +601,46 @@ function App() {
     function handlePointerUp() {
       const interaction = interactionRef.current
 
-      if (interaction?.type === 'erase') {
+      if (interaction?.type === 'pen') {
         if (interaction.hasChanged) {
           const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+          const currentLayer = findLayer(documentState, interaction.layerId)
 
-          if (surfaceEntry?.offscreenCanvas) {
-            const nextBitmap = canvasToBitmap(surfaceEntry.offscreenCanvas)
+          if (surfaceEntry?.offscreenCanvas && currentLayer) {
+            let nextCanvas = surfaceEntry.offscreenCanvas
+            let nextX = currentLayer.x
+            let nextY = currentLayer.y
+            let nextWidth = currentLayer.width
+            let nextHeight = currentLayer.height
+
+            if (currentLayer.type === 'raster') {
+              const nextBounds = getCanvasAlphaBounds(surfaceEntry.offscreenCanvas)
+
+              if (nextBounds) {
+                nextCanvas = cropCanvasToBounds(surfaceEntry.offscreenCanvas, nextBounds)
+                nextX = nextBounds.x
+                nextY = nextBounds.y
+                nextWidth = nextBounds.width
+                nextHeight = nextBounds.height
+                surfaceEntry.offscreenCanvas = nextCanvas
+                surfaceEntry.bitmapKey = JSON.stringify({
+                  type: currentLayer.type,
+                  bitmap: canvasToBitmap(nextCanvas),
+                  width: nextWidth,
+                  height: nextHeight,
+                })
+              }
+            }
+
+            const nextBitmap = canvasToBitmap(nextCanvas)
 
             commit((currentDocument) =>
               updateLayer(currentDocument, interaction.layerId, {
                 bitmap: nextBitmap,
+                x: nextX,
+                y: nextY,
+                width: nextWidth,
+                height: nextHeight,
               }),
             )
           }
@@ -397,6 +649,46 @@ function App() {
 
           if (surfaceEntry?.offscreenCanvas) {
             surfaceEntry.offscreenCanvas = interaction.restoreCanvas
+            drawRasterLayer(interaction.layerId)
+          }
+        }
+
+        setPenDrawingLayerId(null)
+        interactionRef.current = null
+        return
+      }
+
+      if (interaction?.type === 'erase') {
+        if (interaction.hasChanged) {
+          const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+
+          if (surfaceEntry?.offscreenCanvas) {
+            if (interaction.layerType === 'text' && surfaceEntry.maskCanvas) {
+              const nextEraseMask = canvasToBitmap(surfaceEntry.maskCanvas)
+
+              commit((currentDocument) =>
+                updateLayer(currentDocument, interaction.layerId, {
+                  eraseMask: nextEraseMask,
+                }),
+              )
+            } else {
+              const nextBitmap = canvasToBitmap(surfaceEntry.offscreenCanvas)
+
+              commit((currentDocument) =>
+                updateLayer(currentDocument, interaction.layerId, {
+                  bitmap: nextBitmap,
+                }),
+              )
+            }
+          }
+        } else if (interaction.restoreCanvas) {
+          const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+
+          if (surfaceEntry?.offscreenCanvas) {
+            surfaceEntry.offscreenCanvas = interaction.restoreCanvas
+            if (interaction.restoreMaskCanvas) {
+              surfaceEntry.maskCanvas = interaction.restoreMaskCanvas
+            }
             drawRasterLayer(interaction.layerId)
           }
         }
@@ -467,6 +759,23 @@ function App() {
   function addLayer(factory) {
     const nextLayer = factory()
     applyDocumentChange((currentDocument) => appendLayer(currentDocument, nextLayer))
+  }
+
+  function resolvePenLayer(targetLayer) {
+    if (selectedLayer?.type === 'raster') {
+      return selectedLayer
+    }
+
+    if (targetLayer?.type === 'raster') {
+      return targetLayer
+    }
+
+    const nextLayer = createRasterLayer({
+      name: 'Drawing Layer',
+    })
+
+    commit((currentDocument) => insertLayer(currentDocument, nextLayer, targetLayer?.id ?? null))
+    return nextLayer
   }
 
   async function handleImageImport(event) {
@@ -560,6 +869,7 @@ function App() {
     interactionRef.current = {
       type: 'resize',
       layerId: layer.id,
+      layerType: layer.type,
       handle,
       pointerStart: {
         x: event.clientX - rect.left,
@@ -567,10 +877,61 @@ function App() {
       },
       startX: layer.x,
       startY: layer.y,
+      startWidth: layer.width,
+      startHeight: layer.height,
+      startFontSize: layer.type === 'text' ? layer.fontSize : null,
       frameWidth: width,
       frameHeight: height,
       originDocument: documentState,
       hasChanged: false,
+    }
+  }
+
+  async function beginPenStroke(event, layer) {
+    event.stopPropagation()
+    event.preventDefault()
+
+    const penLayer = resolvePenLayer(layer)
+    selectDocumentLayer(penLayer.id)
+
+    const surfaceCanvas = await ensureRasterLayerSurface(penLayer)
+    const surfaceEntry = rasterSurfacesRef.current.get(penLayer.id)
+    const documentPoint = toDocumentCoordinates(event, canvasSurfaceRef.current)
+
+    if (!surfaceCanvas || !surfaceEntry || !documentPoint) {
+      return
+    }
+
+    const workingCanvas = createTransparentCanvas(DOCUMENT_WIDTH, DOCUMENT_HEIGHT)
+    const workingContext = workingCanvas.getContext('2d')
+
+    if (!workingContext) {
+      return
+    }
+
+    workingContext.drawImage(
+      surfaceCanvas,
+      penLayer.x,
+      penLayer.y,
+      penLayer.width,
+      penLayer.height,
+    )
+
+    const restoreCanvas = cloneCanvas(workingCanvas)
+
+    drawDot(workingContext, documentPoint.x, documentPoint.y, penColor, penSize)
+    surfaceEntry.offscreenCanvas = workingCanvas
+    drawRasterLayer(penLayer.id)
+    setPenDrawingLayerId(penLayer.id)
+
+    interactionRef.current = {
+      type: 'pen',
+      layerId: penLayer.id,
+      lastPoint: documentPoint,
+      color: penColor,
+      size: penSize,
+      restoreCanvas,
+      hasChanged: true,
     }
   }
 
@@ -580,7 +941,7 @@ function App() {
 
     selectDocumentLayer(layer.id)
 
-    if (!isRasterLayer(layer)) {
+    if (!isErasableLayer(layer)) {
       return
     }
 
@@ -601,20 +962,48 @@ function App() {
     }
 
     const restoreCanvas = cloneCanvas(surfaceCanvas)
-    eraseDot(context, layerPoint.x, layerPoint.y, eraserSize)
+    const restoreMaskCanvas = surfaceEntry.maskCanvas ? cloneCanvas(surfaceEntry.maskCanvas) : null
+
+    if (layer.type === 'text') {
+      if (!surfaceEntry.maskCanvas) {
+        surfaceEntry.maskCanvas = createEmptyMaskCanvas(surfaceCanvas.width, surfaceCanvas.height)
+      }
+
+      const maskContext = surfaceEntry.maskCanvas.getContext('2d')
+
+      if (!maskContext) {
+        return
+      }
+
+      maskContext.fillStyle = '#000000'
+      maskContext.strokeStyle = '#000000'
+      paintMaskDot(maskContext, layerPoint.x, layerPoint.y, eraserSize)
+      const baseCanvas = renderTextLayerToCanvas(layer)
+      surfaceEntry.offscreenCanvas = applyEraseMask(baseCanvas, surfaceEntry.maskCanvas)
+    } else {
+      eraseDot(context, layerPoint.x, layerPoint.y, eraserSize)
+    }
+
     drawRasterLayer(layer.id)
 
     interactionRef.current = {
       type: 'erase',
       layerId: layer.id,
+      layerType: layer.type,
       lastPoint: layerPoint,
       size: eraserSize,
       restoreCanvas,
+      restoreMaskCanvas,
       hasChanged: true,
     }
   }
 
   function handleLayerPointerDown(event, layer) {
+    if (currentTool === 'pen') {
+      beginPenStroke(event, layer)
+      return
+    }
+
     if (currentTool === 'eraser') {
       beginErase(event, layer)
       return
@@ -624,6 +1013,11 @@ function App() {
   }
 
   function handleCanvasPointerDown(event) {
+    if (currentTool === 'pen') {
+      beginPenStroke(event, selectedLayer)
+      return
+    }
+
     if (event.target === event.currentTarget) {
       selectDocumentLayer(null)
     }
@@ -656,15 +1050,33 @@ function App() {
     interactionRef.current = null
   }
 
+  function updateTextLayerContent(layerId, nextText, applyTransient = false) {
+    const targetLayer = findLayer(documentState, layerId)
+
+    if (!targetLayer || targetLayer.type !== 'text') {
+      return
+    }
+
+    const nextSize = getTextLayerSize(targetLayer, nextText)
+    const nextPatch = {
+      text: nextText,
+      name: getTextLayerName(nextText),
+      width: nextSize.width,
+      height: nextSize.height,
+    }
+
+    if (applyTransient) {
+      setTransient((currentDocument) => updateLayer(currentDocument, layerId, nextPatch))
+      return
+    }
+
+    applyDocumentChange((currentDocument) => updateLayer(currentDocument, layerId, nextPatch))
+  }
+
   function commitTextEditing(layerId) {
     const nextText = textDraft.trim() ? textDraft : 'New Text'
 
-    applyDocumentChange((currentDocument) =>
-      updateLayer(currentDocument, layerId, {
-        text: nextText,
-        name: getTextLayerName(nextText),
-      }),
-    )
+    updateTextLayerContent(layerId, nextText)
     setEditingTextLayerId(null)
     setTextDraft('')
   }
@@ -692,18 +1104,28 @@ function App() {
 
     const isSelected = layer.id === documentState.selectedLayerId
     const isEditingText = layer.type === 'text' && layer.id === editingTextLayerId
-    const showEraserCursor = currentTool === 'eraser' && isRasterLayer(layer)
+    const showEraserCursor = currentTool === 'eraser' && isErasableLayer(layer)
+    const showPenCursor = currentTool === 'pen' && isRasterLayer(layer)
+    const showPenSurface = showPenCursor && penDrawingLayerId === layer.id
+    const layerLeft = showPenSurface ? 0 : layer.x
+    const layerTop = showPenSurface ? 0 : layer.y
+    const layerWidth = showPenSurface ? DOCUMENT_WIDTH : layer.width
+    const layerHeight = showPenSurface ? DOCUMENT_HEIGHT : layer.height
 
     return (
       <div
         key={layer.id}
         ref={(node) => registerLayerElement(layer.id, node)}
-        className={showEraserCursor ? 'canvas-layer eraser-enabled' : 'canvas-layer'}
+        className={showPenCursor
+          ? 'canvas-layer pen-enabled'
+          : showEraserCursor
+            ? 'canvas-layer eraser-enabled'
+            : 'canvas-layer'}
         style={{
-          left: `${layer.x}px`,
-          top: `${layer.y}px`,
-          width: `${layer.width}px`,
-          height: `${layer.height}px`,
+          left: `${layerLeft}px`,
+          top: `${layerTop}px`,
+          width: `${layerWidth}px`,
+          height: `${layerHeight}px`,
           transform: `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
           opacity: layer.opacity,
           zIndex: index + 1,
@@ -720,7 +1142,10 @@ function App() {
                 fontSize: `${layer.fontSize}px`,
                 color: layer.color,
               }}
-              onChange={(event) => setTextDraft(event.target.value)}
+              onChange={(event) => {
+                setTextDraft(event.target.value)
+                updateTextLayerContent(layer.id, event.target.value, true)
+              }}
               onBlur={() => commitTextEditing(layer.id)}
               onPointerDown={(event) => event.stopPropagation()}
               onKeyDown={(event) => {
@@ -737,20 +1162,14 @@ function App() {
               autoFocus
             />
           ) : (
-            <div
-              className="layer-body text-layer-body"
-              style={{
-                fontFamily: layer.fontFamily,
-                fontSize: `${layer.fontSize}px`,
-                color: layer.color,
-              }}
+            <canvas
+              ref={(node) => registerVisibleCanvas(layer.id, node)}
+              className="layer-body text-layer-canvas"
               onDoubleClick={(event) => {
                 event.stopPropagation()
                 beginTextEditing(layer)
               }}
-            >
-              {layer.text}
-            </div>
+            />
           )
         )}
         {layer.type === 'shape' && (
@@ -762,7 +1181,7 @@ function App() {
             }}
           />
         )}
-        {layer.type === 'image' && (
+        {isRasterLayer(layer) && (
           <div className="layer-body image-layer-body">
             <canvas
               ref={(node) => registerVisibleCanvas(layer.id, node)}
@@ -777,7 +1196,7 @@ function App() {
           </div>
         )}
 
-        {isSelected && (
+        {isSelected && currentTool !== 'pen' && (
           <div className="selection-frame" aria-hidden="true">
             {HANDLE_DIRECTIONS.map((handle) => (
               <button
@@ -806,17 +1225,47 @@ function App() {
               className={currentTool === 'select' ? 'action-button active' : 'action-button'}
               type="button"
               onClick={() => setActiveTool('select')}
+              aria-label="Select"
             >
               Select
+            </button>
+            <button
+              className={currentTool === 'pen' ? 'action-button active' : 'action-button'}
+              type="button"
+              onClick={() => setActiveTool('pen')}
+              aria-label="Pen"
+            >
+              Pen
             </button>
             <button
               className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
               type="button"
               disabled={!canEraseSelectedLayer}
               onClick={() => setActiveTool('eraser')}
+              aria-label="Eraser"
             >
               Eraser
             </button>
+            <label className="toolbar-range toolbar-color">
+              <span>Pen</span>
+              <input
+                type="color"
+                value={penColor}
+                onChange={(event) => setPenColor(event.target.value)}
+              />
+            </label>
+            <label className="toolbar-range">
+              <span>Brush</span>
+              <input
+                type="range"
+                min="2"
+                max="64"
+                step="1"
+                value={penSize}
+                onChange={(event) => setPenSize(Number(event.target.value))}
+              />
+              <strong>{penSize}</strong>
+            </label>
             <label className="toolbar-range">
               <span>Eraser</span>
               <input
@@ -827,23 +1276,25 @@ function App() {
                 value={eraserSize}
                 onChange={(event) => setEraserSize(Number(event.target.value))}
               />
-              <strong>{eraserSize}px</strong>
+              <strong>{eraserSize}</strong>
             </label>
             <button
               className="action-button"
               type="button"
               disabled={!canUndo}
               onClick={undo}
+              aria-label="Undo"
             >
-              Undo
+              <img className="button-icon" src={undoIcon} alt="" aria-hidden="true" />
             </button>
             <button
               className="action-button"
               type="button"
               disabled={!canRedo}
               onClick={redo}
+              aria-label="Redo"
             >
-              Redo
+              <img className="button-icon" src={redoIcon} alt="" aria-hidden="true" />
             </button>
             <button
               className="action-button"
@@ -857,15 +1308,31 @@ function App() {
                   }),
                 )
               }
+              aria-label="Add Text"
             >
-              Add Text
+              <img className="button-icon" src={addTextIcon} alt="" aria-hidden="true" />
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              onClick={() =>
+                addLayer(() =>
+                  createRasterLayer({
+                    name: 'Drawing Layer',
+                  }),
+                )
+              }
+              aria-label="Add Drawing"
+            >
+              Layer
             </button>
             <button
               className="action-button"
               type="button"
               onClick={() => imageInputRef.current?.click()}
+              aria-label="Add Image"
             >
-              Add Image
+              <img className="button-icon" src={addImageIcon} alt="" aria-hidden="true" />
             </button>
             <button
               className="action-button"
@@ -894,7 +1361,9 @@ function App() {
                 onPointerDown={handleCanvasPointerDown}
                 role="presentation"
               >
-                <div className="canvas-surface">{documentState.layers.map(renderLayer)}</div>
+                <div ref={canvasSurfaceRef} className="canvas-surface">
+                  {documentState.layers.map(renderLayer)}
+                </div>
               </div>
             </section>
 
@@ -1146,10 +1615,7 @@ function App() {
                           <textarea
                             value={selectedLayer.text}
                             onChange={(event) =>
-                              updateSelectedLayer({
-                                text: event.target.value,
-                                name: getTextLayerName(event.target.value),
-                              })
+                              updateTextLayerContent(selectedLayer.id, event.target.value)
                             }
                           />
                         </label>
@@ -1159,9 +1625,25 @@ function App() {
                             type="number"
                             min="8"
                             value={selectedLayer.fontSize}
-                            onChange={(event) =>
-                              handleNumericChange('fontSize', event.target.value, 8)
-                            }
+                            onChange={(event) => {
+                              const nextFontSize = Math.max(8, Number(event.target.value))
+
+                              if (!Number.isFinite(nextFontSize)) {
+                                return
+                              }
+
+                              const nextSize = getTextLayerSize(
+                                selectedLayer,
+                                selectedLayer.text,
+                                nextFontSize,
+                              )
+
+                              updateSelectedLayer({
+                                fontSize: nextFontSize,
+                                width: nextSize.width,
+                                height: nextSize.height,
+                              })
+                            }}
                           />
                         </label>
                         <label className="property-field">
@@ -1213,10 +1695,17 @@ function App() {
                           />
                         </label>
                         <div className="group-note full-width">
-                          Raster layers are editable with the eraser tool and store transparency in
-                          their bitmap.
+                          Raster image layers can be erased directly. Using the pen creates a new
+                          drawing layer above the current selection.
                         </div>
                       </>
+                    )}
+
+                    {selectedLayer.type === 'raster' && (
+                      <div className="group-note full-width">
+                        Drawing layers are editable with the pen and eraser tools. Each stroke is
+                        committed as a single bitmap history step.
+                      </div>
                     )}
 
                     {selectedLayer.type === 'group' && (

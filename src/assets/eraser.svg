@@ -1,0 +1,10 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Eraser body - tilted rectangle -->
+  <path d="M14 28L20 14L38 20L32 34L14 28Z" fill="black" opacity="0.3" stroke="black" stroke-width="2" stroke-linejoin="round"/>
+  
+  <!-- Eraser bottom edge -->
+  <line x1="14" y1="28" x2="32" y2="34" stroke="black" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Diagonal line across eraser -->
+  <line x1="20" y1="14" x2="14" y2="28" stroke="black" stroke-width="2" stroke-linecap="round"/>
+</svg>
