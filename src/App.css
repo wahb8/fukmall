@@ -460,6 +460,7 @@
 }
 
 .layer-name-input,
+.property-field select,
 .property-field input,
 .property-field textarea {
   width: 100%;
@@ -504,6 +505,7 @@
   font-size: 0.9rem;
 }
 
+.property-field select,
 .property-field input,
 .property-field textarea {
   padding: 0.72rem 0.8rem;

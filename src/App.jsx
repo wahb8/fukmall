@@ -39,13 +39,20 @@ import {
   createMaskCanvasFromSource,
   createEmptyMaskCanvas,
   getCanvasAlphaBounds,
-  measureTextLayerBounds,
   paintCanvas,
   readFileAsDataUrl,
   renderTextLayerToCanvas,
   toLayerCoordinates,
 } from './lib/raster'
 import { drawDot, drawStroke } from './lib/penTool'
+import { FONT_FAMILY_OPTIONS } from './lib/fontOptions'
+import {
+  resizeBoxText,
+  resizePointTextTransform,
+  updateTextContent,
+  updateTextLayerFont,
+  updateTextStyle,
+} from './lib/textLayer'
 
 const HANDLE_DIRECTIONS = [
   { key: 'nw', x: -1, y: -1 },
@@ -75,19 +82,6 @@ function getFrameDimensions(layer) {
   return {
     width: Math.max(MIN_LAYER_WIDTH, layer.width * Math.max(Math.abs(layer.scaleX), 0.1)),
     height: Math.max(MIN_LAYER_HEIGHT, layer.height * Math.max(Math.abs(layer.scaleY), 0.1)),
-  }
-}
-
-function getTextLayerSize(layer, text = layer.text, fontSize = layer.fontSize) {
-  const bounds = measureTextLayerBounds({
-    ...layer,
-    text,
-    fontSize,
-  })
-
-  return {
-    width: Math.max(MIN_LAYER_WIDTH, bounds.width),
-    height: Math.max(MIN_LAYER_HEIGHT, bounds.height),
   }
 }
 
@@ -241,13 +235,8 @@ function App() {
 
   const selectedLayer = findLayer(documentState, documentState.selectedLayerId)
   const canEraseSelectedLayer = isErasableLayer(selectedLayer)
-  const currentTool = (
-    activeTool === 'pen'
-      ? 'pen'
-      : activeTool === 'eraser' && canEraseSelectedLayer
-        ? 'eraser'
-        : 'select'
-  )
+  const currentTool = activeTool
+  const activeBrushTool = currentTool === 'eraser' ? 'eraser' : 'pen'
 
   const getRasterSurfaceEntry = useCallback((layerId) => {
     const existingEntry = rasterSurfacesRef.current.get(layerId)
@@ -427,7 +416,7 @@ function App() {
           nextY = interaction.startY + (startFrameHeight - nextFrameHeight)
         }
 
-        if (interaction.handle.x !== 0 && interaction.handle.y !== 0) {
+        if (interaction.handle.x !== 0 && interaction.handle.y !== 0 && event.shiftKey) {
           const widthRatio = nextFrameWidth / startFrameWidth
           const heightRatio = nextFrameHeight / startFrameHeight
           const dominantRatio =
@@ -457,6 +446,52 @@ function App() {
 
         setTransient((currentDocument) =>
           updateLayer(currentDocument, interaction.layerId, (layer) => {
+            if (interaction.layerType === 'text') {
+              if (layer.mode === 'box') {
+                const nextWidth = Math.max(
+                  MIN_LAYER_WIDTH,
+                  nextFrameWidth / Math.max(Math.abs(layer.scaleX), 0.1),
+                )
+                const nextHeight = Math.max(
+                  MIN_LAYER_HEIGHT,
+                  nextFrameHeight / Math.max(Math.abs(layer.scaleY), 0.1),
+                )
+
+                return resizeBoxText(
+                  {
+                    ...layer,
+                    x: nextX,
+                    y: nextY,
+                  },
+                  nextWidth,
+                  nextHeight,
+                )
+              }
+
+              const nextScaleX = Math.max(
+                0.1,
+                nextFrameWidth / Math.max(interaction.startWidth, 1),
+              )
+              const nextScaleY = Math.max(
+                0.1,
+                nextFrameHeight / Math.max(interaction.startHeight, 1),
+              )
+
+              return {
+                ...resizePointTextTransform(
+                  {
+                    ...layer,
+                    x: nextX,
+                    y: nextY,
+                  },
+                  nextScaleX,
+                  nextScaleY,
+                ),
+                width: layer.measuredWidth ?? layer.width,
+                height: layer.measuredHeight ?? layer.height,
+              }
+            }
+
             const nextWidth = Math.max(
               MIN_LAYER_WIDTH,
               nextFrameWidth / Math.max(Math.abs(layer.scaleX), 0.1),
@@ -465,25 +500,6 @@ function App() {
               MIN_LAYER_HEIGHT,
               nextFrameHeight / Math.max(Math.abs(layer.scaleY), 0.1),
             )
-
-            if (interaction.layerType === 'text' && interaction.startFontSize) {
-              const widthRatio = nextWidth / Math.max(interaction.startWidth, 1)
-              const heightRatio = nextHeight / Math.max(interaction.startHeight, 1)
-              const scaleRatio = interaction.handle.x !== 0 && interaction.handle.y !== 0
-                ? Math.max(widthRatio, heightRatio)
-                : interaction.handle.y !== 0
-                  ? heightRatio
-                  : widthRatio
-
-              return {
-                ...layer,
-                x: nextX,
-                y: nextY,
-                width: nextWidth,
-                height: nextHeight,
-                fontSize: Math.max(8, Math.round(interaction.startFontSize * scaleRatio)),
-              }
-            }
 
             return {
               ...layer,
@@ -748,6 +764,32 @@ function App() {
     }
   }, [redo, undo])
 
+  useEffect(() => {
+    function handleDocumentPointerDown(event) {
+      const canvas = canvasRef.current
+
+      if (!canvas) {
+        return
+      }
+
+      if (event.target instanceof HTMLElement && event.target.closest('.sidebar')) {
+        return
+      }
+
+      if (canvas.contains(event.target)) {
+        return
+      }
+
+      selectDocumentLayer(null)
+    }
+
+    window.addEventListener('pointerdown', handleDocumentPointerDown)
+
+    return () => {
+      window.removeEventListener('pointerdown', handleDocumentPointerDown)
+    }
+  }, [setTransient])
+
   function applyDocumentChange(updater) {
     commit((currentDocument) => updater(currentDocument))
   }
@@ -759,6 +801,10 @@ function App() {
   function addLayer(factory) {
     const nextLayer = factory()
     applyDocumentChange((currentDocument) => appendLayer(currentDocument, nextLayer))
+
+    if (nextLayer.type === 'text') {
+      setActiveTool('select')
+    }
   }
 
   function resolvePenLayer(targetLayer) {
@@ -806,6 +852,7 @@ function App() {
           fit: 'fill',
         }),
       )
+      setActiveTool('select')
     } catch {
       // Ignore failed imports for the MVP.
     }
@@ -820,6 +867,16 @@ function App() {
 
     applyDocumentChange((currentDocument) =>
       updateLayer(currentDocument, currentDocument.selectedLayerId, patch),
+    )
+  }
+
+  function applyTextLayerUpdate(layerId, updater, applyTransient = false) {
+    const runner = applyTransient ? setTransient : applyDocumentChange
+
+    runner((currentDocument) =>
+      updateLayer(currentDocument, layerId, (layer) => (
+        layer.type === 'text' ? updater(layer) : layer
+      )),
     )
   }
 
@@ -879,7 +936,8 @@ function App() {
       startY: layer.y,
       startWidth: layer.width,
       startHeight: layer.height,
-      startFontSize: layer.type === 'text' ? layer.fontSize : null,
+      startScaleX: layer.scaleX,
+      startScaleY: layer.scaleY,
       frameWidth: width,
       frameHeight: height,
       originDocument: documentState,
@@ -1018,7 +1076,7 @@ function App() {
       return
     }
 
-    if (event.target === event.currentTarget) {
+    if (!(event.target instanceof HTMLElement) || !event.target.closest('.canvas-layer')) {
       selectDocumentLayer(null)
     }
   }
@@ -1034,8 +1092,50 @@ function App() {
       return
     }
 
+    const resolvedValue = minimum === null ? numericValue : Math.max(minimum, numericValue)
+
+    if (selectedLayer.type === 'text') {
+      if (key === 'fontSize') {
+        applyTextLayerUpdate(selectedLayer.id, (layer) => updateTextStyle(layer, {
+          fontSize: resolvedValue,
+        }))
+        return
+      }
+
+      if (key === 'width') {
+        if (selectedLayer.mode === 'box') {
+          applyTextLayerUpdate(selectedLayer.id, (layer) => resizeBoxText(layer, resolvedValue))
+          return
+        }
+
+        applyTextLayerUpdate(selectedLayer.id, (layer) => resizePointTextTransform(
+          layer,
+          Math.max(0.1, resolvedValue / Math.max(layer.measuredWidth ?? layer.width, 1)),
+          layer.scaleY,
+        ))
+        return
+      }
+
+      if (key === 'height') {
+        if (selectedLayer.mode === 'box') {
+          applyTextLayerUpdate(
+            selectedLayer.id,
+            (layer) => resizeBoxText(layer, layer.boxWidth ?? layer.width, resolvedValue),
+          )
+          return
+        }
+
+        applyTextLayerUpdate(selectedLayer.id, (layer) => resizePointTextTransform(
+          layer,
+          layer.scaleX,
+          Math.max(0.1, resolvedValue / Math.max(layer.measuredHeight ?? layer.height, 1)),
+        ))
+        return
+      }
+    }
+
     updateSelectedLayer({
-      [key]: minimum === null ? numericValue : Math.max(minimum, numericValue),
+      [key]: resolvedValue,
     })
   }
 
@@ -1051,26 +1151,11 @@ function App() {
   }
 
   function updateTextLayerContent(layerId, nextText, applyTransient = false) {
-    const targetLayer = findLayer(documentState, layerId)
-
-    if (!targetLayer || targetLayer.type !== 'text') {
-      return
-    }
-
-    const nextSize = getTextLayerSize(targetLayer, nextText)
-    const nextPatch = {
-      text: nextText,
-      name: getTextLayerName(nextText),
-      width: nextSize.width,
-      height: nextSize.height,
-    }
-
-    if (applyTransient) {
-      setTransient((currentDocument) => updateLayer(currentDocument, layerId, nextPatch))
-      return
-    }
-
-    applyDocumentChange((currentDocument) => updateLayer(currentDocument, layerId, nextPatch))
+    applyTextLayerUpdate(
+      layerId,
+      (layer) => updateTextContent(layer, nextText),
+      applyTransient,
+    )
   }
 
   function commitTextEditing(layerId) {
@@ -1154,7 +1239,7 @@ function App() {
                   cancelTextEditing()
                 }
 
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
                   event.preventDefault()
                   commitTextEditing(layer.id)
                 }
@@ -1240,7 +1325,6 @@ function App() {
             <button
               className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
               type="button"
-              disabled={!canEraseSelectedLayer}
               onClick={() => setActiveTool('eraser')}
               aria-label="Eraser"
             >
@@ -1255,28 +1339,25 @@ function App() {
               />
             </label>
             <label className="toolbar-range">
-              <span>Brush</span>
+              <span>{activeBrushTool === 'pen' ? 'Brush' : 'Eraser'}</span>
               <input
                 type="range"
-                min="2"
-                max="64"
+                min={activeBrushTool === 'pen' ? '2' : '8'}
+                max={activeBrushTool === 'pen' ? '64' : '96'}
                 step="1"
-                value={penSize}
-                onChange={(event) => setPenSize(Number(event.target.value))}
+                value={activeBrushTool === 'pen' ? penSize : eraserSize}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value)
+
+                  if (activeBrushTool === 'pen') {
+                    setPenSize(nextValue)
+                    return
+                  }
+
+                  setEraserSize(nextValue)
+                }}
               />
-              <strong>{penSize}</strong>
-            </label>
-            <label className="toolbar-range">
-              <span>Eraser</span>
-              <input
-                type="range"
-                min="8"
-                max="96"
-                step="1"
-                value={eraserSize}
-                onChange={(event) => setEraserSize(Number(event.target.value))}
-              />
-              <strong>{eraserSize}</strong>
+              <strong>{activeBrushTool === 'pen' ? penSize : eraserSize}</strong>
             </label>
             <button
               className="action-button"
@@ -1610,6 +1691,47 @@ function App() {
 
                     {selectedLayer.type === 'text' && (
                       <>
+                        <label className="property-field">
+                          <span>Text Mode</span>
+                          <select
+                            value={selectedLayer.mode}
+                            onChange={(event) =>
+                              applyTextLayerUpdate(selectedLayer.id, (layer) => updateTextStyle(
+                                layer,
+                                {
+                                  mode: event.target.value,
+                                  boxWidth: event.target.value === 'box'
+                                    ? layer.boxWidth ?? layer.measuredWidth
+                                    : null,
+                                  boxHeight: event.target.value === 'box'
+                                    ? layer.boxHeight ?? layer.measuredHeight
+                                    : null,
+                                },
+                              ))
+                            }
+                          >
+                            <option value="point">Point</option>
+                            <option value="box">Box</option>
+                          </select>
+                        </label>
+                        <label className="property-field">
+                          <span>Font</span>
+                          <select
+                            value={selectedLayer.fontFamily}
+                            onChange={(event) =>
+                              applyTextLayerUpdate(
+                                selectedLayer.id,
+                                (layer) => updateTextLayerFont(layer, event.target.value),
+                              )
+                            }
+                          >
+                            {FONT_FAMILY_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                         <label className="property-field full-width">
                           <span>Text</span>
                           <textarea
@@ -1625,27 +1747,31 @@ function App() {
                             type="number"
                             min="8"
                             value={selectedLayer.fontSize}
-                            onChange={(event) => {
-                              const nextFontSize = Math.max(8, Number(event.target.value))
-
-                              if (!Number.isFinite(nextFontSize)) {
-                                return
-                              }
-
-                              const nextSize = getTextLayerSize(
-                                selectedLayer,
-                                selectedLayer.text,
-                                nextFontSize,
-                              )
-
-                              updateSelectedLayer({
-                                fontSize: nextFontSize,
-                                width: nextSize.width,
-                                height: nextSize.height,
-                              })
-                            }}
+                            onChange={(event) =>
+                              handleNumericChange('fontSize', event.target.value, 8)
+                            }
                           />
                         </label>
+                        {selectedLayer.mode === 'box' && (
+                          <label className="property-field">
+                            <span>Box Width</span>
+                            <input
+                              type="number"
+                              min={MIN_LAYER_WIDTH}
+                              value={selectedLayer.boxWidth ?? selectedLayer.width}
+                              onChange={(event) =>
+                                applyTextLayerUpdate(
+                                  selectedLayer.id,
+                                  (layer) => resizeBoxText(
+                                    layer,
+                                    Math.max(MIN_LAYER_WIDTH, Number(event.target.value) || layer.width),
+                                    layer.boxHeight ?? layer.height,
+                                  ),
+                                )
+                              }
+                            />
+                          </label>
+                        )}
                         <label className="property-field">
                           <span>Color</span>
                           <input

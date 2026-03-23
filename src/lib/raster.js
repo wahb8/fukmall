@@ -1,3 +1,5 @@
+import { measureTextLayer, renderTextLayer } from './textLayer'
+
 export function createCanvasElement() {
   return document.createElement('canvas')
 }
@@ -185,23 +187,21 @@ export async function createMaskCanvasFromSource(src, width, height) {
 }
 
 export function renderTextLayerToCanvas(layer) {
-  const canvas = createSizedCanvas(layer.width, layer.height)
+  const measurement = measureTextLayer(layer)
+  const canvas = createSizedCanvas(
+    layer.mode === 'box' ? layer.width : measurement.width,
+    layer.mode === 'box' ? layer.height : measurement.height,
+  )
   const context = canvas.getContext('2d')
 
   if (!context) {
     return canvas
   }
 
-  context.clearRect(0, 0, canvas.width, canvas.height)
-  context.fillStyle = layer.color
-  context.font = `${layer.fontSize}px ${layer.fontFamily}`
-  context.textBaseline = 'top'
-
-  const lines = String(layer.text ?? '').split('\n')
-  const lineHeight = layer.fontSize * 0.95
-
-  lines.forEach((line, index) => {
-    context.fillText(line, 0, index * lineHeight)
+  renderTextLayer(context, {
+    ...layer,
+    width: canvas.width,
+    height: canvas.height,
   })
 
   return canvas

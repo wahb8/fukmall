@@ -1,3 +1,11 @@
+import {
+  DEFAULT_TEXT_ALIGN,
+  DEFAULT_TEXT_LETTER_SPACING,
+  DEFAULT_TEXT_LINE_HEIGHT,
+  DEFAULT_TEXT_MODE,
+  syncTextLayerLayout,
+} from './textLayer'
+
 const DEFAULT_LAYER_OPACITY = 1
 
 function createBaseLayer(overrides) {
@@ -26,7 +34,7 @@ export function createDocument(layers = [], selectedLayerId = null) {
 }
 
 export function createTextLayer(overrides = {}) {
-  return createBaseLayer({
+  const baseTextLayer = createBaseLayer({
     name: 'New Text',
     type: 'text',
     width: 280,
@@ -34,10 +42,30 @@ export function createTextLayer(overrides = {}) {
     text: 'New Text',
     fontFamily: '"Space Grotesk", "Segoe UI", sans-serif',
     fontSize: 42,
+    fontWeight: 400,
+    fontStyle: 'normal',
+    lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
+    letterSpacing: DEFAULT_TEXT_LETTER_SPACING,
     color: '#0f172a',
+    textAlign: DEFAULT_TEXT_ALIGN,
+    mode: DEFAULT_TEXT_MODE,
+    boxWidth: null,
+    boxHeight: null,
+    measuredWidth: 0,
+    measuredHeight: 0,
     eraseMask: '',
     ...overrides,
   })
+
+  const normalizedTextLayer = baseTextLayer.mode === 'box'
+    ? {
+      ...baseTextLayer,
+      boxWidth: baseTextLayer.boxWidth ?? baseTextLayer.width,
+      boxHeight: baseTextLayer.boxHeight ?? baseTextLayer.height,
+    }
+    : baseTextLayer
+
+  return syncTextLayerLayout(normalizedTextLayer)
 }
 
 export function createShapeLayer(overrides = {}) {
