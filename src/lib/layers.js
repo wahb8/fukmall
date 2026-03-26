@@ -22,6 +22,7 @@ function createBaseLayer(overrides) {
     rotation: 0,
     scaleX: 1,
     scaleY: 1,
+    lockTransparentPixels: false,
     ...overrides,
   }
 }
@@ -54,6 +55,7 @@ export function createTextLayer(overrides = {}) {
     measuredWidth: 0,
     measuredHeight: 0,
     eraseMask: '',
+    paintOverlayBitmap: '',
     ...overrides,
   })
 
@@ -161,6 +163,28 @@ export function insertLayer(documentState, layer, afterLayerId = null) {
   }
 }
 
+export function duplicateLayer(documentState, layerId) {
+  const sourceLayer = findLayer(documentState, layerId)
+
+  if (!sourceLayer) {
+    return documentState
+  }
+
+  const duplicatedLayer = cloneLayer(sourceLayer)
+
+  return insertLayer(documentState, duplicatedLayer, layerId)
+}
+
+export function cloneLayer(layer, overrides = {}) {
+  return {
+    ...layer,
+    id: crypto.randomUUID(),
+    name: `${layer.name} Copy`,
+    childIds: Array.isArray(layer.childIds) ? [...layer.childIds] : layer.childIds,
+    ...overrides,
+  }
+}
+
 export function selectLayer(documentState, layerId) {
   return {
     ...documentState,
@@ -200,10 +224,61 @@ export function moveLayer(documentState, layerId, direction) {
   }
 }
 
+export function moveLayerToIndex(documentState, layerId, targetIndex) {
+  const currentIndex = documentState.layers.findIndex((layer) => layer.id === layerId)
+
+  if (currentIndex === -1) {
+    return documentState
+  }
+
+  const boundedTargetIndex = Math.max(0, Math.min(targetIndex, documentState.layers.length - 1))
+
+  if (currentIndex === boundedTargetIndex) {
+    return documentState
+  }
+
+  const nextLayers = [...documentState.layers]
+  const [movedLayer] = nextLayers.splice(currentIndex, 1)
+  const insertionIndex = currentIndex < boundedTargetIndex
+    ? boundedTargetIndex
+    : boundedTargetIndex
+
+  nextLayers.splice(insertionIndex, 0, movedLayer)
+
+  return {
+    ...documentState,
+    layers: nextLayers,
+  }
+}
+
 export function isRasterLayer(layer) {
   return layer?.type === 'image' || layer?.type === 'raster'
 }
 
 export function isErasableLayer(layer) {
   return isRasterLayer(layer) || layer?.type === 'text'
+}
+
+export function canLayerLockTransparentPixels(layer) {
+  return layer?.type === 'raster' || layer?.type === 'image' || layer?.type === 'text'
+}
+
+export function isAlphaLocked(layer) {
+  return Boolean(layer?.lockTransparentPixels)
+}
+
+export function setLayerAlphaLock(documentState, layerId, enabled) {
+  return updateLayer(documentState, layerId, {
+    lockTransparentPixels: Boolean(enabled),
+  })
+}
+
+export function toggleLayerAlphaLock(documentState, layerId) {
+  const layer = findLayer(documentState, layerId)
+
+  if (!layer || !canLayerLockTransparentPixels(layer)) {
+    return documentState
+  }
+
+  return setLayerAlphaLock(documentState, layerId, !isAlphaLocked(layer))
 }

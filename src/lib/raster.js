@@ -247,6 +247,48 @@ export function applyEraseMask(baseCanvas, maskCanvas) {
   return outputCanvas
 }
 
+export function composeCanvasLayers(baseCanvas, overlayCanvas) {
+  const outputCanvas = cloneCanvas(baseCanvas)
+
+  if (!overlayCanvas) {
+    return outputCanvas
+  }
+
+  const context = outputCanvas.getContext('2d')
+
+  if (context) {
+    context.drawImage(overlayCanvas, 0, 0)
+  }
+
+  return outputCanvas
+}
+
+export function createMaskedCanvas(sourceCanvas, maskCanvas) {
+  const outputCanvas = cloneCanvas(sourceCanvas)
+  const context = outputCanvas.getContext('2d')
+
+  if (context && maskCanvas) {
+    context.save()
+    context.globalCompositeOperation = 'destination-in'
+    context.drawImage(maskCanvas, 0, 0)
+    context.restore()
+  }
+
+  return outputCanvas
+}
+
+export function composeTextLayerCanvases(layer, eraseMaskCanvas = null, paintOverlayCanvas = null) {
+  const baseTextCanvas = renderTextLayerToCanvas(layer)
+  const visibleTextCanvas = applyEraseMask(baseTextCanvas, eraseMaskCanvas)
+  const composedCanvas = composeCanvasLayers(visibleTextCanvas, paintOverlayCanvas)
+
+  return {
+    baseTextCanvas,
+    visibleTextCanvas,
+    composedCanvas,
+  }
+}
+
 export function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()

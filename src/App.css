@@ -189,9 +189,12 @@
 }
 
 .canvas-stage {
-  display: flex;
-  justify-content: center;
-  padding: 0;
+  position: relative;
+  width: 760px;
+  max-width: 100%;
+  height: 570px;
+  margin: 0 auto;
+  overflow: hidden;
   border-radius: 24px;
   background:
     linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px),
@@ -200,11 +203,18 @@
   background-size: 28px 28px, 28px 28px, 100% 100%;
 }
 
+.canvas-viewport {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 760px;
+  height: 570px;
+  transform-origin: top left;
+}
+
 .canvas-surface {
   position: relative;
-  width: min(100%, 760px);
-  aspect-ratio: 4 / 3;
-  margin: 0 auto;
+  width: 760px;
+  height: 570px;
   overflow: hidden;
   border-radius: 22px;
   background:
@@ -212,6 +222,15 @@
     #ffffff;
   border: 1px solid rgba(120, 92, 55, 0.15);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.canvas-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 999;
 }
 
 .canvas-prompt-shell {
@@ -246,6 +265,10 @@
 }
 
 .canvas-layer.eraser-enabled {
+  cursor: crosshair;
+}
+
+.canvas-layer.lasso-enabled {
   cursor: crosshair;
 }
 
@@ -422,6 +445,18 @@
   background: rgba(236, 253, 245, 0.88);
 }
 
+.layer-row.dragging {
+  opacity: 0.48;
+}
+
+.layer-row.drop-before {
+  box-shadow: inset 0 -3px 0 var(--selection);
+}
+
+.layer-row.drop-after {
+  box-shadow: inset 0 3px 0 var(--selection);
+}
+
 .icon-button {
   padding: 0.45rem 0.7rem;
   font-size: 0.82rem;
@@ -459,6 +494,12 @@
   gap: 0.4rem;
 }
 
+.layer-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .layer-name-input,
 .property-field select,
 .property-field input,
@@ -484,6 +525,18 @@
   color: #115e59;
   font-size: 0.78rem;
   text-transform: capitalize;
+}
+
+.layer-flag-chip {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 0.22rem 0.55rem;
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .row-actions {

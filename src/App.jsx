@@ -13,26 +13,44 @@ import visibleIcon from './assets/Visible.svg'
 import { useHistory } from './hooks/useHistory'
 import { eraseDot, eraseStroke, paintMaskDot, paintMaskStroke } from './lib/eraserTool'
 import {
+  appendLassoPoint,
+  clearSelectionFromCanvas,
+  createFloatingSelection as buildFloatingSelection,
+  finalizeLassoSelection,
+  isPointInsideFloatingSelection,
+  isPointInsidePolygon,
+  renderFloatingSelection,
+  renderLassoSelection,
+} from './lib/lassoTool'
+import {
   appendLayer,
+  canLayerLockTransparentPixels,
+  cloneLayer,
   createDocument,
   createGroupLayer,
   createImageLayer,
   createRasterLayer,
   createShapeLayer,
   createTextLayer,
-  isErasableLayer,
+  duplicateLayer,
   findLayer,
+  isAlphaLocked,
+  isErasableLayer,
   insertLayer,
   isRasterLayer,
   moveLayer,
+  moveLayerToIndex,
   removeLayer,
   selectLayer,
+  setLayerAlphaLock,
   updateLayer,
 } from './lib/layers'
 import {
   applyEraseMask,
   canvasToBitmap,
   cloneCanvas,
+  composeTextLayerCanvases,
+  createMaskedCanvas,
   cropCanvasToBounds,
   createCanvasFromSource,
   createTransparentCanvas,
@@ -44,7 +62,16 @@ import {
   renderTextLayerToCanvas,
   toLayerCoordinates,
 } from './lib/raster'
-import { drawDot, drawStroke } from './lib/penTool'
+import { screenToWorld, zoomAtPoint } from './lib/viewport'
+import {
+  appendStrokePoint,
+  drawDot,
+  drawSmoothStroke,
+  getStrokeDragThreshold,
+  getStrokeMinimumDistance,
+  getSmoothedStrokePoints,
+  hasStrokeMovedBeyondThreshold,
+} from './lib/penTool'
 import { FONT_FAMILY_OPTIONS } from './lib/fontOptions'
 import {
   resizeBoxText,
@@ -53,6 +80,11 @@ import {
   updateTextLayerFont,
   updateTextStyle,
 } from './lib/textLayer'
+import {
+  applyMoveSnapping,
+  createEmptySnapGuides,
+  DEFAULT_SNAP_THRESHOLD,
+} from './lib/moveSnapping'
 
 const HANDLE_DIRECTIONS = [
   { key: 'nw', x: -1, y: -1 },
@@ -72,11 +104,9 @@ const DEFAULT_PEN_SIZE = 16
 const DEFAULT_PEN_COLOR = '#0f172a'
 const DOCUMENT_WIDTH = 760
 const DOCUMENT_HEIGHT = 570
-
-function getTextLayerName(text) {
-  const normalizedText = text.replace(/\s+/g, ' ').trim()
-  return normalizedText || 'New Text'
-}
+const MIN_VIEWPORT_ZOOM = 0.1
+const MAX_VIEWPORT_ZOOM = 8
+const VIEWPORT_ZOOM_STEP = 1.25
 
 function getFrameDimensions(layer) {
   return {
@@ -169,6 +199,7 @@ function createRasterSurfaceEntry() {
   return {
     offscreenCanvas: null,
     maskCanvas: null,
+    paintOverlayCanvas: null,
     visibleCanvas: null,
     layerElement: null,
     bitmapKey: null,
@@ -176,7 +207,7 @@ function createRasterSurfaceEntry() {
   }
 }
 
-function toDocumentCoordinates(pointerEvent, element) {
+function getPointerPositionWithinElement(pointerEvent, element) {
   if (!element) {
     return null
   }
@@ -187,12 +218,21 @@ function toDocumentCoordinates(pointerEvent, element) {
     return null
   }
 
-  const normalizedX = (pointerEvent.clientX - rect.left) / rect.width
-  const normalizedY = (pointerEvent.clientY - rect.top) / rect.height
+  return {
+    x: pointerEvent.clientX - rect.left,
+    y: pointerEvent.clientY - rect.top,
+  }
+}
+
+function toDocumentCoordinates(pointerEvent, element, viewport) {
+  const pointerPosition = getPointerPositionWithinElement(pointerEvent, element)
+
+  if (!pointerPosition) {
+    return null
+  }
 
   return {
-    x: Math.min(Math.max(normalizedX, 0), 1) * DOCUMENT_WIDTH,
-    y: Math.min(Math.max(normalizedY, 0), 1) * DOCUMENT_HEIGHT,
+    ...screenToWorld(pointerPosition.x, pointerPosition.y, viewport),
   }
 }
 
@@ -208,12 +248,20 @@ function getPointerSamples(pointerEvent) {
   return [pointerEvent]
 }
 
+function canPaintWithPenOnLayer(layer) {
+  return isRasterLayer(layer) || layer?.type === 'text'
+}
+
 function App() {
   const canvasRef = useRef(null)
   const canvasSurfaceRef = useRef(null)
+  const overlayCanvasRef = useRef(null)
   const imageInputRef = useRef(null)
   const interactionRef = useRef(null)
   const rasterSurfacesRef = useRef(new Map())
+  const dragPreviewImageRef = useRef(null)
+  const copiedLayerRef = useRef(null)
+  const lastPenEditableLayerIdRef = useRef(null)
   const {
     present: documentState,
     commit,
@@ -232,11 +280,24 @@ function App() {
   const [penColor, setPenColor] = useState(DEFAULT_PEN_COLOR)
   const [penSize, setPenSize] = useState(DEFAULT_PEN_SIZE)
   const [eraserSize, setEraserSize] = useState(DEFAULT_ERASER_SIZE)
+  const [lassoSelection, setLassoSelection] = useState(null)
+  const [floatingSelection, setFloatingSelection] = useState(null)
+  const [draggedLayerId, setDraggedLayerId] = useState(null)
+  const [layerDropTarget, setLayerDropTarget] = useState(null)
+  const [isSnapEnabled, setIsSnapEnabled] = useState(true)
+  const [activeMoveGuides, setActiveMoveGuides] = useState(() => createEmptySnapGuides())
+  const [viewport, setViewport] = useState({
+    zoom: 1,
+    offsetX: 0,
+    offsetY: 0,
+  })
 
   const selectedLayer = findLayer(documentState, documentState.selectedLayerId)
-  const canEraseSelectedLayer = isErasableLayer(selectedLayer)
   const currentTool = activeTool
   const activeBrushTool = currentTool === 'eraser' ? 'eraser' : 'pen'
+  const hasActiveLassoSelection = Boolean(lassoSelection?.isClosed)
+  const hasFloatingSelection = Boolean(floatingSelection)
+  const zoomLabel = `${Math.round(viewport.zoom * 100)}%`
 
   const getRasterSurfaceEntry = useCallback((layerId) => {
     const existingEntry = rasterSurfacesRef.current.get(layerId)
@@ -278,8 +339,17 @@ function App() {
         text: layer.text,
         fontFamily: layer.fontFamily,
         fontSize: layer.fontSize,
+        fontWeight: layer.fontWeight,
+        fontStyle: layer.fontStyle,
         color: layer.color,
+        lineHeight: layer.lineHeight,
+        letterSpacing: layer.letterSpacing,
+        textAlign: layer.textAlign,
+        mode: layer.mode,
+        boxWidth: layer.boxWidth,
+        boxHeight: layer.boxHeight,
         eraseMask: layer.eraseMask ?? '',
+        paintOverlayBitmap: layer.paintOverlayBitmap ?? '',
       })
     }
 
@@ -304,6 +374,7 @@ function App() {
 
     let canvas = null
     let maskCanvas = null
+    let paintOverlayCanvas = null
 
     if (layer.type === 'image') {
       const imageSurface = await createCanvasFromSource(layer.bitmap)
@@ -322,13 +393,18 @@ function App() {
     }
 
     if (layer.type === 'text') {
-      const baseCanvas = renderTextLayerToCanvas(layer)
       maskCanvas = await createMaskCanvasFromSource(
         layer.eraseMask ?? '',
-        baseCanvas.width,
-        baseCanvas.height,
+        layer.width,
+        layer.height,
       )
-      canvas = applyEraseMask(baseCanvas, maskCanvas)
+      paintOverlayCanvas = await createMaskCanvasFromSource(
+        layer.paintOverlayBitmap ?? '',
+        layer.width,
+        layer.height,
+      )
+      const composedText = composeTextLayerCanvases(layer, maskCanvas, paintOverlayCanvas)
+      canvas = composedText.composedCanvas
     }
 
     if (entry.syncToken !== nextToken) {
@@ -337,11 +413,22 @@ function App() {
 
     entry.offscreenCanvas = canvas
     entry.maskCanvas = maskCanvas
+    entry.paintOverlayCanvas = paintOverlayCanvas
     entry.bitmapKey = surfaceKey
     drawRasterLayer(layer.id)
 
     return entry.offscreenCanvas
   }, [drawRasterLayer, getLayerSurfaceKey, getRasterSurfaceEntry])
+
+  useEffect(() => {
+    const dragPreviewImage = new Image()
+    dragPreviewImage.src = addImageIcon
+    dragPreviewImageRef.current = dragPreviewImage
+
+    return () => {
+      dragPreviewImageRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     const currentLayerIds = new Set(documentState.layers.map((layer) => layer.id))
@@ -360,6 +447,130 @@ function App() {
   }, [documentState.layers, ensureRasterLayerSurface])
 
   useEffect(() => {
+    if (lassoSelection && !findLayer(documentState, lassoSelection.sourceLayerId)) {
+      setLassoSelection(null)
+    }
+
+    if (floatingSelection && !findLayer(documentState, floatingSelection.sourceLayerId)) {
+      setFloatingSelection(null)
+    }
+
+    if (lastPenEditableLayerIdRef.current) {
+      const lastPenEditableLayer = findLayer(documentState, lastPenEditableLayerIdRef.current)
+
+      if (!lastPenEditableLayer || !canPaintWithPenOnLayer(lastPenEditableLayer)) {
+        lastPenEditableLayerIdRef.current = null
+      }
+    }
+  }, [documentState, floatingSelection, lassoSelection])
+
+  useEffect(() => {
+    const overlayCanvas = overlayCanvasRef.current
+
+    if (!overlayCanvas) {
+      return
+    }
+
+    overlayCanvas.width = DOCUMENT_WIDTH
+    overlayCanvas.height = DOCUMENT_HEIGHT
+
+    const context = overlayCanvas.getContext('2d')
+
+    if (!context) {
+      return
+    }
+
+    context.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+
+    if (lassoSelection) {
+      const sourceLayer = findLayer(documentState, lassoSelection.sourceLayerId)
+      const sourceSurface = sourceLayer
+        ? rasterSurfacesRef.current.get(sourceLayer.id)?.offscreenCanvas
+        : null
+
+      if (sourceLayer && sourceSurface) {
+        renderLassoSelection(context, lassoSelection, sourceLayer, sourceSurface)
+      }
+    }
+
+    if (floatingSelection) {
+      renderFloatingSelection(context, floatingSelection)
+    }
+
+    if (activeMoveGuides.showVerticalCenter) {
+      context.save()
+      context.strokeStyle = '#0f766e'
+      context.lineWidth = 1.5
+      context.setLineDash([10, 6])
+      context.beginPath()
+      context.moveTo(DOCUMENT_WIDTH / 2, 0)
+      context.lineTo(DOCUMENT_WIDTH / 2, DOCUMENT_HEIGHT)
+      context.stroke()
+      context.restore()
+    }
+
+    if (activeMoveGuides.showLeftEdge) {
+      context.save()
+      context.strokeStyle = '#0f766e'
+      context.lineWidth = 1.5
+      context.setLineDash([10, 6])
+      context.beginPath()
+      context.moveTo(0, 0)
+      context.lineTo(0, DOCUMENT_HEIGHT)
+      context.stroke()
+      context.restore()
+    }
+
+    if (activeMoveGuides.showRightEdge) {
+      context.save()
+      context.strokeStyle = '#0f766e'
+      context.lineWidth = 1.5
+      context.setLineDash([10, 6])
+      context.beginPath()
+      context.moveTo(DOCUMENT_WIDTH, 0)
+      context.lineTo(DOCUMENT_WIDTH, DOCUMENT_HEIGHT)
+      context.stroke()
+      context.restore()
+    }
+
+    if (activeMoveGuides.showHorizontalCenter) {
+      context.save()
+      context.strokeStyle = '#0f766e'
+      context.lineWidth = 1.5
+      context.setLineDash([10, 6])
+      context.beginPath()
+      context.moveTo(0, DOCUMENT_HEIGHT / 2)
+      context.lineTo(DOCUMENT_WIDTH, DOCUMENT_HEIGHT / 2)
+      context.stroke()
+      context.restore()
+    }
+
+    if (activeMoveGuides.showTopEdge) {
+      context.save()
+      context.strokeStyle = '#0f766e'
+      context.lineWidth = 1.5
+      context.setLineDash([10, 6])
+      context.beginPath()
+      context.moveTo(0, 0)
+      context.lineTo(DOCUMENT_WIDTH, 0)
+      context.stroke()
+      context.restore()
+    }
+
+    if (activeMoveGuides.showBottomEdge) {
+      context.save()
+      context.strokeStyle = '#0f766e'
+      context.lineWidth = 1.5
+      context.setLineDash([10, 6])
+      context.beginPath()
+      context.moveTo(0, DOCUMENT_HEIGHT)
+      context.lineTo(DOCUMENT_WIDTH, DOCUMENT_HEIGHT)
+      context.stroke()
+      context.restore()
+    }
+  }, [activeMoveGuides, documentState, floatingSelection, lassoSelection])
+
+  useEffect(() => {
     function handlePointerMove(event) {
       const interaction = interactionRef.current
       const canvas = canvasRef.current
@@ -368,29 +579,44 @@ function App() {
         return
       }
 
-      const rect = canvas.getBoundingClientRect()
-      const pointerX = event.clientX - rect.left
-      const pointerY = event.clientY - rect.top
+      const documentPoint = toDocumentCoordinates(event, canvas, viewport)
+
+      if (!documentPoint) {
+        return
+      }
 
       if (interaction.type === 'move') {
-        const nextX = pointerX - interaction.offsetX
-        const nextY = pointerY - interaction.offsetY
+        const nextX = documentPoint.x - interaction.offsetX
+        const nextY = documentPoint.y - interaction.offsetY
+        const snapResult = applyMoveSnapping(
+          nextX,
+          nextY,
+          interaction.frameWidth,
+          interaction.frameHeight,
+          DOCUMENT_WIDTH,
+          DOCUMENT_HEIGHT,
+          {
+            enabled: isSnapEnabled,
+            threshold: DEFAULT_SNAP_THRESHOLD,
+          },
+        )
         interactionRef.current = {
           ...interaction,
           hasChanged: true,
         }
+        setActiveMoveGuides(snapResult.guides)
 
         setTransient((currentDocument) =>
           updateLayer(currentDocument, interaction.layerId, {
-            x: nextX,
-            y: nextY,
+            x: snapResult.x,
+            y: snapResult.y,
           }),
         )
       }
 
       if (interaction.type === 'resize') {
-        const deltaX = pointerX - interaction.pointerStart.x
-        const deltaY = pointerY - interaction.pointerStart.y
+        const deltaX = documentPoint.x - interaction.pointerStart.x
+        const deltaY = documentPoint.y - interaction.pointerStart.y
         const startFrameWidth = interaction.frameWidth
         const startFrameHeight = interaction.frameHeight
         let nextFrameWidth = startFrameWidth
@@ -513,46 +739,122 @@ function App() {
       }
 
       if (interaction.type === 'pen') {
+        const currentLayer = findLayer(documentState, interaction.layerId)
         const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
         const pointerSamples = getPointerSamples(event)
 
-        if (!surfaceEntry?.offscreenCanvas || pointerSamples.length === 0) {
+        if (
+          !currentLayer ||
+          !surfaceEntry?.offscreenCanvas ||
+          !interaction.restoreCanvas ||
+          pointerSamples.length === 0
+        ) {
           return
         }
 
-        const context = surfaceEntry.offscreenCanvas.getContext('2d')
-
-        if (!context) {
-          return
-        }
-
-        let lastPoint = interaction.lastPoint
+        let nextPoints = interaction.points
 
         for (const pointerSample of pointerSamples) {
-          const layerPoint = toDocumentCoordinates(pointerSample, canvasSurfaceRef.current)
+          const layerPoint = interaction.coordinateSpace === 'layer'
+            ? toLayerCoordinates(pointerSample, surfaceEntry.layerElement, interaction.restoreCanvas)
+            : toDocumentCoordinates(pointerSample, canvas, viewport)
 
           if (!layerPoint) {
             continue
           }
 
-          drawStroke(
-            context,
-            lastPoint.x,
-            lastPoint.y,
-            layerPoint.x,
-            layerPoint.y,
-            interaction.color,
-            interaction.size,
-          )
-          lastPoint = layerPoint
+          nextPoints = appendStrokePoint(nextPoints, layerPoint, interaction.minimumDistance)
         }
 
-        drawRasterLayer(interaction.layerId)
+        const hasDragged = interaction.hasDragged || hasStrokeMovedBeyondThreshold(
+          nextPoints,
+          interaction.dragThreshold,
+        )
+        const renderPoints = hasDragged
+          ? getSmoothedStrokePoints(nextPoints, interaction.size)
+          : nextPoints
+
+        if (nextPoints === interaction.points && hasDragged === interaction.hasDragged) {
+          return
+        }
+
+        const workingCanvas = cloneCanvas(interaction.restoreCanvas)
+
+        if (hasDragged) {
+          if (currentLayer.type === 'text') {
+            const strokeCanvas = createTransparentCanvas(workingCanvas.width, workingCanvas.height)
+            const strokeContext = strokeCanvas.getContext('2d')
+
+            if (!strokeContext) {
+              return
+            }
+
+            drawSmoothStroke(
+              strokeContext,
+              renderPoints,
+              interaction.color,
+              interaction.size,
+            )
+
+            const maskedStrokeCanvas = isAlphaLocked(currentLayer)
+              ? createMaskedCanvas(
+                strokeCanvas,
+                composeTextLayerCanvases(currentLayer, surfaceEntry.maskCanvas).visibleTextCanvas,
+              )
+              : strokeCanvas
+
+            const overlayContext = workingCanvas.getContext('2d')
+
+            if (!overlayContext) {
+              return
+            }
+
+            overlayContext.drawImage(maskedStrokeCanvas, 0, 0)
+            surfaceEntry.paintOverlayCanvas = workingCanvas
+            surfaceEntry.offscreenCanvas = composeTextLayerCanvases(
+              currentLayer,
+              surfaceEntry.maskCanvas,
+              workingCanvas,
+            ).composedCanvas
+            drawRasterLayer(interaction.layerId)
+          } else {
+            const strokeCanvas = createTransparentCanvas(workingCanvas.width, workingCanvas.height)
+            const strokeContext = strokeCanvas.getContext('2d')
+
+            if (!strokeContext) {
+              return
+            }
+
+            drawSmoothStroke(
+              strokeContext,
+              renderPoints,
+              interaction.color,
+              interaction.size,
+            )
+
+            const maskedStrokeCanvas = isAlphaLocked(currentLayer)
+              ? createMaskedCanvas(strokeCanvas, interaction.restoreCanvas)
+              : strokeCanvas
+            const context = workingCanvas.getContext('2d')
+
+            if (!context) {
+              return
+            }
+
+            context.drawImage(maskedStrokeCanvas, 0, 0)
+            surfaceEntry.offscreenCanvas = workingCanvas
+            drawRasterLayer(interaction.layerId)
+          }
+        } else if (currentLayer.type !== 'text') {
+          surfaceEntry.offscreenCanvas = workingCanvas
+          drawRasterLayer(interaction.layerId)
+        }
 
         interactionRef.current = {
           ...interaction,
-          lastPoint,
-          hasChanged: true,
+          points: nextPoints,
+          hasDragged,
+          hasChanged: hasDragged,
         }
       }
 
@@ -612,42 +914,182 @@ function App() {
           hasChanged: true,
         }
       }
+
+      if (interaction.type === 'lasso') {
+        const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+        const layerPoint = surfaceEntry?.offscreenCanvas && surfaceEntry.layerElement
+          ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceEntry.offscreenCanvas)
+          : null
+
+        if (!layerPoint) {
+          return
+        }
+
+        const nextPoints = appendLassoPoint(interaction.points, layerPoint)
+
+        if (nextPoints === interaction.points) {
+          return
+        }
+
+        interactionRef.current = {
+          ...interaction,
+          points: nextPoints,
+          hasChanged: true,
+        }
+        setLassoSelection({
+          sourceLayerId: interaction.layerId,
+          points: nextPoints,
+          isDrawing: true,
+          isClosed: false,
+          bounds: null,
+        })
+      }
+
+      if (interaction.type === 'floating-selection-drag') {
+        setFloatingSelection((currentSelection) => {
+          if (!currentSelection) {
+            return currentSelection
+          }
+
+          return {
+            ...currentSelection,
+            x: documentPoint.x - interaction.offsetX,
+            y: documentPoint.y - interaction.offsetY,
+          }
+        })
+
+        interactionRef.current = {
+          ...interaction,
+          hasChanged: true,
+        }
+      }
     }
 
     function handlePointerUp() {
       const interaction = interactionRef.current
 
       if (interaction?.type === 'pen') {
-        if (interaction.hasChanged) {
-          const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
-          const currentLayer = findLayer(documentState, interaction.layerId)
+        const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
+        const currentLayer = findLayer(documentState, interaction.layerId)
 
-          if (surfaceEntry?.offscreenCanvas && currentLayer) {
-            let nextCanvas = surfaceEntry.offscreenCanvas
-            let nextX = currentLayer.x
-            let nextY = currentLayer.y
-            let nextWidth = currentLayer.width
-            let nextHeight = currentLayer.height
+        if (surfaceEntry?.offscreenCanvas && currentLayer && interaction.restoreCanvas) {
+          let previewCanvas = surfaceEntry.offscreenCanvas
 
-            if (currentLayer.type === 'raster') {
-              const nextBounds = getCanvasAlphaBounds(surfaceEntry.offscreenCanvas)
+          if (!interaction.hasDragged) {
+            const tapCanvas = cloneCanvas(interaction.restoreCanvas)
+            const tapPoint = interaction.points[0]
 
-              if (nextBounds) {
-                nextCanvas = cropCanvasToBounds(surfaceEntry.offscreenCanvas, nextBounds)
-                nextX = nextBounds.x
-                nextY = nextBounds.y
-                nextWidth = nextBounds.width
-                nextHeight = nextBounds.height
-                surfaceEntry.offscreenCanvas = nextCanvas
-                surfaceEntry.bitmapKey = JSON.stringify({
-                  type: currentLayer.type,
-                  bitmap: canvasToBitmap(nextCanvas),
-                  width: nextWidth,
-                  height: nextHeight,
-                })
+            if (tapPoint) {
+              if (currentLayer.type === 'text') {
+                const strokeCanvas = createTransparentCanvas(tapCanvas.width, tapCanvas.height)
+                const strokeContext = strokeCanvas.getContext('2d')
+
+                if (!strokeContext) {
+                  setPenDrawingLayerId(null)
+                  interactionRef.current = null
+                  return
+                }
+
+                drawDot(
+                  strokeContext,
+                  tapPoint.x,
+                  tapPoint.y,
+                  interaction.color,
+                  interaction.size,
+                )
+
+                const maskedTapCanvas = isAlphaLocked(currentLayer)
+                  ? createMaskedCanvas(
+                    strokeCanvas,
+                    composeTextLayerCanvases(currentLayer, surfaceEntry.maskCanvas).visibleTextCanvas,
+                  )
+                  : strokeCanvas
+
+                const overlayContext = tapCanvas.getContext('2d')
+
+                if (!overlayContext) {
+                  setPenDrawingLayerId(null)
+                  interactionRef.current = null
+                  return
+                }
+
+                overlayContext.drawImage(maskedTapCanvas, 0, 0)
+                surfaceEntry.paintOverlayCanvas = tapCanvas
+                previewCanvas = composeTextLayerCanvases(
+                  currentLayer,
+                  surfaceEntry.maskCanvas,
+                  tapCanvas,
+                ).composedCanvas
+                surfaceEntry.offscreenCanvas = previewCanvas
+              } else {
+                const strokeCanvas = createTransparentCanvas(tapCanvas.width, tapCanvas.height)
+                const strokeContext = strokeCanvas.getContext('2d')
+
+                if (strokeContext) {
+                  drawDot(
+                    strokeContext,
+                    tapPoint.x,
+                    tapPoint.y,
+                    interaction.color,
+                    interaction.size,
+                  )
+                  const maskedTapCanvas = isAlphaLocked(currentLayer)
+                    ? createMaskedCanvas(strokeCanvas, interaction.restoreCanvas)
+                    : strokeCanvas
+                  const context = tapCanvas.getContext('2d')
+
+                  if (!context) {
+                    setPenDrawingLayerId(null)
+                    interactionRef.current = null
+                    return
+                  }
+
+                  context.drawImage(maskedTapCanvas, 0, 0)
+                  surfaceEntry.offscreenCanvas = tapCanvas
+                  previewCanvas = tapCanvas
+                }
               }
-            }
 
+              drawRasterLayer(interaction.layerId)
+            }
+          }
+
+          let nextCanvas = previewCanvas
+          let nextX = currentLayer.x
+          let nextY = currentLayer.y
+          let nextWidth = currentLayer.width
+          let nextHeight = currentLayer.height
+
+          if (currentLayer.type === 'raster') {
+            const nextBounds = getCanvasAlphaBounds(previewCanvas)
+
+            if (nextBounds) {
+              nextCanvas = cropCanvasToBounds(previewCanvas, nextBounds)
+              nextX = nextBounds.x
+              nextY = nextBounds.y
+              nextWidth = nextBounds.width
+              nextHeight = nextBounds.height
+              surfaceEntry.offscreenCanvas = nextCanvas
+              surfaceEntry.bitmapKey = JSON.stringify({
+                type: currentLayer.type,
+                bitmap: canvasToBitmap(nextCanvas),
+                width: nextWidth,
+                height: nextHeight,
+              })
+            }
+          }
+
+          if (currentLayer.type === 'text') {
+            const nextPaintOverlayBitmap = surfaceEntry.paintOverlayCanvas
+              ? canvasToBitmap(surfaceEntry.paintOverlayCanvas)
+              : ''
+
+            commit((currentDocument) =>
+              updateLayer(currentDocument, interaction.layerId, {
+                paintOverlayBitmap: nextPaintOverlayBitmap,
+              }),
+            )
+          } else {
             const nextBitmap = canvasToBitmap(nextCanvas)
 
             commit((currentDocument) =>
@@ -659,13 +1101,6 @@ function App() {
                 height: nextHeight,
               }),
             )
-          }
-        } else if (interaction.restoreCanvas) {
-          const surfaceEntry = rasterSurfacesRef.current.get(interaction.layerId)
-
-          if (surfaceEntry?.offscreenCanvas) {
-            surfaceEntry.offscreenCanvas = interaction.restoreCanvas
-            drawRasterLayer(interaction.layerId)
           }
         }
 
@@ -713,10 +1148,37 @@ function App() {
         return
       }
 
+      if (interaction?.type === 'lasso') {
+        const finalizedSelection = interaction.hasChanged
+          ? finalizeLassoSelection(interaction.points)
+          : null
+
+        const nextSelection = finalizedSelection ? {
+          ...finalizedSelection,
+          sourceLayerId: interaction.layerId,
+        } : null
+
+        setLassoSelection(nextSelection)
+        interactionRef.current = null
+
+        if (nextSelection) {
+          createFloatingSelectionFromLasso('move', nextSelection)
+        }
+
+        return
+      }
+
+      if (interaction?.type === 'floating-selection-drag') {
+        setActiveMoveGuides(createEmptySnapGuides())
+        interactionRef.current = null
+        return
+      }
+
       if (interaction?.originDocument && interaction.hasChanged) {
         commitTransientChange(interaction.originDocument)
       }
 
+      setActiveMoveGuides(createEmptySnapGuides())
       interactionRef.current = null
     }
 
@@ -729,15 +1191,46 @@ function App() {
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [commit, commitTransientChange, documentState, drawRasterLayer, setTransient])
+  }, [commit, commitTransientChange, documentState, drawRasterLayer, isSnapEnabled, setTransient, viewport])
 
   useEffect(() => {
     function handleKeyDown(event) {
-      if (!(event.metaKey || event.ctrlKey) || isEditableTarget(event.target)) {
+      if (isEditableTarget(event.target)) {
         return
       }
 
       const lowerKey = event.key.toLowerCase()
+      const selectedDocumentLayer = findLayer(documentState, documentState.selectedLayerId)
+
+      if (event.key === 'Enter' && selectedDocumentLayer) {
+        event.preventDefault()
+        selectDocumentLayer(null)
+        return
+      }
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault()
+
+        if (floatingSelection) {
+          deleteFloatingSelection()
+          return
+        }
+
+        if (lassoSelection) {
+          deleteSelectedLassoRegion()
+          return
+        }
+
+        if (selectedDocumentLayer) {
+          commit((currentDocument) => removeLayer(currentDocument, selectedDocumentLayer.id))
+        }
+
+        return
+      }
+
+      if (!(event.metaKey || event.ctrlKey)) {
+        return
+      }
 
       if (lowerKey === 'z' && event.shiftKey) {
         event.preventDefault()
@@ -754,6 +1247,35 @@ function App() {
       if (lowerKey === 'y' && event.ctrlKey) {
         event.preventDefault()
         redo()
+        return
+      }
+
+      if (lowerKey === 'c') {
+        if (!selectedDocumentLayer) {
+          return
+        }
+
+        event.preventDefault()
+        copiedLayerRef.current = selectedDocumentLayer
+        return
+      }
+
+      if (lowerKey === 'v') {
+        if (!copiedLayerRef.current) {
+          return
+        }
+
+        event.preventDefault()
+        commit((currentDocument) => {
+          const sourceLayerId = copiedLayerRef.current.id
+          const sourceLayer = findLayer(currentDocument, sourceLayerId) ?? copiedLayerRef.current
+          const clonedLayer = cloneLayer(sourceLayer, {
+            x: sourceLayer.x + 24,
+            y: sourceLayer.y + 24,
+          })
+
+          return insertLayer(currentDocument, clonedLayer, sourceLayerId)
+        })
       }
     }
 
@@ -762,7 +1284,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [redo, undo])
+  }, [commit, deleteSelectedLassoRegion, deleteFloatingSelection, documentState, floatingSelection, lassoSelection, redo, undo])
 
   useEffect(() => {
     function handleDocumentPointerDown(event) {
@@ -808,18 +1330,31 @@ function App() {
   }
 
   function resolvePenLayer(targetLayer) {
-    if (selectedLayer?.type === 'raster') {
-      return selectedLayer
+    const selectedDocumentLayer = findLayer(documentState, documentState.selectedLayerId)
+
+    if (targetLayer && canPaintWithPenOnLayer(targetLayer)) {
+      lastPenEditableLayerIdRef.current = targetLayer.id
+      return targetLayer
     }
 
-    if (targetLayer?.type === 'raster') {
-      return targetLayer
+    if (selectedDocumentLayer && canPaintWithPenOnLayer(selectedDocumentLayer)) {
+      lastPenEditableLayerIdRef.current = selectedDocumentLayer.id
+      return selectedDocumentLayer
+    }
+
+    if (lastPenEditableLayerIdRef.current) {
+      const lastPenEditableLayer = findLayer(documentState, lastPenEditableLayerIdRef.current)
+
+      if (lastPenEditableLayer && canPaintWithPenOnLayer(lastPenEditableLayer)) {
+        return lastPenEditableLayer
+      }
     }
 
     const nextLayer = createRasterLayer({
       name: 'Drawing Layer',
     })
 
+    lastPenEditableLayerIdRef.current = nextLayer.id
     commit((currentDocument) => insertLayer(currentDocument, nextLayer, targetLayer?.id ?? null))
     return nextLayer
   }
@@ -893,15 +1428,19 @@ function App() {
       return
     }
 
-    const rect = canvas.getBoundingClientRect()
+    const documentPoint = toDocumentCoordinates(event, canvas, viewport)
     const { width, height } = getFrameDimensions(layer)
+
+    if (!documentPoint) {
+      return
+    }
 
     selectDocumentLayer(layer.id)
     interactionRef.current = {
       type: 'move',
       layerId: layer.id,
-      offsetX: event.clientX - rect.left - layer.x,
-      offsetY: event.clientY - rect.top - layer.y,
+      offsetX: documentPoint.x - layer.x,
+      offsetY: documentPoint.y - layer.y,
       frameWidth: width,
       frameHeight: height,
       originDocument: documentState,
@@ -919,8 +1458,12 @@ function App() {
       return
     }
 
-    const rect = canvas.getBoundingClientRect()
+    const documentPoint = toDocumentCoordinates(event, canvas, viewport)
     const { width, height } = getFrameDimensions(layer)
+
+    if (!documentPoint) {
+      return
+    }
 
     selectDocumentLayer(layer.id)
     interactionRef.current = {
@@ -929,8 +1472,8 @@ function App() {
       layerType: layer.type,
       handle,
       pointerStart: {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
+        x: documentPoint.x,
+        y: documentPoint.y,
       },
       startX: layer.x,
       startY: layer.y,
@@ -954,42 +1497,61 @@ function App() {
 
     const surfaceCanvas = await ensureRasterLayerSurface(penLayer)
     const surfaceEntry = rasterSurfacesRef.current.get(penLayer.id)
-    const documentPoint = toDocumentCoordinates(event, canvasSurfaceRef.current)
+    const isRasterPenLayer = penLayer.type === 'raster'
+    const isTextPenLayer = penLayer.type === 'text'
+    const startPoint = isRasterPenLayer
+      ? toDocumentCoordinates(event, canvasRef.current, viewport)
+      : toLayerCoordinates(event, surfaceEntry?.layerElement, surfaceCanvas)
 
-    if (!surfaceCanvas || !surfaceEntry || !documentPoint) {
+    if (!surfaceCanvas || !surfaceEntry || !startPoint) {
       return
     }
 
-    const workingCanvas = createTransparentCanvas(DOCUMENT_WIDTH, DOCUMENT_HEIGHT)
-    const workingContext = workingCanvas.getContext('2d')
+    let workingCanvas = null
 
-    if (!workingContext) {
-      return
+    if (isRasterPenLayer) {
+      workingCanvas = createTransparentCanvas(DOCUMENT_WIDTH, DOCUMENT_HEIGHT)
+      const workingContext = workingCanvas.getContext('2d')
+
+      if (!workingContext) {
+        return
+      }
+
+      workingContext.drawImage(
+        surfaceCanvas,
+        penLayer.x,
+        penLayer.y,
+        penLayer.width,
+        penLayer.height,
+      )
+    } else if (isTextPenLayer) {
+      const overlayCanvas = surfaceEntry.paintOverlayCanvas
+        ?? createEmptyMaskCanvas(surfaceCanvas.width, surfaceCanvas.height)
+      workingCanvas = cloneCanvas(overlayCanvas)
+      surfaceEntry.paintOverlayCanvas = overlayCanvas
+    } else {
+      workingCanvas = cloneCanvas(surfaceCanvas)
     }
-
-    workingContext.drawImage(
-      surfaceCanvas,
-      penLayer.x,
-      penLayer.y,
-      penLayer.width,
-      penLayer.height,
-    )
 
     const restoreCanvas = cloneCanvas(workingCanvas)
-
-    drawDot(workingContext, documentPoint.x, documentPoint.y, penColor, penSize)
-    surfaceEntry.offscreenCanvas = workingCanvas
+    surfaceEntry.offscreenCanvas = isTextPenLayer
+      ? composeTextLayerCanvases(penLayer, surfaceEntry.maskCanvas, workingCanvas).composedCanvas
+      : workingCanvas
     drawRasterLayer(penLayer.id)
     setPenDrawingLayerId(penLayer.id)
 
     interactionRef.current = {
       type: 'pen',
       layerId: penLayer.id,
-      lastPoint: documentPoint,
+      coordinateSpace: isRasterPenLayer ? 'document' : 'layer',
+      points: [startPoint],
       color: penColor,
       size: penSize,
+      minimumDistance: getStrokeMinimumDistance(penSize),
+      dragThreshold: getStrokeDragThreshold(penSize),
+      hasDragged: false,
       restoreCanvas,
-      hasChanged: true,
+      hasChanged: false,
     }
   }
 
@@ -1056,7 +1618,404 @@ function App() {
     }
   }
 
+  async function beginLasso(event, layer) {
+    event.stopPropagation()
+    event.preventDefault()
+
+    if (!isRasterLayer(layer)) {
+      return
+    }
+
+    const surfaceCanvas = await ensureRasterLayerSurface(layer)
+    const surfaceEntry = rasterSurfacesRef.current.get(layer.id)
+    const layerPoint = surfaceCanvas && surfaceEntry?.layerElement
+      ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceCanvas)
+      : null
+
+    if (!surfaceCanvas || !surfaceEntry || !layerPoint) {
+      return
+    }
+
+    selectDocumentLayer(layer.id)
+    setFloatingSelection(null)
+
+    const initialPoints = [layerPoint]
+
+    setLassoSelection({
+      sourceLayerId: layer.id,
+      points: initialPoints,
+      isDrawing: true,
+      isClosed: false,
+      bounds: null,
+    })
+
+    interactionRef.current = {
+      type: 'lasso',
+      layerId: layer.id,
+      points: initialPoints,
+      hasChanged: false,
+    }
+  }
+
+  function beginFloatingSelectionDrag(event) {
+    const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+
+    if (!floatingSelection || !documentPoint || !isPointInsideFloatingSelection(documentPoint, floatingSelection)) {
+      return false
+    }
+
+    event.stopPropagation()
+    event.preventDefault()
+
+    interactionRef.current = {
+      type: 'floating-selection-drag',
+      offsetX: documentPoint.x - floatingSelection.x,
+      offsetY: documentPoint.y - floatingSelection.y,
+      hasChanged: false,
+    }
+
+    return true
+  }
+
+  function createSelectionFromFloating(
+    nextFloatingSelection,
+    sourceLayerId = nextFloatingSelection.sourceLayerId,
+    layerOverride = null,
+  ) {
+    const sourceLayer = layerOverride ?? findLayer(documentState, sourceLayerId)
+
+    if (!sourceLayer) {
+      return null
+    }
+
+    const localOffsetX = (nextFloatingSelection.x - sourceLayer.x) / nextFloatingSelection.scaleX
+    const localOffsetY = (nextFloatingSelection.y - sourceLayer.y) / nextFloatingSelection.scaleY
+
+    const points = nextFloatingSelection.selectionPoints.map((point) => ({
+      x: point.x + localOffsetX,
+      y: point.y + localOffsetY,
+    }))
+    const finalizedSelection = finalizeLassoSelection(points)
+
+    return finalizedSelection ? {
+      ...finalizedSelection,
+      sourceLayerId,
+    } : null
+  }
+
+  async function createFloatingSelectionFromLasso(mode, selectionOverride = lassoSelection) {
+    if (!selectionOverride) {
+      return
+    }
+
+    const sourceLayer = findLayer(documentState, selectionOverride.sourceLayerId)
+
+    if (!sourceLayer || !isRasterLayer(sourceLayer)) {
+      return
+    }
+
+    const surfaceCanvas = await ensureRasterLayerSurface(sourceLayer)
+    const surfaceEntry = rasterSurfacesRef.current.get(sourceLayer.id)
+
+    if (!surfaceCanvas || !surfaceEntry?.offscreenCanvas) {
+      return
+    }
+
+    const restoreCanvas = cloneCanvas(surfaceEntry.offscreenCanvas)
+    const nextFloatingSelection = buildFloatingSelection(
+      sourceLayer,
+      restoreCanvas,
+      selectionOverride,
+      mode,
+      restoreCanvas,
+    )
+
+    if (!nextFloatingSelection) {
+      return
+    }
+
+    if (mode === 'move') {
+      clearSelectionFromCanvas(surfaceEntry.offscreenCanvas, selectionOverride)
+      drawRasterLayer(sourceLayer.id)
+    }
+
+    setFloatingSelection(nextFloatingSelection)
+    setLassoSelection(mode === 'duplicate' ? selectionOverride : null)
+    selectDocumentLayer(sourceLayer.id)
+  }
+
+  async function commitFloatingSelectionToLayer(preserveSelection = true) {
+    if (!floatingSelection) {
+      return
+    }
+
+    const sourceLayer = findLayer(documentState, floatingSelection.sourceLayerId)
+
+    if (!sourceLayer || !isRasterLayer(sourceLayer)) {
+      return
+    }
+
+    const surfaceCanvas = await ensureRasterLayerSurface(sourceLayer)
+    const surfaceEntry = rasterSurfacesRef.current.get(sourceLayer.id)
+
+    if (!surfaceCanvas || !surfaceEntry?.offscreenCanvas) {
+      return
+    }
+
+    const destinationX = (floatingSelection.x - sourceLayer.x) / floatingSelection.scaleX
+    const destinationY = (floatingSelection.y - sourceLayer.y) / floatingSelection.scaleY
+    const currentCanvas = surfaceEntry.offscreenCanvas
+    const minimumX = Math.min(0, destinationX)
+    const minimumY = Math.min(0, destinationY)
+    const maximumX = Math.max(currentCanvas.width, destinationX + floatingSelection.canvas.width)
+    const maximumY = Math.max(currentCanvas.height, destinationY + floatingSelection.canvas.height)
+    const needsExpansion = (
+      minimumX < 0 ||
+      minimumY < 0 ||
+      maximumX > currentCanvas.width ||
+      maximumY > currentCanvas.height
+    )
+    const targetCanvas = needsExpansion
+      ? createTransparentCanvas(maximumX - minimumX, maximumY - minimumY)
+      : currentCanvas
+    const context = targetCanvas.getContext('2d')
+
+    if (!context) {
+      return
+    }
+
+    if (needsExpansion) {
+      context.drawImage(currentCanvas, -minimumX, -minimumY)
+    }
+
+    context.drawImage(
+      floatingSelection.canvas,
+      destinationX - minimumX,
+      destinationY - minimumY,
+    )
+
+    const nextLayerX = sourceLayer.x + (minimumX * floatingSelection.scaleX)
+    const nextLayerY = sourceLayer.y + (minimumY * floatingSelection.scaleY)
+    const nextLayerWidth = targetCanvas.width * floatingSelection.scaleX
+    const nextLayerHeight = targetCanvas.height * floatingSelection.scaleY
+
+    surfaceEntry.offscreenCanvas = targetCanvas
+    drawRasterLayer(sourceLayer.id)
+
+    commit((currentDocument) =>
+      updateLayer(currentDocument, sourceLayer.id, {
+        bitmap: canvasToBitmap(targetCanvas),
+        x: nextLayerX,
+        y: nextLayerY,
+        width: nextLayerWidth,
+        height: nextLayerHeight,
+      }),
+    )
+
+    setLassoSelection(preserveSelection ? createSelectionFromFloating(
+      floatingSelection,
+      floatingSelection.sourceLayerId,
+      {
+        ...sourceLayer,
+        x: nextLayerX,
+        y: nextLayerY,
+        width: nextLayerWidth,
+        height: nextLayerHeight,
+      },
+    ) : null)
+    setFloatingSelection(null)
+  }
+
+  async function commitFloatingSelectionToNewLayer() {
+    if (floatingSelection) {
+      const sourceLayer = findLayer(documentState, floatingSelection.sourceLayerId)
+
+      if (!sourceLayer || !isRasterLayer(sourceLayer)) {
+        return
+      }
+
+      const sourceSurface = await ensureRasterLayerSurface(sourceLayer)
+      const sourceEntry = rasterSurfacesRef.current.get(sourceLayer.id)
+
+      if (!sourceSurface || !sourceEntry?.offscreenCanvas) {
+        return
+      }
+
+      const newLayer = createRasterLayer({
+        name: `${sourceLayer.name} Selection`,
+        x: floatingSelection.x,
+        y: floatingSelection.y,
+        width: Math.max(1, Math.round(floatingSelection.width)),
+        height: Math.max(1, Math.round(floatingSelection.height)),
+        bitmap: canvasToBitmap(floatingSelection.canvas),
+      })
+
+      commit((currentDocument) => {
+        const nextDocument = floatingSelection.mode === 'move'
+          ? updateLayer(currentDocument, sourceLayer.id, {
+            bitmap: canvasToBitmap(sourceEntry.offscreenCanvas),
+          })
+          : currentDocument
+
+        return insertLayer(nextDocument, newLayer, sourceLayer.id)
+      })
+
+      const nextSelection = finalizeLassoSelection(floatingSelection.selectionPoints)
+      setLassoSelection(nextSelection ? {
+        ...nextSelection,
+        sourceLayerId: newLayer.id,
+      } : null)
+      setFloatingSelection(null)
+      return
+    }
+
+    if (!lassoSelection) {
+      return
+    }
+
+    const sourceLayer = findLayer(documentState, lassoSelection.sourceLayerId)
+
+    if (!sourceLayer || !isRasterLayer(sourceLayer)) {
+      return
+    }
+
+    const sourceSurface = await ensureRasterLayerSurface(sourceLayer)
+
+    if (!sourceSurface) {
+      return
+    }
+
+    const extractedCanvas = buildFloatingSelection(
+      sourceLayer,
+      sourceSurface,
+      lassoSelection,
+      'duplicate',
+    )
+
+    if (!extractedCanvas) {
+      return
+    }
+
+    const newLayer = createRasterLayer({
+      name: `${sourceLayer.name} Selection`,
+      x: extractedCanvas.x,
+      y: extractedCanvas.y,
+      width: Math.max(1, Math.round(extractedCanvas.width)),
+      height: Math.max(1, Math.round(extractedCanvas.height)),
+      bitmap: canvasToBitmap(extractedCanvas.canvas),
+    })
+
+    commit((currentDocument) => insertLayer(currentDocument, newLayer, sourceLayer.id))
+
+    const nextSelection = finalizeLassoSelection(extractedCanvas.selectionPoints)
+    setLassoSelection(nextSelection ? {
+      ...nextSelection,
+      sourceLayerId: newLayer.id,
+    } : null)
+  }
+
+  function cancelFloatingSelection() {
+    if (floatingSelection?.mode === 'move' && floatingSelection.restoreCanvas) {
+      const surfaceEntry = rasterSurfacesRef.current.get(floatingSelection.sourceLayerId)
+
+      if (surfaceEntry) {
+        surfaceEntry.offscreenCanvas = cloneCanvas(floatingSelection.restoreCanvas)
+        drawRasterLayer(floatingSelection.sourceLayerId)
+      }
+    }
+
+    setFloatingSelection(null)
+  }
+
+  async function deleteFloatingSelection() {
+    if (!floatingSelection) {
+      return
+    }
+
+    if (floatingSelection.mode === 'move') {
+      const sourceLayer = findLayer(documentState, floatingSelection.sourceLayerId)
+      const sourceEntry = rasterSurfacesRef.current.get(floatingSelection.sourceLayerId)
+
+      if (!sourceLayer || !sourceEntry?.offscreenCanvas) {
+        return
+      }
+
+      commit((currentDocument) =>
+        updateLayer(currentDocument, sourceLayer.id, {
+          bitmap: canvasToBitmap(sourceEntry.offscreenCanvas),
+        }),
+      )
+    }
+
+    setFloatingSelection(null)
+    setLassoSelection(null)
+  }
+
+  async function deleteSelectedLassoRegion() {
+    if (!lassoSelection) {
+      return
+    }
+
+    const sourceLayer = findLayer(documentState, lassoSelection.sourceLayerId)
+
+    if (!sourceLayer || !isRasterLayer(sourceLayer)) {
+      return
+    }
+
+    const surfaceCanvas = await ensureRasterLayerSurface(sourceLayer)
+    const surfaceEntry = rasterSurfacesRef.current.get(sourceLayer.id)
+
+    if (!surfaceCanvas || !surfaceEntry?.offscreenCanvas) {
+      return
+    }
+
+    const workingCanvas = cloneCanvas(surfaceEntry.offscreenCanvas)
+    clearSelectionFromCanvas(workingCanvas, lassoSelection)
+
+    commit((currentDocument) =>
+      updateLayer(currentDocument, sourceLayer.id, {
+        bitmap: canvasToBitmap(workingCanvas),
+      }),
+    )
+
+    setLassoSelection(null)
+  }
+
   function handleLayerPointerDown(event, layer) {
+    if (currentTool === 'zoom') {
+      handleZoomPointer(event)
+      return
+    }
+
+    if (currentTool === 'lasso') {
+      if (beginFloatingSelectionDrag(event)) {
+        return
+      }
+
+      if (floatingSelection) {
+        void commitFloatingSelectionToLayer(false)
+        return
+      }
+
+      if (lassoSelection?.sourceLayerId === layer.id) {
+        const surfaceEntry = rasterSurfacesRef.current.get(layer.id)
+        const surfaceCanvas = surfaceEntry?.offscreenCanvas
+        const layerPoint = surfaceCanvas && surfaceEntry?.layerElement
+          ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceCanvas)
+          : null
+
+        if (layerPoint && !isPointInsidePolygon(layerPoint, lassoSelection.points)) {
+          event.stopPropagation()
+          event.preventDefault()
+          setLassoSelection(null)
+          return
+        }
+      }
+
+      beginLasso(event, layer)
+      return
+    }
+
     if (currentTool === 'pen') {
       beginPenStroke(event, layer)
       return
@@ -1071,8 +2030,33 @@ function App() {
   }
 
   function handleCanvasPointerDown(event) {
+    if (currentTool === 'zoom') {
+      handleZoomPointer(event)
+      return
+    }
+
+    if (currentTool === 'lasso') {
+      if (beginFloatingSelectionDrag(event)) {
+        return
+      }
+
+      if (!(event.target instanceof HTMLElement) || !event.target.closest('.canvas-layer')) {
+        if (floatingSelection) {
+          void commitFloatingSelectionToLayer(false)
+        } else if (lassoSelection) {
+          setLassoSelection(null)
+        }
+
+        selectDocumentLayer(null)
+      }
+
+      return
+    }
+
     if (currentTool === 'pen') {
-      beginPenStroke(event, selectedLayer)
+      if (selectedLayer?.type === 'raster') {
+        beginPenStroke(event, selectedLayer)
+      }
       return
     }
 
@@ -1139,6 +2123,28 @@ function App() {
     })
   }
 
+  function handleZoomPointer(event) {
+    event.stopPropagation()
+    event.preventDefault()
+
+    const pointerPosition = getPointerPositionWithinElement(event, canvasRef.current)
+
+    if (!pointerPosition) {
+      return
+    }
+
+    const zoomFactor = event.altKey ? 1 / VIEWPORT_ZOOM_STEP : VIEWPORT_ZOOM_STEP
+
+    setViewport((currentViewport) => zoomAtPoint(
+      currentViewport,
+      pointerPosition.x,
+      pointerPosition.y,
+      zoomFactor,
+      MIN_VIEWPORT_ZOOM,
+      MAX_VIEWPORT_ZOOM,
+    ))
+  }
+
   function beginTextEditing(layer) {
     if (layer.type !== 'text') {
       return
@@ -1156,6 +2162,67 @@ function App() {
       (layer) => updateTextContent(layer, nextText),
       applyTransient,
     )
+  }
+
+  function getLayerDropPlacement(event) {
+    const targetElement = event.currentTarget
+    const bounds = targetElement.getBoundingClientRect()
+    const pointerOffsetY = event.clientY - bounds.top
+
+    return pointerOffsetY < bounds.height / 2 ? 'after' : 'before'
+  }
+
+  function handleLayerDragStart(event, layerId) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', layerId)
+
+    if (dragPreviewImageRef.current) {
+      event.dataTransfer.setDragImage(dragPreviewImageRef.current, 14, 14)
+    }
+
+    setDraggedLayerId(layerId)
+    setLayerDropTarget(null)
+  }
+
+  function handleLayerDragOver(event, layerId) {
+    if (!draggedLayerId) {
+      return
+    }
+
+    event.preventDefault()
+
+    const placement = getLayerDropPlacement(event)
+
+    setLayerDropTarget((currentTarget) => (
+      currentTarget?.layerId === layerId && currentTarget.placement === placement
+        ? currentTarget
+        : { layerId, placement }
+    ))
+  }
+
+  function handleLayerDrop(event, layerId, actualIndex) {
+    if (!draggedLayerId) {
+      return
+    }
+
+    event.preventDefault()
+
+    const placement = getLayerDropPlacement(event)
+    const targetIndex = placement === 'after' ? actualIndex + 1 : actualIndex
+
+    applyDocumentChange((currentDocument) => moveLayerToIndex(
+      currentDocument,
+      draggedLayerId,
+      targetIndex,
+    ))
+    selectDocumentLayer(draggedLayerId)
+    setDraggedLayerId(null)
+    setLayerDropTarget(null)
+  }
+
+  function handleLayerDragEnd() {
+    setDraggedLayerId(null)
+    setLayerDropTarget(null)
   }
 
   function commitTextEditing(layerId) {
@@ -1190,8 +2257,9 @@ function App() {
     const isSelected = layer.id === documentState.selectedLayerId
     const isEditingText = layer.type === 'text' && layer.id === editingTextLayerId
     const showEraserCursor = currentTool === 'eraser' && isErasableLayer(layer)
-    const showPenCursor = currentTool === 'pen' && isRasterLayer(layer)
-    const showPenSurface = showPenCursor && penDrawingLayerId === layer.id
+    const showPenCursor = currentTool === 'pen' && canPaintWithPenOnLayer(layer)
+    const showLassoCursor = currentTool === 'lasso' && isRasterLayer(layer)
+    const showPenSurface = showPenCursor && penDrawingLayerId === layer.id && layer.type === 'raster'
     const layerLeft = showPenSurface ? 0 : layer.x
     const layerTop = showPenSurface ? 0 : layer.y
     const layerWidth = showPenSurface ? DOCUMENT_WIDTH : layer.width
@@ -1205,7 +2273,9 @@ function App() {
           ? 'canvas-layer pen-enabled'
           : showEraserCursor
             ? 'canvas-layer eraser-enabled'
-            : 'canvas-layer'}
+            : showLassoCursor
+              ? 'canvas-layer lasso-enabled'
+              : 'canvas-layer'}
         style={{
           left: `${layerLeft}px`,
           top: `${layerTop}px`,
@@ -1281,7 +2351,7 @@ function App() {
           </div>
         )}
 
-        {isSelected && currentTool !== 'pen' && (
+        {isSelected && currentTool === 'select' && (
           <div className="selection-frame" aria-hidden="true">
             {HANDLE_DIRECTIONS.map((handle) => (
               <button
@@ -1330,35 +2400,127 @@ function App() {
             >
               Eraser
             </button>
-            <label className="toolbar-range toolbar-color">
-              <span>Pen</span>
-              <input
-                type="color"
-                value={penColor}
-                onChange={(event) => setPenColor(event.target.value)}
-              />
-            </label>
-            <label className="toolbar-range">
-              <span>{activeBrushTool === 'pen' ? 'Brush' : 'Eraser'}</span>
-              <input
-                type="range"
-                min={activeBrushTool === 'pen' ? '2' : '8'}
-                max={activeBrushTool === 'pen' ? '64' : '96'}
-                step="1"
-                value={activeBrushTool === 'pen' ? penSize : eraserSize}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value)
-
-                  if (activeBrushTool === 'pen') {
-                    setPenSize(nextValue)
-                    return
+            <button
+              className={currentTool === 'lasso' ? 'action-button active' : 'action-button'}
+              type="button"
+              onClick={() => setActiveTool('lasso')}
+              aria-label="Lasso"
+            >
+              Lasso
+            </button>
+            <button
+              className={currentTool === 'zoom' ? 'action-button active' : 'action-button'}
+              type="button"
+              onClick={() => setActiveTool('zoom')}
+              onDoubleClick={() => setViewport({ zoom: 1, offsetX: 0, offsetY: 0 })}
+              aria-label="Zoom"
+            >
+              Zoom
+            </button>
+            <div className="toolbar-range">
+              <span>View</span>
+              <strong>{zoomLabel}</strong>
+            </div>
+            <button
+              className={isSnapEnabled ? 'action-button active' : 'action-button'}
+              type="button"
+              onClick={() => {
+                setIsSnapEnabled((currentValue) => {
+                  if (currentValue) {
+                    setActiveMoveGuides(createEmptySnapGuides())
                   }
 
-                  setEraserSize(nextValue)
-                }}
-              />
-              <strong>{activeBrushTool === 'pen' ? penSize : eraserSize}</strong>
-            </label>
+                  return !currentValue
+                })
+              }}
+              aria-pressed={isSnapEnabled}
+            >
+              {isSnapEnabled ? 'Snap On' : 'Snap Off'}
+            </button>
+            {(currentTool === 'pen' || currentTool === 'eraser') && (
+              <>
+                <label className="toolbar-range toolbar-color">
+                  <span>Pen</span>
+                  <input
+                    type="color"
+                    value={penColor}
+                    onChange={(event) => setPenColor(event.target.value)}
+                  />
+                </label>
+                <label className="toolbar-range">
+                  <span>{activeBrushTool === 'pen' ? 'Brush' : 'Eraser'}</span>
+                  <input
+                    type="range"
+                    min={activeBrushTool === 'pen' ? '2' : '8'}
+                    max={activeBrushTool === 'pen' ? '64' : '96'}
+                    step="1"
+                    value={activeBrushTool === 'pen' ? penSize : eraserSize}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value)
+
+                      if (activeBrushTool === 'pen') {
+                        setPenSize(nextValue)
+                        return
+                      }
+
+                      setEraserSize(nextValue)
+                    }}
+                  />
+                  <strong>{activeBrushTool === 'pen' ? penSize : eraserSize}</strong>
+                </label>
+              </>
+            )}
+            <button
+              className="action-button"
+              type="button"
+              disabled={!hasActiveLassoSelection}
+              onClick={() => createFloatingSelectionFromLasso('move')}
+            >
+              Move Sel
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              disabled={!hasActiveLassoSelection}
+              onClick={() => createFloatingSelectionFromLasso('duplicate')}
+            >
+              Dup Sel
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              disabled={!hasFloatingSelection && !hasActiveLassoSelection}
+              onClick={commitFloatingSelectionToNewLayer}
+            >
+              Sel to Layer
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              disabled={!hasActiveLassoSelection}
+              onClick={deleteSelectedLassoRegion}
+            >
+              Delete Sel
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              disabled={!hasFloatingSelection}
+              onClick={commitFloatingSelectionToLayer}
+            >
+              Commit Sel
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              disabled={!hasFloatingSelection && !hasActiveLassoSelection}
+              onClick={() => {
+                cancelFloatingSelection()
+                setLassoSelection(null)
+              }}
+            >
+              Cancel Sel
+            </button>
             <button
               className="action-button"
               type="button"
@@ -1442,8 +2604,16 @@ function App() {
                 onPointerDown={handleCanvasPointerDown}
                 role="presentation"
               >
-                <div ref={canvasSurfaceRef} className="canvas-surface">
-                  {documentState.layers.map(renderLayer)}
+                <div
+                  className="canvas-viewport"
+                  style={{
+                    transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom})`,
+                  }}
+                >
+                  <div ref={canvasSurfaceRef} className="canvas-surface">
+                    {documentState.layers.map(renderLayer)}
+                    <canvas ref={overlayCanvasRef} className="canvas-overlay" aria-hidden="true" />
+                  </div>
                 </div>
               </div>
             </section>
@@ -1474,12 +2644,27 @@ function App() {
                   const isTop = actualIndex === documentState.layers.length - 1
                   const isBottom = actualIndex === 0
                   const isSelected = layer.id === documentState.selectedLayerId
+                  const isDragging = layer.id === draggedLayerId
+                  const dropPlacement = layerDropTarget?.layerId === layer.id
+                    ? layerDropTarget.placement
+                    : null
 
                   return (
                     <div
                       key={layer.id}
-                      className={isSelected ? 'layer-row selected' : 'layer-row'}
+                      className={[
+                        'layer-row',
+                        isSelected ? 'selected' : '',
+                        isDragging ? 'dragging' : '',
+                        dropPlacement === 'before' ? 'drop-before' : '',
+                        dropPlacement === 'after' ? 'drop-after' : '',
+                      ].filter(Boolean).join(' ')}
+                      draggable
                       onClick={() => selectDocumentLayer(layer.id)}
+                      onDragStart={(event) => handleLayerDragStart(event, layer.id)}
+                      onDragOver={(event) => handleLayerDragOver(event, layer.id)}
+                      onDrop={(event) => handleLayerDrop(event, layer.id, actualIndex)}
+                      onDragEnd={handleLayerDragEnd}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
@@ -1523,13 +2708,30 @@ function App() {
                             )
                           }
                           onClick={(event) => event.stopPropagation()}
+                          draggable={false}
                         />
-                        <span className="layer-type-chip">
-                          {isRasterLayer(layer) ? 'raster' : layer.type}
-                        </span>
+                        <div className="layer-chip-row">
+                          <span className="layer-type-chip">{layer.type}</span>
+                          {isAlphaLocked(layer) && (
+                            <span className="layer-flag-chip">alpha lock</span>
+                          )}
+                        </div>
                       </div>
 
                       <div className="row-actions">
+                        <button
+                          className="icon-button"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            applyDocumentChange((currentDocument) =>
+                              duplicateLayer(currentDocument, layer.id),
+                            )
+                          }}
+                          aria-label="Duplicate layer"
+                        >
+                          Dup
+                        </button>
                         <button
                           className="icon-button"
                           type="button"
@@ -1688,6 +2890,32 @@ function App() {
                         onChange={(event) => handleNumericChange('scaleY', event.target.value, 0.1)}
                       />
                     </label>
+                    <label className="property-field full-width">
+                      <span>Lock Transparent Pixels</span>
+                      <button
+                        className={isAlphaLocked(selectedLayer)
+                          ? 'action-button active'
+                          : 'action-button'}
+                        type="button"
+                        disabled={!canLayerLockTransparentPixels(selectedLayer)}
+                        onClick={() =>
+                          applyDocumentChange((currentDocument) =>
+                            setLayerAlphaLock(
+                              currentDocument,
+                              selectedLayer.id,
+                              !isAlphaLocked(selectedLayer),
+                            ),
+                          )
+                        }
+                      >
+                        {isAlphaLocked(selectedLayer) ? 'Alpha Lock On' : 'Alpha Lock Off'}
+                      </button>
+                    </label>
+                    {!canLayerLockTransparentPixels(selectedLayer) && (
+                      <div className="group-note full-width">
+                        Alpha lock is only supported on raster, image, and text layers in this MVP.
+                      </div>
+                    )}
 
                     {selectedLayer.type === 'text' && (
                       <>
@@ -1752,6 +2980,25 @@ function App() {
                             }
                           />
                         </label>
+                        <label className="property-field">
+                          <span>Weight</span>
+                          <button
+                            className={selectedLayer.fontWeight >= 700
+                              ? 'action-button active'
+                              : 'action-button'}
+                            type="button"
+                            onClick={() =>
+                              applyTextLayerUpdate(selectedLayer.id, (layer) => updateTextStyle(
+                                layer,
+                                {
+                                  fontWeight: layer.fontWeight >= 700 ? 400 : 700,
+                                },
+                              ))
+                            }
+                          >
+                            Bold
+                          </button>
+                        </label>
                         {selectedLayer.mode === 'box' && (
                           <label className="property-field">
                             <span>Box Width</span>
@@ -1780,6 +3027,11 @@ function App() {
                             onChange={(event) => updateSelectedLayer({ color: event.target.value })}
                           />
                         </label>
+                        <div className="group-note full-width">
+                          Text paint stays in a separate overlay bitmap so the text remains editable.
+                          Large text or font changes keep the overlay positioned in the layer frame,
+                          but do not remap old paint to new glyph shapes.
+                        </div>
                       </>
                     )}
 
@@ -1821,16 +3073,16 @@ function App() {
                           />
                         </label>
                         <div className="group-note full-width">
-                          Raster image layers can be erased directly. Using the pen creates a new
-                          drawing layer above the current selection.
+                          Image layers support alpha lock and direct pixel painting inside the image
+                          frame. Transparent pixels stay protected while alpha lock is enabled.
                         </div>
                       </>
                     )}
 
                     {selectedLayer.type === 'raster' && (
                       <div className="group-note full-width">
-                        Drawing layers are editable with the pen and eraser tools. Each stroke is
-                        committed as a single bitmap history step.
+                        Drawing layers support alpha lock, and each pen stroke still commits as a
+                        single bitmap history step.
                       </div>
                     )}
 
