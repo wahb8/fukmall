@@ -1,10 +1,20 @@
-<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Eraser body - tilted rectangle -->
-  <path d="M14 28L20 14L38 20L32 34L14 28Z" fill="black" opacity="0.3" stroke="black" stroke-width="2" stroke-linejoin="round"/>
-  
-  <!-- Eraser bottom edge -->
-  <line x1="14" y1="28" x2="32" y2="34" stroke="black" stroke-width="2" stroke-linecap="round"/>
-  
-  <!-- Diagonal line across eraser -->
-  <line x1="20" y1="14" x2="14" y2="28" stroke="black" stroke-width="2" stroke-linecap="round"/>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <!-- Eraser body -->
+  <path d="M4 14.5 14.5 4a2 2 0 0 1 2.8 0l2.7 2.7a2 2 0 0 1 0 2.8L9.5 20H6a2 2 0 0 1-1.4-.6L4 18a2 2 0 0 1 0-2.8Z" />
+
+  <!-- Eraser split (top/bottom like Photoshop) -->
+  <path d="M10 8.5 15.5 14" />
+
+  <!-- Clean edge (erased surface) -->
+  <path d="M6 20h14" />
 </svg>

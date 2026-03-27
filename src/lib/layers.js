@@ -28,9 +28,12 @@ function createBaseLayer(overrides) {
 }
 
 export function createDocument(layers = [], selectedLayerId = null) {
+  const selectedLayerIds = selectedLayerId ? [selectedLayerId] : []
+
   return {
     layers,
     selectedLayerId,
+    selectedLayerIds,
   }
 }
 
@@ -101,8 +104,8 @@ export function createRasterLayer(overrides = {}) {
     type: 'raster',
     x: 0,
     y: 0,
-    width: 760,
-    height: 570,
+    width: 1080,
+    height: 1440,
     bitmap: '',
     ...overrides,
   })
@@ -140,6 +143,7 @@ export function appendLayer(documentState, layer) {
   return {
     layers: [...documentState.layers, layer],
     selectedLayerId: layer.id,
+    selectedLayerIds: [layer.id],
   }
 }
 
@@ -160,6 +164,7 @@ export function insertLayer(documentState, layer, afterLayerId = null) {
   return {
     layers: nextLayers,
     selectedLayerId: layer.id,
+    selectedLayerIds: [layer.id],
   }
 }
 
@@ -189,15 +194,73 @@ export function selectLayer(documentState, layerId) {
   return {
     ...documentState,
     selectedLayerId: layerId,
+    selectedLayerIds: layerId ? [layerId] : [],
   }
+}
+
+export function clearSelection(documentState) {
+  return {
+    ...documentState,
+    selectedLayerId: null,
+    selectedLayerIds: [],
+  }
+}
+
+export function selectSingleLayer(documentState, layerId) {
+  return selectLayer(documentState, layerId)
+}
+
+export function toggleLayerInSelection(documentState, layerId) {
+  const selectedLayerIds = Array.isArray(documentState.selectedLayerIds)
+    ? documentState.selectedLayerIds
+    : documentState.selectedLayerId
+      ? [documentState.selectedLayerId]
+      : []
+  const isSelected = selectedLayerIds.includes(layerId)
+  const nextSelectedLayerIds = isSelected
+    ? selectedLayerIds.filter((id) => id !== layerId)
+    : [...selectedLayerIds, layerId]
+
+  return {
+    ...documentState,
+    selectedLayerId: nextSelectedLayerIds.at(-1) ?? null,
+    selectedLayerIds: nextSelectedLayerIds,
+  }
+}
+
+export function isLayerSelected(documentState, layerId) {
+  return Array.isArray(documentState.selectedLayerIds)
+    ? documentState.selectedLayerIds.includes(layerId)
+    : documentState.selectedLayerId === layerId
+}
+
+export function getSelectedLayers(documentState) {
+  const selectedLayerIds = Array.isArray(documentState.selectedLayerIds)
+    ? documentState.selectedLayerIds
+    : documentState.selectedLayerId
+      ? [documentState.selectedLayerId]
+      : []
+
+  return documentState.layers.filter((layer) => selectedLayerIds.includes(layer.id))
 }
 
 export function removeLayer(documentState, layerId) {
   const nextLayers = documentState.layers.filter((layer) => layer.id !== layerId)
+  const selectedLayerIds = Array.isArray(documentState.selectedLayerIds)
+    ? documentState.selectedLayerIds
+    : documentState.selectedLayerId
+      ? [documentState.selectedLayerId]
+      : []
+  const nextSelectedLayerIds = selectedLayerIds.filter((id) => id !== layerId)
 
   return {
     layers: nextLayers,
-    selectedLayerId: documentState.selectedLayerId === layerId ? nextLayers.at(-1)?.id ?? null : documentState.selectedLayerId,
+    selectedLayerId: nextSelectedLayerIds.at(-1) ?? (
+      documentState.selectedLayerId === layerId ? nextLayers.at(-1)?.id ?? null : documentState.selectedLayerId
+    ),
+    selectedLayerIds: nextSelectedLayerIds.length > 0
+      ? nextSelectedLayerIds
+      : (documentState.selectedLayerId === layerId && nextLayers.at(-1)?.id ? [nextLayers.at(-1).id] : []),
   }
 }
 
@@ -248,6 +311,41 @@ export function moveLayerToIndex(documentState, layerId, targetIndex) {
   return {
     ...documentState,
     layers: nextLayers,
+  }
+}
+
+export function getLayerBelow(documentState, layerId) {
+  const currentIndex = documentState.layers.findIndex((layer) => layer.id === layerId)
+
+  if (currentIndex <= 0) {
+    return null
+  }
+
+  return documentState.layers[currentIndex - 1] ?? null
+}
+
+export function canMergeDown(documentState, layerId = documentState.selectedLayerId) {
+  if (!layerId) {
+    return false
+  }
+
+  return Boolean(findLayer(documentState, layerId) && getLayerBelow(documentState, layerId))
+}
+
+export function mergeLayerDown(documentState, selectedLayerId, mergedLayer) {
+  const selectedIndex = documentState.layers.findIndex((layer) => layer.id === selectedLayerId)
+
+  if (selectedIndex <= 0) {
+    return documentState
+  }
+
+  const nextLayers = [...documentState.layers]
+  nextLayers.splice(selectedIndex - 1, 2, mergedLayer)
+
+  return {
+    layers: nextLayers,
+    selectedLayerId: mergedLayer.id,
+    selectedLayerIds: [mergedLayer.id],
   }
 }
 
