@@ -1,5 +1,136 @@
 import { measureTextLayer, renderTextLayer } from './textLayer'
 
+function parseNumericSvgDimension(value) {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const match = value.trim().match(/^([+-]?\d*\.?\d+)/)
+
+  if (!match) {
+    return null
+  }
+
+  const numericValue = Number(match[1])
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null
+}
+
+function decodeDataUrlText(dataUrl) {
+  const commaIndex = dataUrl.indexOf(',')
+
+  if (commaIndex === -1) {
+    return null
+  }
+
+  const metadata = dataUrl.slice(0, commaIndex)
+  const payload = dataUrl.slice(commaIndex + 1)
+
+  try {
+    if (/;base64/i.test(metadata)) {
+      return atob(payload)
+    }
+
+    return decodeURIComponent(payload)
+  } catch {
+    return null
+  }
+}
+
+function extractSvgMarkup(source) {
+  if (typeof source !== 'string' || source.length === 0) {
+    return null
+  }
+
+  if (source.trimStart().startsWith('<svg')) {
+    return source
+  }
+
+  if (/^data:image\/svg\+xml/i.test(source)) {
+    return decodeDataUrlText(source)
+  }
+
+  return null
+}
+
+export function inferImageSourceKindFromSrc(src) {
+  if (typeof src !== 'string') {
+    return 'bitmap'
+  }
+
+  const normalizedSource = src.trim()
+
+  if (
+    /^data:image\/svg\+xml/i.test(normalizedSource) ||
+    normalizedSource.startsWith('<svg') ||
+    /\.svg(?:[?#].*)?$/i.test(normalizedSource)
+  ) {
+    return 'svg'
+  }
+
+  return 'bitmap'
+}
+
+export function getSvgIntrinsicDimensionsFromSource(src) {
+  const svgMarkup = extractSvgMarkup(src)
+
+  if (!svgMarkup || typeof DOMParser === 'undefined') {
+    return null
+  }
+
+  try {
+    const document = new DOMParser().parseFromString(svgMarkup, 'image/svg+xml')
+    const svgElement = document.documentElement
+
+    if (!svgElement || svgElement.nodeName.toLowerCase() !== 'svg') {
+      return null
+    }
+
+    const width = parseNumericSvgDimension(svgElement.getAttribute('width'))
+    const height = parseNumericSvgDimension(svgElement.getAttribute('height'))
+    const viewBox = svgElement.getAttribute('viewBox')
+    const viewBoxValues = viewBox
+      ? viewBox.trim().split(/[\s,]+/).map((value) => Number(value))
+      : []
+    const hasViewBox = viewBoxValues.length === 4
+    const viewBoxWidth = hasViewBox ? viewBoxValues[2] : null
+    const viewBoxHeight = hasViewBox ? viewBoxValues[3] : null
+
+    if (width && height) {
+      return { width, height }
+    }
+
+    if (
+      Number.isFinite(viewBoxWidth) &&
+      Number.isFinite(viewBoxHeight) &&
+      viewBoxWidth > 0 &&
+      viewBoxHeight > 0
+    ) {
+      if (width && !height) {
+        return {
+          width,
+          height: width * (viewBoxHeight / viewBoxWidth),
+        }
+      }
+
+      if (height && !width) {
+        return {
+          width: height * (viewBoxWidth / viewBoxHeight),
+          height,
+        }
+      }
+
+      return {
+        width: viewBoxWidth,
+        height: viewBoxHeight,
+      }
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
 export function createCanvasElement() {
   return document.createElement('canvas')
 }
@@ -142,9 +273,26 @@ export function loadImageElement(src) {
   })
 }
 
-export async function createCanvasFromSource(src) {
+export async function loadImageDimensionsFromSource(src) {
+  const svgDimensions = getSvgIntrinsicDimensionsFromSource(src)
+
+  if (svgDimensions) {
+    return svgDimensions
+  }
+
   const image = await loadImageElement(src)
-  const canvas = createSizedCanvas(image.naturalWidth, image.naturalHeight)
+
+  return {
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  }
+}
+
+export async function createCanvasFromSource(src, targetWidth = null, targetHeight = null) {
+  const image = await loadImageElement(src)
+  const resolvedWidth = targetWidth ?? image.naturalWidth
+  const resolvedHeight = targetHeight ?? image.naturalHeight
+  const canvas = createSizedCanvas(resolvedWidth, resolvedHeight)
 
   const context = canvas.getContext('2d')
 
@@ -152,12 +300,12 @@ export async function createCanvasFromSource(src) {
     throw new Error('Canvas context is unavailable')
   }
 
-  context.drawImage(image, 0, 0)
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
 
   return {
     canvas,
-    width: image.naturalWidth,
-    height: image.naturalHeight,
+    width: canvas.width,
+    height: canvas.height,
   }
 }
 

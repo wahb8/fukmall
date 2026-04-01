@@ -55,6 +55,7 @@ import {
   isErasableLayer,
   isLayerSelected,
   insertLayer,
+  isSvgImageLayer,
   isRasterLayer,
   mergeLayerDown,
   moveLayer,
@@ -78,6 +79,8 @@ import {
   createMaskCanvasFromSource,
   createEmptyMaskCanvas,
   getCanvasAlphaBounds,
+  inferImageSourceKindFromSrc,
+  loadImageDimensionsFromSource,
   paintCanvas,
   readFileAsDataUrl,
   renderTextLayerToCanvas,
@@ -106,6 +109,8 @@ import {
   createEmptySnapGuides,
   DEFAULT_SNAP_THRESHOLD,
 } from './lib/moveSnapping'
+import { exportDocumentImage } from './lib/exportDocument'
+import { downloadProjectFile, normalizeDocumentState, parseProjectFile } from './lib/documentFiles'
 
 const HANDLE_DIRECTIONS = [
   { key: 'nw', x: -1, y: -1 },
@@ -129,6 +134,65 @@ const BASE_DOCUMENT_SCALE = DISPLAY_DOCUMENT_WIDTH / DOCUMENT_WIDTH
 const MIN_VIEWPORT_ZOOM = 0.1
 const MAX_VIEWPORT_ZOOM = 8
 const VIEWPORT_ZOOM_STEP = 1.25
+const ASSET_DRAG_MIME_TYPE = 'application/x-fukmall-asset-id'
+
+function isSupportedAssetFile(file) {
+  return Boolean(file) && /^image\/(png|jpeg|jpg|svg\+xml|webp)$/i.test(file.type)
+}
+
+function getAssetKind(file) {
+  const lowerName = file.name.toLowerCase()
+
+  if (lowerName.endsWith('.png')) {
+    return 'png'
+  }
+
+  if (lowerName.endsWith('.jpg')) {
+    return 'jpg'
+  }
+
+  if (lowerName.endsWith('.jpeg')) {
+    return 'jpeg'
+  }
+
+  if (lowerName.endsWith('.svg')) {
+    return 'svg'
+  }
+
+  if (lowerName.endsWith('.webp')) {
+    return 'webp'
+  }
+
+  return 'png'
+}
+
+function getImportedSourceKind(file, src) {
+  if (file?.type === 'image/svg+xml' || file?.name?.toLowerCase().endsWith('.svg')) {
+    return 'svg'
+  }
+
+  return inferImageSourceKindFromSrc(src)
+}
+
+async function importAssetsFromFiles(files) {
+  const supportedFiles = Array.from(files ?? []).filter(isSupportedAssetFile)
+
+  return Promise.all(supportedFiles.map(async (file) => {
+    const src = await readFileAsDataUrl(file)
+    const sourceKind = getImportedSourceKind(file, src)
+    const dimensions = await loadImageDimensionsFromSource(src)
+
+    return {
+      id: crypto.randomUUID(),
+      name: file.name.replace(/\.[^.]+$/, '') || file.name,
+      src,
+      kind: getAssetKind(file),
+      sourceKind,
+      width: dimensions.width,
+      height: dimensions.height,
+    }
+  }))
+}
 
 function getLayerTransformBounds(layer) {
   const angle = (layer.rotation * Math.PI) / 180
@@ -215,6 +279,15 @@ function getFrameDimensions(layer) {
 }
 
 function createInitialDocument() {
+  const whiteBackground = createShapeLayer({
+    name: 'Background',
+    x: 0,
+    y: 0,
+    width: DOCUMENT_WIDTH,
+    height: DOCUMENT_HEIGHT,
+    fill: '#ffffff',
+    radius: 0,
+  })
   const background = createImageLayer({
     name: 'Hero Image',
     x: 76,
@@ -251,38 +324,154 @@ function createInitialDocument() {
   })
 
   return createDocument(
-    [background, card, title, group],
+    [whiteBackground, background, card, title, group],
     background.id,
   )
 }
 
-function loadImageDimensions(src) {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-
-    image.onload = () => {
-      resolve({
-        width: image.naturalWidth,
-        height: image.naturalHeight,
-      })
-    }
-
-    image.onerror = () => {
-      reject(new Error('Image could not be loaded'))
-    }
-
-    image.src = src
-  })
+function getImportedImageDimensions(width, height) {
+  return {
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+  }
 }
 
-function getImportedImageFrame(width, height) {
-  const maxWidth = 340
-  const maxHeight = 260
-  const scale = Math.min(maxWidth / width, maxHeight / height, 1)
+function clampImportedImagePosition(x, y, width, height) {
+  const maxX = DOCUMENT_WIDTH - width
+  const maxY = DOCUMENT_HEIGHT - height
 
   return {
-    width: Math.max(MIN_LAYER_WIDTH, Math.round(width * scale)),
-    height: Math.max(MIN_LAYER_HEIGHT, Math.round(height * scale)),
+    x: maxX >= 0 ? Math.min(Math.max(0, x), maxX) : 0,
+    y: maxY >= 0 ? Math.min(Math.max(0, y), maxY) : 0,
+  }
+}
+
+function getDefaultImportedImagePosition(width, height) {
+  return clampImportedImagePosition(
+    Math.round((DOCUMENT_WIDTH - width) / 2),
+    Math.round((DOCUMENT_HEIGHT - height) / 2),
+    width,
+    height,
+  )
+}
+
+function createImageLayerBitmapPatch(layer, bitmap, overrides = {}) {
+  if (layer?.type !== 'image') {
+    return {
+      bitmap,
+      ...overrides,
+    }
+  }
+
+  return {
+    src: bitmap,
+    bitmap,
+    sourceKind: 'bitmap',
+    ...overrides,
+  }
+}
+
+function getSvgRasterSurfaceDimensions(layer) {
+  const rasterScale = Math.max(
+    Math.abs(layer.scaleX),
+    Math.abs(layer.scaleY),
+    1,
+  )
+
+  return {
+    width: Math.max(1, Math.round(layer.width * rasterScale)),
+    height: Math.max(1, Math.round(layer.height * rasterScale)),
+  }
+}
+
+function createMoveAxisLockState() {
+  return {
+    shiftLockedAxis: null,
+    shiftWasHeld: false,
+    shiftLockPointerOrigin: null,
+    shiftLockPositionOrigin: null,
+  }
+}
+
+function applyAxisLockedMove(interaction, documentPoint, nextX, nextY, shiftHeld) {
+  let nextInteraction = interaction
+  let constrainedX = nextX
+  let constrainedY = nextY
+
+  if (!shiftHeld) {
+    if (
+      interaction.shiftLockedAxis !== null ||
+      interaction.shiftWasHeld ||
+      interaction.shiftLockPointerOrigin ||
+      interaction.shiftLockPositionOrigin
+    ) {
+      nextInteraction = {
+        ...interaction,
+        ...createMoveAxisLockState(),
+      }
+    }
+
+    return {
+      interaction: nextInteraction,
+      x: constrainedX,
+      y: constrainedY,
+      lockedAxis: null,
+    }
+  }
+
+  if (!interaction.shiftWasHeld) {
+    nextInteraction = {
+      ...interaction,
+      shiftWasHeld: true,
+      shiftLockedAxis: null,
+      shiftLockPointerOrigin: {
+        x: documentPoint.x,
+        y: documentPoint.y,
+      },
+      shiftLockPositionOrigin: {
+        x: nextX,
+        y: nextY,
+      },
+    }
+
+    return {
+      interaction: nextInteraction,
+      x: constrainedX,
+      y: constrainedY,
+      lockedAxis: null,
+    }
+  }
+
+  let lockedAxis = interaction.shiftLockedAxis
+
+  if (!lockedAxis && interaction.shiftLockPointerOrigin) {
+    const deltaX = documentPoint.x - interaction.shiftLockPointerOrigin.x
+    const deltaY = documentPoint.y - interaction.shiftLockPointerOrigin.y
+
+    if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
+      lockedAxis = Math.abs(deltaX) >= Math.abs(deltaY) ? 'horizontal' : 'vertical'
+      nextInteraction = {
+        ...interaction,
+        shiftLockedAxis: lockedAxis,
+      }
+    }
+  }
+
+  const positionOrigin = nextInteraction.shiftLockPositionOrigin ?? interaction.shiftLockPositionOrigin
+
+  if (lockedAxis === 'horizontal' && positionOrigin) {
+    constrainedY = positionOrigin.y
+  }
+
+  if (lockedAxis === 'vertical' && positionOrigin) {
+    constrainedX = positionOrigin.x
+  }
+
+  return {
+    interaction: nextInteraction,
+    x: constrainedX,
+    y: constrainedY,
+    lockedAxis,
   }
 }
 
@@ -354,11 +543,26 @@ function canPaintWithPenOnLayer(layer) {
   return isRasterLayer(layer) || layer?.type === 'text'
 }
 
+function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
+  if (!documentState.layers.length) {
+    return null
+  }
+
+  if (preferredLayerId && findLayer(documentState, preferredLayerId)) {
+    return preferredLayerId
+  }
+
+  return documentState.layers.at(-1)?.id ?? null
+}
+
 function App() {
   const canvasRef = useRef(null)
   const canvasSurfaceRef = useRef(null)
   const overlayCanvasRef = useRef(null)
+  const assetLibraryInputRef = useRef(null)
   const imageInputRef = useRef(null)
+  const openFileInputRef = useRef(null)
+  const fileMenuRef = useRef(null)
   const interactionRef = useRef(null)
   const rasterSurfacesRef = useRef(new Map())
   const dragPreviewImageRef = useRef(null)
@@ -371,6 +575,7 @@ function App() {
     commitTransientChange,
     undo,
     redo,
+    reset,
     canUndo,
     canRedo,
   } = useHistory(createInitialDocument())
@@ -386,7 +591,14 @@ function App() {
   const [floatingSelection, setFloatingSelection] = useState(null)
   const [draggedLayerId, setDraggedLayerId] = useState(null)
   const [layerDropTarget, setLayerDropTarget] = useState(null)
+  const [assetLibrary, setAssetLibrary] = useState([])
+  const [draggedAssetId, setDraggedAssetId] = useState(null)
+  const [activeSvgToolLayerId, setActiveSvgToolLayerId] = useState(null)
+  const [isCanvasAssetDropActive, setIsCanvasAssetDropActive] = useState(false)
   const [isSnapEnabled, setIsSnapEnabled] = useState(true)
+  const [isExporting, setIsExporting] = useState(false)
+  const [isOpeningFile, setIsOpeningFile] = useState(false)
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false)
   const [activeMoveGuides, setActiveMoveGuides] = useState(() => createEmptySnapGuides())
   const [viewport, setViewport] = useState({
     zoom: 1,
@@ -456,11 +668,18 @@ function App() {
 
   const getLayerSurfaceKey = useCallback((layer) => {
     if (isRasterLayer(layer)) {
+      const svgRasterSize = layer.type === 'image' && layer.sourceKind === 'svg'
+        ? getSvgRasterSurfaceDimensions(layer)
+        : null
+
       return JSON.stringify({
         type: layer.type,
-        bitmap: layer.bitmap ?? '',
-        width: layer.type === 'raster' ? layer.width : null,
-        height: layer.type === 'raster' ? layer.height : null,
+        sourceKind: layer.sourceKind ?? 'bitmap',
+        bitmap: layer.type === 'image' && layer.sourceKind === 'svg'
+          ? layer.src ?? ''
+          : layer.bitmap ?? '',
+        width: layer.type === 'raster' ? layer.width : svgRasterSize?.width ?? null,
+        height: layer.type === 'raster' ? layer.height : svgRasterSize?.height ?? null,
       })
     }
 
@@ -510,7 +729,14 @@ function App() {
     let paintOverlayCanvas = null
 
     if (layer.type === 'image') {
-      const imageSurface = await createCanvasFromSource(layer.bitmap)
+      const svgRasterSize = layer.sourceKind === 'svg'
+        ? getSvgRasterSurfaceDimensions(layer)
+        : null
+      const imageSurface = await createCanvasFromSource(
+        layer.sourceKind === 'svg' ? layer.src : layer.bitmap,
+        svgRasterSize?.width ?? null,
+        svgRasterSize?.height ?? null,
+      )
       canvas = imageSurface.canvas
       maskCanvas = null
     }
@@ -597,6 +823,10 @@ function App() {
       return
     }
 
+    if (!canMergeDown(documentState, layerId)) {
+      return
+    }
+
     const currentLayer = findLayer(documentState, layerId)
 
     if (!currentLayer) {
@@ -649,6 +879,34 @@ function App() {
   }, [globalColors])
 
   useEffect(() => {
+    function handlePointerDownOutside(event) {
+      if (!isFileMenuOpen) {
+        return
+      }
+
+      if (fileMenuRef.current instanceof HTMLElement && fileMenuRef.current.contains(event.target)) {
+        return
+      }
+
+      setIsFileMenuOpen(false)
+    }
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        setIsFileMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDownOutside)
+    window.addEventListener('keydown', handleEscape)
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDownOutside)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [isFileMenuOpen])
+
+  useEffect(() => {
     const currentLayerIds = new Set(documentState.layers.map((layer) => layer.id))
 
     for (const [layerId] of rasterSurfacesRef.current) {
@@ -669,10 +927,31 @@ function App() {
     const nextSelectedLayerIds = selectedLayerIds.filter((layerId) => currentLayerIds.has(layerId))
 
     if (nextSelectedLayerIds.length !== selectedLayerIds.length) {
+      const fallbackSelectedLayerId = getFallbackSelectedLayerId(
+        documentState,
+        nextSelectedLayerIds.at(-1) ?? documentState.selectedLayerId,
+      )
       setTransient((currentDocument) => ({
         ...currentDocument,
-        selectedLayerId: nextSelectedLayerIds.at(-1) ?? null,
-        selectedLayerIds: nextSelectedLayerIds,
+        selectedLayerId: fallbackSelectedLayerId,
+        selectedLayerIds: fallbackSelectedLayerId
+          ? (nextSelectedLayerIds.length > 0 ? nextSelectedLayerIds : [fallbackSelectedLayerId])
+          : [],
+      }))
+      return
+    }
+
+    if (!selectedLayerIds.length && documentState.layers.length > 0) {
+      const fallbackSelectedLayerId = getFallbackSelectedLayerId(documentState)
+
+      if (!fallbackSelectedLayerId) {
+        return
+      }
+
+      setTransient((currentDocument) => ({
+        ...currentDocument,
+        selectedLayerId: fallbackSelectedLayerId,
+        selectedLayerIds: [fallbackSelectedLayerId],
       }))
       return
     }
@@ -816,22 +1095,29 @@ function App() {
       }
 
       if (interaction.type === 'move') {
-        const nextX = documentPoint.x - interaction.offsetX
-        const nextY = documentPoint.y - interaction.offsetY
+        const nextPosition = applyAxisLockedMove(
+          interaction,
+          documentPoint,
+          documentPoint.x - interaction.offsetX,
+          documentPoint.y - interaction.offsetY,
+          event.shiftKey,
+        )
         const snapResult = applyMoveSnapping(
-          nextX,
-          nextY,
+          nextPosition.x,
+          nextPosition.y,
           interaction.frameWidth,
           interaction.frameHeight,
           DOCUMENT_WIDTH,
           DOCUMENT_HEIGHT,
           {
             enabled: isSnapEnabled,
+            enabledX: nextPosition.lockedAxis !== 'vertical',
+            enabledY: nextPosition.lockedAxis !== 'horizontal',
             threshold: DEFAULT_SNAP_THRESHOLD,
           },
         )
         interactionRef.current = {
-          ...interaction,
+          ...nextPosition.interaction,
           hasChanged: true,
         }
         setActiveMoveGuides(snapResult.guides)
@@ -845,17 +1131,24 @@ function App() {
       }
 
       if (interaction.type === 'move-multi') {
-        const nextX = documentPoint.x - interaction.offsetX
-        const nextY = documentPoint.y - interaction.offsetY
+        const nextPosition = applyAxisLockedMove(
+          interaction,
+          documentPoint,
+          documentPoint.x - interaction.offsetX,
+          documentPoint.y - interaction.offsetY,
+          event.shiftKey,
+        )
         const snapResult = applyMoveSnapping(
-          nextX,
-          nextY,
+          nextPosition.x,
+          nextPosition.y,
           interaction.frameWidth,
           interaction.frameHeight,
           DOCUMENT_WIDTH,
           DOCUMENT_HEIGHT,
           {
             enabled: isSnapEnabled,
+            enabledX: nextPosition.lockedAxis !== 'vertical',
+            enabledY: nextPosition.lockedAxis !== 'horizontal',
             threshold: DEFAULT_SNAP_THRESHOLD,
           },
         )
@@ -867,7 +1160,7 @@ function App() {
           .reduce((minimumY, layer) => Math.min(minimumY, getLayerTransformBounds(layer).minY), Number.POSITIVE_INFINITY)
 
         interactionRef.current = {
-          ...interaction,
+          ...nextPosition.interaction,
           hasChanged: true,
         }
         setActiveMoveGuides(snapResult.guides)
@@ -1329,6 +1622,14 @@ function App() {
       }
 
       if (interaction.type === 'floating-selection-drag') {
+        const nextPosition = applyAxisLockedMove(
+          interaction,
+          documentPoint,
+          documentPoint.x - interaction.offsetX,
+          documentPoint.y - interaction.offsetY,
+          event.shiftKey,
+        )
+
         setFloatingSelection((currentSelection) => {
           if (!currentSelection) {
             return currentSelection
@@ -1336,13 +1637,13 @@ function App() {
 
           return {
             ...currentSelection,
-            x: documentPoint.x - interaction.offsetX,
-            y: documentPoint.y - interaction.offsetY,
+            x: nextPosition.x,
+            y: nextPosition.y,
           }
         })
 
         interactionRef.current = {
-          ...interaction,
+          ...nextPosition.interaction,
           hasChanged: true,
         }
       }
@@ -1476,18 +1777,22 @@ function App() {
             const nextBitmap = canvasToBitmap(nextCanvas)
 
             commit((currentDocument) =>
-              updateLayer(currentDocument, interaction.layerId, {
-                bitmap: nextBitmap,
-                x: nextX,
-                y: nextY,
-                width: nextWidth,
-                height: nextHeight,
-              }),
+              updateLayer(
+                currentDocument,
+                interaction.layerId,
+                createImageLayerBitmapPatch(currentLayer, nextBitmap, {
+                  x: nextX,
+                  y: nextY,
+                  width: nextWidth,
+                  height: nextHeight,
+                }),
+              ),
             )
           }
         }
 
         setPenDrawingLayerId(null)
+        setActiveSvgToolLayerId(null)
         interactionRef.current = null
         return
       }
@@ -1507,11 +1812,14 @@ function App() {
               )
             } else {
               const nextBitmap = canvasToBitmap(surfaceEntry.offscreenCanvas)
+              const currentLayer = findLayer(documentState, interaction.layerId)
 
               commit((currentDocument) =>
-                updateLayer(currentDocument, interaction.layerId, {
-                  bitmap: nextBitmap,
-                }),
+                updateLayer(
+                  currentDocument,
+                  interaction.layerId,
+                  createImageLayerBitmapPatch(currentLayer, nextBitmap),
+                ),
               )
             }
           }
@@ -1527,6 +1835,7 @@ function App() {
           }
         }
 
+        setActiveSvgToolLayerId(null)
         interactionRef.current = null
         return
       }
@@ -1542,6 +1851,7 @@ function App() {
         } : null
 
         setLassoSelection(nextSelection)
+        setActiveSvgToolLayerId(null)
         interactionRef.current = null
 
         if (nextSelection) {
@@ -1725,7 +2035,10 @@ function App() {
   }
 
   const selectDocumentLayer = useCallback((layerId) => {
-    setTransient((currentDocument) => selectSingleLayer(currentDocument, layerId))
+    setTransient((currentDocument) => {
+      const nextLayerId = layerId ?? getFallbackSelectedLayerId(currentDocument, currentDocument.selectedLayerId)
+      return selectSingleLayer(currentDocument, nextLayerId)
+    })
   }, [setTransient])
 
   const toggleDocumentLayerSelection = useCallback((layerId) => {
@@ -1733,7 +2046,18 @@ function App() {
   }, [setTransient])
 
   const clearDocumentSelection = useCallback(() => {
-    setTransient((currentDocument) => clearSelection(currentDocument))
+    setTransient((currentDocument) => {
+      const fallbackSelectedLayerId = getFallbackSelectedLayerId(
+        currentDocument,
+        currentDocument.selectedLayerId,
+      )
+
+      if (!fallbackSelectedLayerId) {
+        return clearSelection(currentDocument)
+      }
+
+      return selectSingleLayer(currentDocument, fallbackSelectedLayerId)
+    })
   }, [setTransient])
 
   function addLayer(factory) {
@@ -1747,6 +2071,16 @@ function App() {
 
   function resolvePenLayer(targetLayer) {
     const selectedDocumentLayer = findLayer(documentState, documentState.selectedLayerId)
+
+    if (isSvgImageLayer(targetLayer)) {
+      const nextLayer = createRasterLayer({
+        name: `${targetLayer.name} Paint`,
+      })
+
+      lastPenEditableLayerIdRef.current = nextLayer.id
+      commit((currentDocument) => insertLayer(currentDocument, nextLayer, targetLayer.id))
+      return nextLayer
+    }
 
     if (targetLayer && canPaintWithPenOnLayer(targetLayer)) {
       lastPenEditableLayerIdRef.current = targetLayer.id
@@ -1775,6 +2109,94 @@ function App() {
     return nextLayer
   }
 
+  const resetEditorRuntimeState = useCallback(() => {
+    interactionRef.current = null
+    rasterSurfacesRef.current = new Map()
+    copiedLayerRef.current = null
+    lastPenEditableLayerIdRef.current = null
+    setEditingTextLayerId(null)
+    setTextDraft('')
+    setActiveTool('select')
+    setPenDrawingLayerId(null)
+    setLassoSelection(null)
+    setFloatingSelection(null)
+    setDraggedLayerId(null)
+    setLayerDropTarget(null)
+    setAssetLibrary([])
+    setDraggedAssetId(null)
+    setActiveSvgToolLayerId(null)
+    setIsCanvasAssetDropActive(false)
+    setActiveMoveGuides(createEmptySnapGuides())
+    setViewport({
+      zoom: 1,
+      offsetX: 0,
+      offsetY: 0,
+    })
+  }, [])
+
+  const loadDocumentState = useCallback((nextDocumentState) => {
+    resetEditorRuntimeState()
+    reset(normalizeDocumentState(nextDocumentState))
+  }, [reset, resetEditorRuntimeState])
+
+  function handleNewFile() {
+    setIsFileMenuOpen(false)
+    loadDocumentState(createInitialDocument())
+  }
+
+  function handleSaveFile() {
+    setIsFileMenuOpen(false)
+    downloadProjectFile(documentState)
+  }
+
+  function handleOpenFileClick() {
+    setIsFileMenuOpen(false)
+    openFileInputRef.current?.click()
+  }
+
+  async function handleOpenFile(event) {
+    const file = event.target.files?.[0]
+
+    if (!file) {
+      return
+    }
+
+    setIsOpeningFile(true)
+
+    try {
+      const fileContents = await file.text()
+      const loadedDocument = parseProjectFile(fileContents)
+      loadDocumentState(loadedDocument)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'This project file could not be opened.')
+    } finally {
+      event.target.value = ''
+      setIsOpeningFile(false)
+    }
+  }
+
+  async function handleExport(format) {
+    if (isExporting) {
+      return
+    }
+
+    setIsFileMenuOpen(false)
+    setIsExporting(true)
+
+    try {
+      await exportDocumentImage(
+        documentState,
+        DOCUMENT_WIDTH,
+        DOCUMENT_HEIGHT,
+        format,
+      )
+    } catch {
+      // Ignore failed exports for the MVP.
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   async function handleImageImport(event) {
     const file = event.target.files?.[0]
 
@@ -1788,18 +2210,21 @@ function App() {
 
     try {
       const imageDataUrl = await readFileAsDataUrl(file)
-      const { width, height } = await loadImageDimensions(imageDataUrl)
-      const frame = getImportedImageFrame(width, height)
+      const sourceKind = getImportedSourceKind(file, imageDataUrl)
+      const { width, height } = await loadImageDimensionsFromSource(imageDataUrl)
+      const dimensions = getImportedImageDimensions(width, height)
+      const position = getDefaultImportedImagePosition(dimensions.width, dimensions.height)
 
       addLayer(() =>
         createImageLayer({
-          x: 180,
-          y: 80,
-          width: frame.width,
-          height: frame.height,
+          x: position.x,
+          y: position.y,
+          width: dimensions.width,
+          height: dimensions.height,
           name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
           src: imageDataUrl,
           bitmap: imageDataUrl,
+          sourceKind,
           fit: 'fill',
         }),
       )
@@ -1809,6 +2234,113 @@ function App() {
     }
 
     resetInput()
+  }
+
+  async function handleAssetLibraryImport(event) {
+    const files = event.target.files
+
+    if (!files?.length) {
+      return
+    }
+
+    try {
+      const nextAssets = await importAssetsFromFiles(files)
+      setAssetLibrary((currentAssets) => [...currentAssets, ...nextAssets])
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  async function createImageLayerFromAsset(asset, x, y) {
+    let width = MIN_LAYER_WIDTH
+    let height = MIN_LAYER_HEIGHT
+
+    try {
+      const dimensions = await loadImageDimensionsFromSource(asset.src)
+      const naturalDimensions = getImportedImageDimensions(dimensions.width, dimensions.height)
+      width = naturalDimensions.width
+      height = naturalDimensions.height
+    } catch {
+      const fallbackDimensions = getImportedImageDimensions(
+        asset.width ?? 240,
+        asset.height ?? 240,
+      )
+      width = fallbackDimensions.width
+      height = fallbackDimensions.height
+    }
+
+    const position = clampImportedImagePosition(
+      Math.round(x - (width / 2)),
+      Math.round(y - (height / 2)),
+      width,
+      height,
+    )
+
+    return createImageLayer({
+      x: position.x,
+      y: position.y,
+      width,
+      height,
+      name: asset.name,
+      src: asset.src,
+      bitmap: asset.src,
+      sourceKind: asset.sourceKind ?? inferImageSourceKindFromSrc(asset.src),
+      fit: 'fill',
+    })
+  }
+
+  function handleAssetDragStart(event, asset) {
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData(ASSET_DRAG_MIME_TYPE, asset.id)
+    setDraggedAssetId(asset.id)
+  }
+
+  function handleAssetDragEnd() {
+    setDraggedAssetId(null)
+    setIsCanvasAssetDropActive(false)
+  }
+
+  function removeAssetFromLibrary(assetId) {
+    setAssetLibrary((currentAssets) => currentAssets.filter((asset) => asset.id !== assetId))
+
+    if (draggedAssetId === assetId) {
+      setDraggedAssetId(null)
+    }
+  }
+
+  function handleCanvasAssetDragOver(event) {
+    if (!event.dataTransfer.types.includes(ASSET_DRAG_MIME_TYPE)) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+
+    if (!isCanvasAssetDropActive) {
+      setIsCanvasAssetDropActive(true)
+    }
+  }
+
+  async function handleCanvasAssetDrop(event) {
+    const assetId = event.dataTransfer.getData(ASSET_DRAG_MIME_TYPE)
+
+    if (!assetId) {
+      return
+    }
+
+    event.preventDefault()
+    setIsCanvasAssetDropActive(false)
+    setDraggedAssetId(null)
+
+    const asset = assetLibrary.find((candidate) => candidate.id === assetId)
+    const dropPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+
+    if (!asset || !dropPoint) {
+      return
+    }
+
+    const nextLayer = await createImageLayerFromAsset(asset, dropPoint.x, dropPoint.y)
+    applyDocumentChange((currentDocument) => appendLayer(currentDocument, nextLayer))
   }
 
   function updateSelectedLayer(patch) {
@@ -1829,6 +2361,14 @@ function App() {
         layer.type === 'text' ? updater(layer) : layer
       )),
     )
+  }
+
+  function getActiveLassoLayer() {
+    if (selectedLayerIds.length !== 1 || !selectedLayer || !isRasterLayer(selectedLayer)) {
+      return null
+    }
+
+    return selectedLayer
   }
 
   function startMove(event, layer) {
@@ -1874,6 +2414,7 @@ function App() {
         ])),
         originDocument: documentState,
         hasChanged: false,
+        ...createMoveAxisLockState(),
       }
       return
     }
@@ -1889,6 +2430,7 @@ function App() {
       frameHeight: height,
       originDocument: documentState,
       hasChanged: false,
+      ...createMoveAxisLockState(),
     }
   }
 
@@ -1981,6 +2523,9 @@ function App() {
 
     const penLayer = resolvePenLayer(layer)
     selectDocumentLayer(penLayer.id)
+    setActiveSvgToolLayerId(
+      penLayer.type === 'image' && penLayer.sourceKind === 'svg' ? penLayer.id : null,
+    )
 
     const surfaceCanvas = await ensureRasterLayerSurface(penLayer)
     const surfaceEntry = rasterSurfacesRef.current.get(penLayer.id)
@@ -2047,6 +2592,9 @@ function App() {
     event.preventDefault()
 
     selectDocumentLayer(layer.id)
+    setActiveSvgToolLayerId(
+      layer.type === 'image' && layer.sourceKind === 'svg' ? layer.id : null,
+    )
 
     if (!isErasableLayer(layer)) {
       return
@@ -2113,6 +2661,10 @@ function App() {
       return
     }
 
+    setActiveSvgToolLayerId(
+      layer.type === 'image' && layer.sourceKind === 'svg' ? layer.id : null,
+    )
+
     const surfaceCanvas = await ensureRasterLayerSurface(layer)
     const surfaceEntry = rasterSurfacesRef.current.get(layer.id)
     const layerPoint = surfaceCanvas && surfaceEntry?.layerElement
@@ -2123,7 +2675,6 @@ function App() {
       return
     }
 
-    selectDocumentLayer(layer.id)
     setFloatingSelection(null)
 
     const initialPoints = [layerPoint]
@@ -2159,6 +2710,7 @@ function App() {
       offsetX: documentPoint.x - floatingSelection.x,
       offsetY: documentPoint.y - floatingSelection.y,
       hasChanged: false,
+      ...createMoveAxisLockState(),
     }
 
     return true
@@ -2290,13 +2842,16 @@ function App() {
     drawRasterLayer(sourceLayer.id)
 
     commit((currentDocument) =>
-      updateLayer(currentDocument, sourceLayer.id, {
-        bitmap: canvasToBitmap(targetCanvas),
-        x: nextLayerX,
-        y: nextLayerY,
-        width: nextLayerWidth,
-        height: nextLayerHeight,
-      }),
+      updateLayer(
+        currentDocument,
+        sourceLayer.id,
+        createImageLayerBitmapPatch(sourceLayer, canvasToBitmap(targetCanvas), {
+          x: nextLayerX,
+          y: nextLayerY,
+          width: nextLayerWidth,
+          height: nextLayerHeight,
+        }),
+      ),
     )
 
     setLassoSelection(preserveSelection ? createSelectionFromFloating(
@@ -2339,9 +2894,14 @@ function App() {
 
       commit((currentDocument) => {
         const nextDocument = floatingSelection.mode === 'move'
-          ? updateLayer(currentDocument, sourceLayer.id, {
-            bitmap: canvasToBitmap(sourceEntry.offscreenCanvas),
-          })
+          ? updateLayer(
+            currentDocument,
+            sourceLayer.id,
+            createImageLayerBitmapPatch(
+              sourceLayer,
+              canvasToBitmap(sourceEntry.offscreenCanvas),
+            ),
+          )
           : currentDocument
 
         return insertLayer(nextDocument, newLayer, sourceLayer.id)
@@ -2415,9 +2975,14 @@ function App() {
       }
 
       commit((currentDocument) =>
-        updateLayer(currentDocument, sourceLayer.id, {
-          bitmap: canvasToBitmap(sourceEntry.offscreenCanvas),
-        }),
+        updateLayer(
+          currentDocument,
+          sourceLayer.id,
+          createImageLayerBitmapPatch(
+            sourceLayer,
+            canvasToBitmap(sourceEntry.offscreenCanvas),
+          ),
+        ),
       )
     }
 
@@ -2447,9 +3012,11 @@ function App() {
     clearSelectionFromCanvas(workingCanvas, lassoSelection)
 
     commit((currentDocument) =>
-      updateLayer(currentDocument, sourceLayer.id, {
-        bitmap: canvasToBitmap(workingCanvas),
-      }),
+      updateLayer(
+        currentDocument,
+        sourceLayer.id,
+        createImageLayerBitmapPatch(sourceLayer, canvasToBitmap(workingCanvas)),
+      ),
     )
 
     setLassoSelection(null)
@@ -2469,6 +3036,15 @@ function App() {
     }
 
     if (currentTool === 'lasso') {
+      event.stopPropagation()
+      event.preventDefault()
+
+      const lassoLayer = getActiveLassoLayer()
+
+      if (!lassoLayer || lassoLayer.id !== layer.id) {
+        return
+      }
+
       if (beginFloatingSelectionDrag(event)) {
         return
       }
@@ -2478,22 +3054,19 @@ function App() {
         return
       }
 
-      if (lassoSelection?.sourceLayerId === layer.id) {
-        const surfaceEntry = rasterSurfacesRef.current.get(layer.id)
+      if (lassoSelection?.sourceLayerId === lassoLayer.id) {
+        const surfaceEntry = rasterSurfacesRef.current.get(lassoLayer.id)
         const surfaceCanvas = surfaceEntry?.offscreenCanvas
         const layerPoint = surfaceCanvas && surfaceEntry?.layerElement
           ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceCanvas)
           : null
 
         if (layerPoint && !isPointInsidePolygon(layerPoint, lassoSelection.points)) {
-          event.stopPropagation()
-          event.preventDefault()
           setLassoSelection(null)
-          return
         }
       }
 
-      beginLasso(event, layer)
+      beginLasso(event, lassoLayer)
       return
     }
 
@@ -2527,15 +3100,15 @@ function App() {
         } else if (lassoSelection) {
           setLassoSelection(null)
         }
-
-        clearDocumentSelection()
       }
 
       return
     }
 
     if (currentTool === 'pen') {
-      if (selectedLayer?.type === 'raster') {
+      if (!documentState.layers.length) {
+        beginPenStroke(event, null)
+      } else if (selectedLayer?.type === 'raster') {
         beginPenStroke(event, selectedLayer)
       }
       return
@@ -2831,7 +3404,19 @@ function App() {
             }}
           />
         )}
-        {isRasterLayer(layer) && (
+        {layer.type === 'image' &&
+        layer.sourceKind === 'svg' &&
+        activeSvgToolLayerId !== layer.id ? (
+          <div className="layer-body image-layer-body">
+            <img
+              className="layer-image"
+              src={layer.src}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+            />
+          </div>
+        ) : isRasterLayer(layer) && (
           <div className="layer-body image-layer-body">
             <canvas
               ref={(node) => registerVisibleCanvas(layer.id, node)}
@@ -2906,6 +3491,73 @@ function App() {
 
   return (
     <main className="app-shell">
+      <input
+        ref={openFileInputRef}
+        className="sr-only"
+        type="file"
+        accept=".kryop,application/json"
+        onChange={(event) => {
+          void handleOpenFile(event)
+        }}
+      />
+      <div ref={fileMenuRef} className="app-file-menu">
+        <button
+          className={isFileMenuOpen ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => setIsFileMenuOpen((currentValue) => !currentValue)}
+          aria-expanded={isFileMenuOpen}
+          aria-haspopup="menu"
+        >
+          File
+        </button>
+        {isFileMenuOpen && (
+          <div className="topbar-menu-dropdown" role="menu" aria-label="File">
+            <button
+              className="topbar-menu-item"
+              type="button"
+              onClick={handleNewFile}
+              role="menuitem"
+            >
+              New File
+            </button>
+            <button
+              className="topbar-menu-item"
+              type="button"
+              onClick={handleOpenFileClick}
+              disabled={isOpeningFile}
+              role="menuitem"
+            >
+              Open File
+            </button>
+            <button
+              className="topbar-menu-item"
+              type="button"
+              onClick={handleSaveFile}
+              role="menuitem"
+            >
+              Save File
+            </button>
+            <button
+              className="topbar-menu-item"
+              type="button"
+              onClick={() => void handleExport('png')}
+              disabled={isExporting}
+              role="menuitem"
+            >
+              Export PNG
+            </button>
+            <button
+              className="topbar-menu-item"
+              type="button"
+              onClick={() => void handleExport('jpeg')}
+              disabled={isExporting}
+              role="menuitem"
+            >
+              Export JPEG
+            </button>
+          </div>
+        )}
+      </div>
       <section className="editor-panel">
         <header className="editor-topbar">
           <div>
@@ -2977,7 +3629,7 @@ function App() {
                   <input
                     type="range"
                     min={activeBrushTool === 'pen' ? '2' : '8'}
-                    max={activeBrushTool === 'pen' ? '64' : '96'}
+                    max={activeBrushTool === 'pen' ? '120' : '96'}
                     step="1"
                     value={activeBrushTool === 'pen' ? penSize : eraserSize}
                     onChange={(event) => {
@@ -3059,66 +3711,139 @@ function App() {
             >
               <img className="button-icon" src={addImageIcon} alt="" aria-hidden="true" />
             </button>
-            <div className="toolbar-bottom-tools">
-              <div className="color-swatch-panel" aria-label="Global colors">
-                <div className="color-swatch-stack">
-                  <label
-                    className="color-swatch color-swatch-background"
-                    aria-label={`Background color ${globalColors.background}`}
-                    style={{ backgroundColor: globalColors.background }}
-                  >
-                    <input
-                      className="color-swatch-input"
-                      type="color"
-                      value={globalColors.background}
-                      onChange={(event) => setBackground(event.target.value)}
-                      aria-label="Set background color"
-                    />
-                  </label>
-                  <label
-                    className="color-swatch color-swatch-foreground"
-                    aria-label={`Foreground color ${globalColors.foreground}`}
-                    style={{ backgroundColor: globalColors.foreground }}
-                  >
-                    <input
-                      className="color-swatch-input"
-                      type="color"
-                      value={globalColors.foreground}
-                      onChange={(event) => setForeground(event.target.value)}
-                      aria-label="Set foreground color"
-                    />
-                  </label>
-                </div>
-                <div className="color-swatch-actions">
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={swapColors}
-                    aria-label="Swap foreground and background colors"
-                  >
-                    Swap
-                  </button>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={resetColors}
-                    aria-label="Reset foreground and background colors"
-                  >
-                    Reset
-                  </button>
-                </div>
+            <div className="color-swatch-panel" aria-label="Global colors">
+              <div className="color-swatch-stack">
+                <label
+                  className="color-swatch color-swatch-background"
+                  aria-label={`Background color ${globalColors.background}`}
+                  style={{ backgroundColor: globalColors.background }}
+                >
+                  <input
+                    className="color-swatch-input"
+                    type="color"
+                    value={globalColors.background}
+                    onChange={(event) => setBackground(event.target.value)}
+                    aria-label="Set background color"
+                  />
+                </label>
+                <label
+                  className="color-swatch color-swatch-foreground"
+                  aria-label={`Foreground color ${globalColors.foreground}`}
+                  style={{ backgroundColor: globalColors.foreground }}
+                >
+                  <input
+                    className="color-swatch-input"
+                    type="color"
+                    value={globalColors.foreground}
+                    onChange={(event) => setForeground(event.target.value)}
+                    aria-label="Set foreground color"
+                  />
+                </label>
+              </div>
+              <div className="color-swatch-actions">
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={swapColors}
+                  aria-label="Swap foreground and background colors"
+                >
+                  Swap
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={resetColors}
+                  aria-label="Reset foreground and background colors"
+                >
+                  Reset
+                </button>
               </div>
             </div>
           </div>
         </header>
 
         <div className="workspace-grid">
+          <aside className="asset-sidebar">
+            <input
+              ref={assetLibraryInputRef}
+              className="sr-only"
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+              multiple
+              onChange={handleAssetLibraryImport}
+            />
+            <section className="panel-card asset-panel">
+              <div className="asset-panel-header">
+                <div className="panel-header">
+                  <div>
+                    <p className="eyebrow">Assets</p>
+                    <h2>Library</h2>
+                  </div>
+                  <button
+                    className="action-button"
+                    type="button"
+                    onClick={() => assetLibraryInputRef.current?.click()}
+                  >
+                    Import Images
+                  </button>
+                </div>
+              </div>
+
+              <div className="asset-panel-body">
+                {assetLibrary.length === 0 ? (
+                  <p className="empty-state asset-empty-state">
+                    Import PNG, JPG, SVG, or WEBP assets and drag them onto the canvas.
+                  </p>
+                ) : (
+                  <div className="asset-grid">
+                    {assetLibrary.map((asset) => (
+                      <button
+                        key={asset.id}
+                        className={draggedAssetId === asset.id ? 'asset-card dragging' : 'asset-card'}
+                        type="button"
+                        draggable
+                        onDragStart={(event) => handleAssetDragStart(event, asset)}
+                        onDragEnd={handleAssetDragEnd}
+                      >
+                        <img className="asset-thumbnail" src={asset.src} alt="" aria-hidden="true" />
+                        <div className="asset-card-footer">
+                          <span className="asset-name">{asset.name}</span>
+                          <button
+                            className="asset-delete-button"
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              removeAssetFromLibrary(asset.id)
+                            }}
+                            onPointerDown={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                            }}
+                            aria-label={`Delete ${asset.name} from asset library`}
+                          >
+                            <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </aside>
+
           <div className="workspace-main-column">
             <section className="canvas-panel">
               <div
                 ref={canvasRef}
-                className="canvas-stage"
+                className={isCanvasAssetDropActive ? 'canvas-stage asset-drop-active' : 'canvas-stage'}
                 onPointerDown={handleCanvasPointerDown}
+                onDragOver={handleCanvasAssetDragOver}
+                onDragLeave={() => setIsCanvasAssetDropActive(false)}
+                onDrop={(event) => {
+                  void handleCanvasAssetDrop(event)
+                }}
                 onContextMenu={(event) => {
                   if (currentTool === 'zoom') {
                     event.preventDefault()
@@ -3246,7 +3971,6 @@ function App() {
                           draggable={false}
                         />
                         <div className="layer-chip-row">
-                          <span className="layer-type-chip">{layer.type}</span>
                           {isAlphaLocked(layer) && (
                             <span className="layer-flag-chip">alpha lock</span>
                           )}
@@ -3365,6 +4089,66 @@ function App() {
                   </div>
                 ) : selectedLayer ? (
                   <div className="property-grid">
+                    {selectedLayer.type === 'text' && (
+                      <>
+                        <label className="property-field">
+                          <span>Font Size</span>
+                          <input
+                            type="number"
+                            min="8"
+                            value={selectedLayer.fontSize}
+                            onChange={(event) =>
+                              handleNumericChange('fontSize', event.target.value, 8)
+                            }
+                          />
+                        </label>
+                        <label className="property-field">
+                          <span>Weight</span>
+                          <button
+                            className={selectedLayer.fontWeight >= 700
+                              ? 'action-button active'
+                              : 'action-button'}
+                            type="button"
+                            onClick={() =>
+                              applyTextLayerUpdate(selectedLayer.id, (layer) => updateTextStyle(
+                                layer,
+                                {
+                                  fontWeight: layer.fontWeight >= 700 ? 400 : 700,
+                                },
+                              ))
+                            }
+                          >
+                            Bold
+                          </button>
+                        </label>
+                        <label className="property-field">
+                          <span>Font</span>
+                          <select
+                            value={selectedLayer.fontFamily}
+                            onChange={(event) =>
+                              applyTextLayerUpdate(
+                                selectedLayer.id,
+                                (layer) => updateTextLayerFont(layer, event.target.value),
+                              )
+                            }
+                          >
+                            {FONT_FAMILY_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="property-field">
+                          <span>Color</span>
+                          <input
+                            type="color"
+                            value={selectedLayer.color}
+                            onChange={(event) => updateSelectedLayer({ color: event.target.value })}
+                          />
+                        </label>
+                      </>
+                    )}
                     <label className="property-field">
                       <span>X</span>
                       <input
@@ -3494,63 +4278,6 @@ function App() {
                             <option value="box">Box</option>
                           </select>
                         </label>
-                        <label className="property-field">
-                          <span>Font</span>
-                          <select
-                            value={selectedLayer.fontFamily}
-                            onChange={(event) =>
-                              applyTextLayerUpdate(
-                                selectedLayer.id,
-                                (layer) => updateTextLayerFont(layer, event.target.value),
-                              )
-                            }
-                          >
-                            {FONT_FAMILY_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="property-field full-width">
-                          <span>Text</span>
-                          <textarea
-                            value={selectedLayer.text}
-                            onChange={(event) =>
-                              updateTextLayerContent(selectedLayer.id, event.target.value)
-                            }
-                          />
-                        </label>
-                        <label className="property-field">
-                          <span>Font Size</span>
-                          <input
-                            type="number"
-                            min="8"
-                            value={selectedLayer.fontSize}
-                            onChange={(event) =>
-                              handleNumericChange('fontSize', event.target.value, 8)
-                            }
-                          />
-                        </label>
-                        <label className="property-field">
-                          <span>Weight</span>
-                          <button
-                            className={selectedLayer.fontWeight >= 700
-                              ? 'action-button active'
-                              : 'action-button'}
-                            type="button"
-                            onClick={() =>
-                              applyTextLayerUpdate(selectedLayer.id, (layer) => updateTextStyle(
-                                layer,
-                                {
-                                  fontWeight: layer.fontWeight >= 700 ? 400 : 700,
-                                },
-                              ))
-                            }
-                          >
-                            Bold
-                          </button>
-                        </label>
                         {selectedLayer.mode === 'box' && (
                           <label className="property-field">
                             <span>Box Width</span>
@@ -3571,14 +4298,6 @@ function App() {
                             />
                           </label>
                         )}
-                        <label className="property-field">
-                          <span>Color</span>
-                          <input
-                            type="color"
-                            value={selectedLayer.color}
-                            onChange={(event) => updateSelectedLayer({ color: event.target.value })}
-                          />
-                        </label>
                         <div className="group-note full-width">
                           Text paint stays in a separate overlay bitmap so the text remains editable.
                           Large text or font changes keep the overlay positioned in the layer frame,
@@ -3620,6 +4339,7 @@ function App() {
                               updateSelectedLayer({
                                 src: event.target.value,
                                 bitmap: event.target.value,
+                                sourceKind: inferImageSourceKindFromSrc(event.target.value),
                               })
                             }
                           />

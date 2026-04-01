@@ -93,6 +93,7 @@ export function createImageLayer(overrides = {}) {
     height: 220,
     src: '',
     bitmap: overrides.bitmap ?? overrides.src ?? '',
+    sourceKind: 'bitmap',
     fit: 'fill',
     ...overrides,
   })
@@ -324,18 +325,36 @@ export function getLayerBelow(documentState, layerId) {
   return documentState.layers[currentIndex - 1] ?? null
 }
 
+export function isSvgImageLayer(layer) {
+  return layer?.type === 'image' && layer?.sourceKind === 'svg'
+}
+
 export function canMergeDown(documentState, layerId = documentState.selectedLayerId) {
   if (!layerId) {
     return false
   }
 
-  return Boolean(findLayer(documentState, layerId) && getLayerBelow(documentState, layerId))
+  const currentLayer = findLayer(documentState, layerId)
+  const layerBelow = getLayerBelow(documentState, layerId)
+
+  if (!currentLayer || !layerBelow) {
+    return false
+  }
+
+  return !isSvgImageLayer(currentLayer) && !isSvgImageLayer(layerBelow)
 }
 
 export function mergeLayerDown(documentState, selectedLayerId, mergedLayer) {
   const selectedIndex = documentState.layers.findIndex((layer) => layer.id === selectedLayerId)
 
   if (selectedIndex <= 0) {
+    return documentState
+  }
+
+  const currentLayer = documentState.layers[selectedIndex]
+  const layerBelow = documentState.layers[selectedIndex - 1]
+
+  if (isSvgImageLayer(currentLayer) || isSvgImageLayer(layerBelow)) {
     return documentState
   }
 

@@ -61,6 +61,10 @@ export function useHistory(initialState) {
     setHistory((currentHistory) => redo(currentHistory))
   }
 
+  function reset(nextState) {
+    setHistory(createHistory(nextState))
+  }
+
   return {
     history,
     present: history.present,
@@ -69,6 +73,7 @@ export function useHistory(initialState) {
     commitTransientChange,
     undo: handleUndo,
     redo: handleRedo,
+    reset,
     canUndo: canUndo(history),
     canRedo: canRedo(history),
   }

@@ -22,6 +22,13 @@
     linear-gradient(180deg, #fffaf2 0%, var(--bg) 100%);
 }
 
+.app-file-menu {
+  position: fixed;
+  top: 1.5rem;
+  left: 1.5rem;
+  z-index: 40;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -101,6 +108,53 @@
   gap: 0.75rem;
 }
 
+.topbar-menu {
+  position: relative;
+  z-index: 20;
+}
+
+.topbar-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  left: 0;
+  min-width: 12rem;
+  padding: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: var(--panel-strong);
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.topbar-menu-item {
+  border: 0;
+  border-radius: 16px;
+  padding: 0.8rem 0.9rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.topbar-menu-item:hover {
+  transform: translateY(-1px);
+  background: rgba(217, 119, 6, 0.08);
+}
+
+.topbar-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .toolbar-range {
   display: inline-flex;
   align-items: center;
@@ -129,12 +183,6 @@
   border: 1px solid var(--line-strong);
   border-radius: 22px;
   background: var(--panel-strong);
-}
-
-.toolbar-bottom-tools {
-  display: flex;
-  flex-basis: 100%;
-  justify-content: flex-end;
 }
 
 .color-swatch-stack {
@@ -229,13 +277,19 @@
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(340px, 420px);
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1.8fr) minmax(340px, 420px);
   gap: 1.25rem;
   align-items: start;
 }
 
+.asset-sidebar,
 .workspace-main-column {
   min-width: 0;
+  min-height: 0;
+}
+
+.asset-sidebar,
+.workspace-main-column {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -261,6 +315,10 @@
     linear-gradient(var(--canvas-grid) 1px, transparent 1px),
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), #fff7ed);
   background-size: 28px 28px, 28px 28px, 100% 100%;
+}
+
+.canvas-stage.asset-drop-active {
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.28);
 }
 
 .canvas-viewport {
@@ -482,6 +540,111 @@
   gap: 1rem;
 }
 
+.asset-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(540px, calc(100vh - 15rem));
+  overflow: hidden;
+}
+
+.asset-panel-header {
+  flex: 0 0 auto;
+}
+
+.asset-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.asset-grid {
+  column-count: 2;
+  column-gap: 0.8rem;
+}
+
+.asset-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  width: 100%;
+  margin: 0 0 0.8rem;
+  padding: 0.7rem;
+  padding-bottom: 2.6rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  text-align: left;
+  cursor: grab;
+  break-inside: avoid;
+}
+
+.asset-card.dragging {
+  opacity: 0.55;
+}
+
+.asset-thumbnail {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 247, 237, 0.92));
+  border: 1px solid var(--line);
+}
+
+.asset-card-footer {
+  display: block;
+}
+
+.asset-delete-button {
+  position: absolute;
+  right: 0.7rem;
+  bottom: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(255, 250, 242, 0.94);
+  color: #991b1b;
+  box-shadow: 0 10px 24px rgba(68, 43, 15, 0.16);
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.asset-delete-button:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  background: #fffaf2;
+}
+
+.asset-name {
+  display: block;
+  padding-right: 2.15rem;
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.asset-delete-button .button-icon {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.asset-empty-state {
+  padding: 1.2rem 0.2rem 0.4rem;
+}
+
 .panel-card {
   padding: 1rem;
 }
@@ -497,17 +660,17 @@
 .layer-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.45rem;
 }
 
 .layer-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.7rem;
+  gap: 0.5rem;
   align-items: center;
-  padding: 0.8rem;
+  padding: 0.5rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.66);
   cursor: pointer;
 }
@@ -530,8 +693,8 @@
 }
 
 .icon-button {
-  padding: 0.45rem 0.7rem;
-  font-size: 0.82rem;
+  padding: 0.34rem 0.5rem;
+  font-size: 0.76rem;
 }
 
 .button-icon {
@@ -568,13 +731,13 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.24rem;
 }
 
 .layer-chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.25rem;
 }
 
 .layer-name-input,
@@ -590,7 +753,8 @@
 }
 
 .layer-name-input {
-  padding: 0.55rem 0.7rem;
+  padding: 0.38rem 0.55rem;
+  font-size: 0.82rem;
 }
 
 .layer-type-chip {
@@ -608,28 +772,28 @@
   display: inline-flex;
   width: fit-content;
   border-radius: 999px;
-  padding: 0.22rem 0.55rem;
+  padding: 0.1rem 0.35rem;
   background: rgba(217, 119, 6, 0.12);
   color: var(--accent-strong);
-  font-size: 0.78rem;
+  font-size: 0.64rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .row-actions {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.22rem;
 }
 
 .row-actions .icon-button {
-  padding: 0.35rem 0.5rem;
-  min-width: 2rem;
-  min-height: 2rem;
+  padding: 0.28rem 0.36rem;
+  min-width: 1.6rem;
+  min-height: 1.6rem;
 }
 
 .row-actions .button-icon {
-  width: 0.78rem;
-  height: 0.78rem;
+  width: 0.68rem;
+  height: 0.68rem;
 }
 
 .property-grid {
@@ -657,6 +821,7 @@
   resize: vertical;
 }
 
+
 .full-width {
   grid-column: 1 / -1;
 }
@@ -672,6 +837,10 @@
 @media (max-width: 1120px) {
   .workspace-grid {
     grid-template-columns: 1fr;
+  }
+
+  .asset-grid {
+    column-count: 3;
   }
 
   .sidebar {
@@ -698,6 +867,10 @@
 
   .layer-row {
     grid-template-columns: 1fr;
+  }
+
+  .asset-grid {
+    column-count: 2;
   }
 
   .row-actions {
