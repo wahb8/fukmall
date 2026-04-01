@@ -63,6 +63,7 @@ import {
   moveLayer,
   moveLayerToIndex,
   removeLayer,
+  removeLayers,
   selectSingleLayer,
   setLayerAlphaLock,
   toggleLayerInSelection,
@@ -2103,8 +2104,8 @@ function App() {
           return
         }
 
-        if (selectedDocumentLayer) {
-          commit((currentDocument) => removeLayer(currentDocument, selectedDocumentLayer.id))
+        if (selectedLayerIds.length > 0 || selectedDocumentLayer) {
+          deleteSelectedLayers()
         }
 
         return
@@ -2173,10 +2174,12 @@ function App() {
     documentState,
     floatingSelection,
     lassoSelection,
+    selectedLayerIds,
     redo,
     undo,
     resetColors,
     swapColors,
+    deleteSelectedLayers,
   ])
 
   useEffect(() => {
@@ -2207,6 +2210,22 @@ function App() {
 
   function applyDocumentChange(updater) {
     commit((currentDocument) => updater(currentDocument))
+  }
+
+  function deleteSelectedLayers() {
+    commit((currentDocument) => {
+      const currentSelectedLayerIds = Array.isArray(currentDocument.selectedLayerIds)
+        ? currentDocument.selectedLayerIds
+        : currentDocument.selectedLayerId
+          ? [currentDocument.selectedLayerId]
+          : []
+
+      if (currentSelectedLayerIds.length === 0) {
+        return currentDocument
+      }
+
+      return removeLayers(currentDocument, currentSelectedLayerIds)
+    })
   }
 
   const selectDocumentLayer = useCallback((layerId) => {
@@ -3867,10 +3886,7 @@ function App() {
       </div>
       <section className="editor-panel">
         <header className="editor-topbar">
-          <div>
-            <h1>Fukmall</h1>
-            <p className="title-subline">MVP</p>
-          </div>
+          <div />
           <div className="toolbar-actions">
             <button
               className={currentTool === 'select' ? 'action-button active' : 'action-button'}
@@ -3929,22 +3945,6 @@ function App() {
             >
               <img className="button-icon" src={zoomIcon} alt="" aria-hidden="true" />
             </button>
-            <button
-              className={isSnapEnabled ? 'action-button active' : 'action-button'}
-              type="button"
-              onClick={() => {
-                setIsSnapEnabled((currentValue) => {
-                  if (currentValue) {
-                    setActiveMoveGuides(createEmptySnapGuides())
-                  }
-
-                  return !currentValue
-                })
-              }}
-              aria-pressed={isSnapEnabled}
-            >
-              {isSnapEnabled ? 'Snap On' : 'Snap Off'}
-            </button>
             {(currentTool === 'pen' || currentTool === 'eraser') && (
               <>
                 <label className="toolbar-range">
@@ -3997,32 +3997,36 @@ function App() {
                 </select>
               </label>
             )}
-            <button
-              className="action-button"
-              type="button"
-              disabled={!hasFloatingSelection && !hasActiveLassoSelection}
-              onClick={commitFloatingSelectionToNewLayer}
-            >
-              Sel to Layer
-            </button>
-            <button
-              className="action-button"
-              type="button"
-              disabled={!canUndo}
-              onClick={undo}
-              aria-label="Undo"
-            >
-              <img className="button-icon" src={undoIcon} alt="" aria-hidden="true" />
-            </button>
-            <button
-              className="action-button"
-              type="button"
-              disabled={!canRedo}
-              onClick={redo}
-              aria-label="Redo"
-            >
-              <img className="button-icon" src={redoIcon} alt="" aria-hidden="true" />
-            </button>
+            {currentTool === 'lasso' && (
+              <button
+                className="action-button"
+                type="button"
+                disabled={!hasFloatingSelection && !hasActiveLassoSelection}
+                onClick={commitFloatingSelectionToNewLayer}
+              >
+                Sel to Layer
+              </button>
+            )}
+            <div className="history-widget" aria-label="History actions">
+              <button
+                className="icon-button history-widget-button"
+                type="button"
+                disabled={!canUndo}
+                onClick={undo}
+                aria-label="Undo"
+              >
+                <img className="button-icon" src={undoIcon} alt="" aria-hidden="true" />
+              </button>
+              <button
+                className="icon-button history-widget-button"
+                type="button"
+                disabled={!canRedo}
+                onClick={redo}
+                aria-label="Redo"
+              >
+                <img className="button-icon" src={redoIcon} alt="" aria-hidden="true" />
+              </button>
+            </div>
             <button
               className="action-button"
               type="button"
@@ -4416,20 +4420,6 @@ function App() {
                     <p className="eyebrow">Selected Layer</p>
                     <h2>{selectedLayer ? selectedLayer.name : 'Nothing selected'}</h2>
                   </div>
-                  {selectedLayer && (
-                    <button
-                      className="delete-button"
-                      type="button"
-                      onClick={() =>
-                        applyDocumentChange((currentDocument) =>
-                          removeLayer(currentDocument, selectedLayer.id),
-                        )
-                      }
-                      aria-label="Delete selected layer"
-                    >
-                      <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
-                    </button>
-                  )}
                 </div>
 
                 {hasMultiSelection ? (

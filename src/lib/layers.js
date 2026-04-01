@@ -246,22 +246,40 @@ export function getSelectedLayers(documentState) {
 }
 
 export function removeLayer(documentState, layerId) {
-  const nextLayers = documentState.layers.filter((layer) => layer.id !== layerId)
+  return removeLayers(documentState, [layerId])
+}
+
+export function removeLayers(documentState, layerIds) {
+  const idsToRemove = new Set(
+    Array.isArray(layerIds)
+      ? layerIds.filter((layerId) => findLayer(documentState, layerId))
+      : [],
+  )
+
+  if (idsToRemove.size === 0) {
+    return documentState
+  }
+
   const selectedLayerIds = Array.isArray(documentState.selectedLayerIds)
     ? documentState.selectedLayerIds
     : documentState.selectedLayerId
       ? [documentState.selectedLayerId]
       : []
-  const nextSelectedLayerIds = selectedLayerIds.filter((id) => id !== layerId)
+  const nextLayersAfterRemoval = documentState.layers.filter((layer) => !idsToRemove.has(layer.id))
+  const nextSelectedLayerIds = selectedLayerIds.filter((id) => !idsToRemove.has(id))
+  const selectedLayerWasRemoved = documentState.selectedLayerId
+    ? idsToRemove.has(documentState.selectedLayerId)
+    : false
+  const fallbackSelectedLayerId = nextLayersAfterRemoval.at(-1)?.id ?? null
 
   return {
-    layers: nextLayers,
+    layers: nextLayersAfterRemoval,
     selectedLayerId: nextSelectedLayerIds.at(-1) ?? (
-      documentState.selectedLayerId === layerId ? nextLayers.at(-1)?.id ?? null : documentState.selectedLayerId
+      selectedLayerWasRemoved ? fallbackSelectedLayerId : documentState.selectedLayerId
     ),
     selectedLayerIds: nextSelectedLayerIds.length > 0
       ? nextSelectedLayerIds
-      : (documentState.selectedLayerId === layerId && nextLayers.at(-1)?.id ? [nextLayers.at(-1).id] : []),
+      : (selectedLayerWasRemoved && fallbackSelectedLayerId ? [fallbackSelectedLayerId] : []),
   }
 }
 

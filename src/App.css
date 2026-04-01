@@ -84,6 +84,13 @@
   text-transform: uppercase;
 }
 
+.topbar-brand-logo {
+  display: block;
+  width: auto;
+  height: 4.5rem;
+  object-fit: contain;
+}
+
 .canvas-panel-header p,
 .empty-state,
 .group-note,
@@ -192,6 +199,20 @@
   border: 1px solid var(--line-strong);
   border-radius: 22px;
   background: var(--panel-strong);
+}
+
+.history-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  background: var(--panel-strong);
+}
+
+.history-widget-button {
+  padding: 0.72rem 0.8rem;
 }
 
 .color-swatch-stack {
@@ -318,6 +339,7 @@
   height: 570px;
   margin: 0 auto;
   overflow: hidden;
+  border: 1px solid rgba(107, 114, 128, 0.16);
   border-radius: 24px;
   background:
     linear-gradient(90deg, var(--canvas-grid) 1px, transparent 1px),
