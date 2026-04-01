@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import addImageIcon from './assets/add image.svg'
 import addTextIcon from './assets/add text.svg'
+import bucketIcon from './assets/bucket.svg'
 import closeIcon from './assets/Close (X).svg'
 import duplicateIcon from './assets/duplicate.svg'
 import downIcon from './assets/down.svg'
 import eraserIcon from './assets/eraser.svg'
+import gradientIcon from './assets/gradient.svg'
 import heroImage from './assets/hero.png'
 import hiddenIcon from './assets/Hidden.svg'
 import lassoIcon from './assets/lasso.svg'
@@ -68,6 +70,7 @@ import {
 } from './lib/layers'
 import {
   applyEraseMask,
+  applyLinearGradientToCanvas,
   canvasToBitmap,
   cloneCanvas,
   composeTextLayerCanvases,
@@ -78,6 +81,7 @@ import {
   createTransparentCanvas,
   createMaskCanvasFromSource,
   createEmptyMaskCanvas,
+  floodFillCanvas,
   getCanvasAlphaBounds,
   inferImageSourceKindFromSrc,
   loadImageDimensionsFromSource,
@@ -127,6 +131,7 @@ const MIN_LAYER_WIDTH = 72
 const MIN_LAYER_HEIGHT = 48
 const DEFAULT_ERASER_SIZE = 28
 const DEFAULT_PEN_SIZE = 16
+const DEFAULT_BUCKET_TOLERANCE = 200
 const DOCUMENT_WIDTH = 1080
 const DOCUMENT_HEIGHT = 1440
 const DISPLAY_DOCUMENT_WIDTH = 428
@@ -543,6 +548,44 @@ function canPaintWithPenOnLayer(layer) {
   return isRasterLayer(layer) || layer?.type === 'text'
 }
 
+function canFillLayerWithBucket(layer) {
+  return (layer?.type === 'raster' || layer?.type === 'image') && !isSvgImageLayer(layer)
+}
+
+function canApplyGradientToLayer(layer) {
+  return (layer?.type === 'raster' || layer?.type === 'image') && !isSvgImageLayer(layer)
+}
+
+function createTransparentColorFromHex(color) {
+  if (typeof color !== 'string' || !/^#[\da-f]{6}$/i.test(color)) {
+    return null
+  }
+
+  return {
+    r: Number.parseInt(color.slice(1, 3), 16),
+    g: Number.parseInt(color.slice(3, 5), 16),
+    b: Number.parseInt(color.slice(5, 7), 16),
+    a: 0,
+  }
+}
+
+function layerLocalPointToDocumentPoint(layer, surfaceWidth, surfaceHeight, point) {
+  if (!layer || !point || surfaceWidth <= 0 || surfaceHeight <= 0) {
+    return null
+  }
+
+  const normalizedX = (point.x / surfaceWidth) * layer.width
+  const normalizedY = (point.y / surfaceHeight) * layer.height
+  const angle = (layer.rotation * Math.PI) / 180
+  const cosine = Math.cos(angle)
+  const sine = Math.sin(angle)
+
+  return {
+    x: layer.x + ((normalizedX * layer.scaleX) * cosine) - ((normalizedY * layer.scaleY) * sine),
+    y: layer.y + ((normalizedX * layer.scaleX) * sine) + ((normalizedY * layer.scaleY) * cosine),
+  }
+}
+
 function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
   if (!documentState.layers.length) {
     return null
@@ -587,6 +630,9 @@ function App() {
   const [globalColors, setGlobalColors] = useState(() => loadColorsFromStorage())
   const [penSize, setPenSize] = useState(DEFAULT_PEN_SIZE)
   const [eraserSize, setEraserSize] = useState(DEFAULT_ERASER_SIZE)
+  const [bucketTolerance, setBucketTolerance] = useState(DEFAULT_BUCKET_TOLERANCE)
+  const [gradientMode, setGradientMode] = useState('bg-to-fg')
+  const [gradientPreview, setGradientPreview] = useState(null)
   const [lassoSelection, setLassoSelection] = useState(null)
   const [floatingSelection, setFloatingSelection] = useState(null)
   const [draggedLayerId, setDraggedLayerId] = useState(null)
@@ -964,6 +1010,13 @@ function App() {
       setFloatingSelection(null)
     }
 
+    if (
+      gradientPreview &&
+      !documentState.layers.some((layer) => layer.id === gradientPreview.layerId)
+    ) {
+      setGradientPreview(null)
+    }
+
     if (lastPenEditableLayerIdRef.current) {
       const lastPenEditableLayer = findLayer(documentState, lastPenEditableLayerIdRef.current)
 
@@ -971,7 +1024,7 @@ function App() {
         lastPenEditableLayerIdRef.current = null
       }
     }
-  }, [documentState, floatingSelection, lassoSelection, selectedLayerIds, setTransient])
+  }, [documentState, floatingSelection, gradientPreview, lassoSelection, selectedLayerIds, setTransient])
 
   useEffect(() => {
     const overlayCanvas = overlayCanvasRef.current
@@ -1004,6 +1057,44 @@ function App() {
 
     if (floatingSelection) {
       renderFloatingSelection(context, floatingSelection)
+    }
+
+    if (gradientPreview) {
+      const previewStart = layerLocalPointToDocumentPoint(
+        gradientPreview.layer,
+        gradientPreview.surfaceWidth,
+        gradientPreview.surfaceHeight,
+        gradientPreview.startPoint,
+      )
+      const previewEnd = layerLocalPointToDocumentPoint(
+        gradientPreview.layer,
+        gradientPreview.surfaceWidth,
+        gradientPreview.surfaceHeight,
+        gradientPreview.endPoint,
+      )
+
+      if (previewStart && previewEnd) {
+      context.save()
+      context.strokeStyle = '#0f766e'
+      context.fillStyle = '#fffaf2'
+      context.lineWidth = 2
+      context.setLineDash([])
+      context.beginPath()
+      context.moveTo(previewStart.x, previewStart.y)
+      context.lineTo(previewEnd.x, previewEnd.y)
+      context.stroke()
+
+      context.beginPath()
+      context.arc(previewStart.x, previewStart.y, 6, 0, Math.PI * 2)
+      context.fill()
+      context.stroke()
+
+      context.beginPath()
+      context.arc(previewEnd.x, previewEnd.y, 4.5, 0, Math.PI * 2)
+      context.fill()
+      context.stroke()
+      context.restore()
+      }
     }
 
     if (activeMoveGuides.showVerticalCenter) {
@@ -1077,7 +1168,7 @@ function App() {
       context.stroke()
       context.restore()
     }
-  }, [activeMoveGuides, documentState, floatingSelection, lassoSelection])
+  }, [activeMoveGuides, documentState, floatingSelection, gradientPreview, lassoSelection])
 
   useEffect(() => {
     function handlePointerMove(event) {
@@ -1621,6 +1712,35 @@ function App() {
         })
       }
 
+      if (interaction.type === 'gradient') {
+        const surfaceEntry = rasterSurfacesRef.current.get(interaction.sourceLayerId)
+        const layerPoint = surfaceEntry?.offscreenCanvas && surfaceEntry.layerElement
+          ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceEntry.offscreenCanvas)
+          : null
+
+        if (!layerPoint) {
+          return
+        }
+
+        setGradientPreview({
+          layerId: interaction.sourceLayerId,
+          layer: interaction.sourceLayer,
+          surfaceWidth: interaction.surfaceWidth,
+          surfaceHeight: interaction.surfaceHeight,
+          startPoint: interaction.startPoint,
+          endPoint: layerPoint,
+        })
+
+        interactionRef.current = {
+          ...interaction,
+          endPoint: layerPoint,
+          hasChanged: (
+            Math.abs(layerPoint.x - interaction.startPoint.x) >= 0.5 ||
+            Math.abs(layerPoint.y - interaction.startPoint.y) >= 0.5
+          ),
+        }
+      }
+
       if (interaction.type === 'floating-selection-drag') {
         const nextPosition = applyAxisLockedMove(
           interaction,
@@ -1861,6 +1981,60 @@ function App() {
         return
       }
 
+      if (interaction?.type === 'gradient') {
+        const surfaceEntry = rasterSurfacesRef.current.get(interaction.sourceLayerId)
+        const sourceLayer = findLayer(documentState, interaction.sourceLayerId)
+
+        if (
+          interaction.hasChanged &&
+          surfaceEntry?.offscreenCanvas &&
+          sourceLayer &&
+          interaction.restoreCanvas
+        ) {
+          const workingCanvas = cloneCanvas(interaction.restoreCanvas)
+          const gradientEndColor = interaction.mode === 'bg-to-transparent'
+            ? createTransparentColorFromHex(globalColors.background)
+            : globalColors.foreground
+          const gradientResult = gradientEndColor
+            ? applyLinearGradientToCanvas(
+              workingCanvas,
+              interaction.startPoint,
+              interaction.endPoint,
+              globalColors.background,
+              gradientEndColor,
+              {
+                restrictToVisiblePixels: isAlphaLocked(sourceLayer),
+                preserveAlphaMask: isAlphaLocked(sourceLayer),
+              },
+            )
+            : { changed: false }
+
+          if (gradientResult.changed) {
+            const nextBitmap = canvasToBitmap(workingCanvas)
+            surfaceEntry.offscreenCanvas = workingCanvas
+            drawRasterLayer(interaction.sourceLayerId)
+
+            commit((currentDocument) => {
+              const nextLayer = findLayer(currentDocument, interaction.sourceLayerId)
+
+              if (!nextLayer || !canApplyGradientToLayer(nextLayer)) {
+                return currentDocument
+              }
+
+              return updateLayer(
+                currentDocument,
+                interaction.sourceLayerId,
+                createImageLayerBitmapPatch(nextLayer, nextBitmap),
+              )
+            })
+          }
+        }
+
+        setGradientPreview(null)
+        interactionRef.current = null
+        return
+      }
+
       if (interaction?.type === 'floating-selection-drag') {
         setActiveMoveGuides(createEmptySnapGuides())
         interactionRef.current = null
@@ -1872,6 +2046,7 @@ function App() {
       }
 
       setActiveMoveGuides(createEmptySnapGuides())
+      setGradientPreview(null)
       interactionRef.current = null
     }
 
@@ -1884,7 +2059,7 @@ function App() {
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [commit, commitTransientChange, documentState, drawRasterLayer, isSnapEnabled, setTransient, viewport])
+  }, [commit, commitTransientChange, documentState, drawRasterLayer, globalColors, isSnapEnabled, setTransient, viewport])
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -2653,6 +2828,122 @@ function App() {
     }
   }
 
+  async function beginBucketFill(event, layer) {
+    event.stopPropagation()
+    event.preventDefault()
+
+    if (!canFillLayerWithBucket(layer)) {
+      return
+    }
+
+    selectDocumentLayer(layer.id)
+
+    const surfaceCanvas = await ensureRasterLayerSurface(layer)
+    const surfaceEntry = rasterSurfacesRef.current.get(layer.id)
+    const layerPoint = surfaceCanvas && surfaceEntry?.layerElement
+      ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceCanvas)
+      : null
+
+    if (!surfaceCanvas || !surfaceEntry || !layerPoint) {
+      return
+    }
+
+    const workingCanvas = cloneCanvas(surfaceCanvas)
+    const fillResult = floodFillCanvas(
+      workingCanvas,
+      layerPoint.x,
+      layerPoint.y,
+      globalColors.foreground,
+      bucketTolerance,
+      {
+        preserveAlpha: isAlphaLocked(layer),
+        restrictToVisiblePixels: isAlphaLocked(layer),
+      },
+    )
+
+    if (!fillResult.changed) {
+      return
+    }
+
+    surfaceEntry.offscreenCanvas = workingCanvas
+    drawRasterLayer(layer.id)
+
+    const nextBitmap = canvasToBitmap(workingCanvas)
+
+    commit((currentDocument) => {
+      const currentLayer = findLayer(currentDocument, layer.id)
+
+      if (!currentLayer || !canFillLayerWithBucket(currentLayer)) {
+        return currentDocument
+      }
+
+      return updateLayer(
+        currentDocument,
+        layer.id,
+        createImageLayerBitmapPatch(currentLayer, nextBitmap),
+      )
+    })
+  }
+
+  async function beginGradient(event, layer) {
+    event.stopPropagation()
+    event.preventDefault()
+
+    if (!canApplyGradientToLayer(layer)) {
+      return
+    }
+
+    selectDocumentLayer(layer.id)
+
+    const surfaceCanvas = await ensureRasterLayerSurface(layer)
+    const surfaceEntry = rasterSurfacesRef.current.get(layer.id)
+    const startPoint = surfaceCanvas && surfaceEntry?.layerElement
+      ? toLayerCoordinates(event, surfaceEntry.layerElement, surfaceCanvas)
+      : null
+
+    if (!surfaceCanvas || !surfaceEntry || !startPoint) {
+      return
+    }
+
+    setGradientPreview({
+      layerId: layer.id,
+      layer: {
+        x: layer.x,
+        y: layer.y,
+        width: layer.width,
+        height: layer.height,
+        rotation: layer.rotation,
+        scaleX: layer.scaleX,
+        scaleY: layer.scaleY,
+      },
+      surfaceWidth: surfaceCanvas.width,
+      surfaceHeight: surfaceCanvas.height,
+      startPoint,
+      endPoint: startPoint,
+    })
+
+    interactionRef.current = {
+      type: 'gradient',
+      sourceLayerId: layer.id,
+      sourceLayer: {
+        x: layer.x,
+        y: layer.y,
+        width: layer.width,
+        height: layer.height,
+        rotation: layer.rotation,
+        scaleX: layer.scaleX,
+        scaleY: layer.scaleY,
+      },
+      surfaceWidth: surfaceCanvas.width,
+      surfaceHeight: surfaceCanvas.height,
+      startPoint,
+      endPoint: startPoint,
+      mode: gradientMode,
+      restoreCanvas: cloneCanvas(surfaceCanvas),
+      hasChanged: false,
+    }
+  }
+
   async function beginLasso(event, layer) {
     event.stopPropagation()
     event.preventDefault()
@@ -3080,6 +3371,16 @@ function App() {
       return
     }
 
+    if (currentTool === 'bucket') {
+      void beginBucketFill(event, layer)
+      return
+    }
+
+    if (currentTool === 'gradient') {
+      void beginGradient(event, layer)
+      return
+    }
+
     startMove(event, layer)
   }
 
@@ -3325,6 +3626,8 @@ function App() {
     const isSelected = isLayerSelected(documentState, layer.id)
     const isEditingText = layer.type === 'text' && layer.id === editingTextLayerId
     const showEraserCursor = currentTool === 'eraser' && isErasableLayer(layer)
+    const showBucketCursor = currentTool === 'bucket' && canFillLayerWithBucket(layer)
+    const showGradientCursor = currentTool === 'gradient' && canApplyGradientToLayer(layer)
     const showPenCursor = currentTool === 'pen' && canPaintWithPenOnLayer(layer)
     const showLassoCursor = currentTool === 'lasso' && isRasterLayer(layer)
     const showPenSurface = showPenCursor && penDrawingLayerId === layer.id && layer.type === 'raster'
@@ -3341,9 +3644,13 @@ function App() {
           ? 'canvas-layer pen-enabled'
           : showEraserCursor
             ? 'canvas-layer eraser-enabled'
-            : showLassoCursor
-              ? 'canvas-layer lasso-enabled'
-              : 'canvas-layer'}
+            : showBucketCursor
+              ? 'canvas-layer bucket-enabled'
+              : showGradientCursor
+                ? 'canvas-layer gradient-enabled'
+                : showLassoCursor
+                  ? 'canvas-layer lasso-enabled'
+                  : 'canvas-layer'}
         style={{
           left: `${layerLeft}px`,
           top: `${layerTop}px`,
@@ -3590,6 +3897,22 @@ function App() {
               <img className="button-icon" src={eraserIcon} alt="" aria-hidden="true" />
             </button>
             <button
+              className={currentTool === 'bucket' ? 'action-button active' : 'action-button'}
+              type="button"
+              onClick={() => setActiveTool('bucket')}
+              aria-label="Bucket Fill"
+            >
+              <img className="button-icon" src={bucketIcon} alt="" aria-hidden="true" />
+            </button>
+            <button
+              className={currentTool === 'gradient' ? 'action-button active' : 'action-button'}
+              type="button"
+              onClick={() => setActiveTool('gradient')}
+              aria-label="Gradient"
+            >
+              <img className="button-icon" src={gradientIcon} alt="" aria-hidden="true" />
+            </button>
+            <button
               className={currentTool === 'lasso' ? 'action-button active' : 'action-button'}
               type="button"
               onClick={() => setActiveTool('lasso')}
@@ -3646,6 +3969,33 @@ function App() {
                   <strong>{activeBrushTool === 'pen' ? penSize : eraserSize}</strong>
                 </label>
               </>
+            )}
+            {currentTool === 'bucket' && (
+              <label className="toolbar-range">
+                <span>Tolerance</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="255"
+                  step="1"
+                  value={bucketTolerance}
+                  onChange={(event) => setBucketTolerance(Number(event.target.value))}
+                />
+                <strong>{bucketTolerance}</strong>
+              </label>
+            )}
+            {currentTool === 'gradient' && (
+              <label className="toolbar-range">
+                <span>Mode</span>
+                <select
+                  className="toolbar-select"
+                  value={gradientMode}
+                  onChange={(event) => setGradientMode(event.target.value)}
+                >
+                  <option value="bg-to-fg">BG -&gt; FG</option>
+                  <option value="bg-to-transparent">BG -&gt; Transparent</option>
+                </select>
+              </label>
             )}
             <button
               className="action-button"

@@ -39,6 +39,7 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - SVG-backed layers still support normal layer actions such as move, resize, duplicate, reorder, selection, snapping, and undo/redo
 - selecting a bitmap tool does not immediately force all SVG layers onto a temporary raster path
 - drawing with the pen tool on an SVG layer creates a new raster drawing layer above the SVG and paints there instead of converting the SVG layer itself
+- the bucket fill tool currently does not operate on SVG-backed image layers in v1
 - SVG layers do not merge down with any other layer
 - erase and other bitmap-only workflows may still use temporary raster surfaces when that specific SVG layer is actively being edited
 - intrinsic SVG sizing is resolved from `width`/`height` or `viewBox` when possible
@@ -115,6 +116,30 @@ The lasso workflow is one of the more advanced features in the app and relies on
 
 - erases directly from raster/image surfaces
 - for text layers, it writes into an erase mask instead of destroying the original text definition
+
+### Gradient Tool
+
+- supports linear gradients on raster layers and bitmap image layers
+- uses click-and-drag interaction where drag start sets the gradient start and drag end sets the gradient end
+- supports two modes in the toolbar:
+  - `BG -> FG`
+  - `BG -> Transparent`
+- applies the final gradient directly onto the clicked target layer rather than creating a separate layer
+- commits each gradient application as a single undoable history step
+- shows a live overlay preview line while dragging so the user can see direction and spread before release
+- the preview line is transient UI only and is not exported or saved into the document
+- does not support text layers, shape layers, group layers, or SVG-backed image layers in v1
+
+### Bucket Fill Tool
+
+- fills a contiguous clicked region on raster layers and bitmap image layers
+- uses the current global foreground color as the fill color
+- includes neighboring pixels only when their RGBA values remain within the current tolerance threshold of the seed pixel
+- exposes a toolbar tolerance slider with a current default value of `200`
+- commits each fill as a single undoable history step
+- stays on the target layer rather than creating a new layer
+- does not support text layers, shape layers, group layers, or SVG-backed image layers in v1
+- respects alpha lock on raster/image layers by preserving existing pixel alpha and avoiding fills that start in fully transparent regions when alpha lock is enabled
 
 ### Alpha Lock
 

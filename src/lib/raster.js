@@ -263,6 +263,277 @@ export function paintCanvas(targetCanvas, sourceCanvas) {
   context.drawImage(sourceCanvas, 0, 0)
 }
 
+function clampColorChannel(value) {
+  return Math.max(0, Math.min(255, Math.round(value)))
+}
+
+function parseHexColor(color) {
+  if (typeof color !== 'string') {
+    return null
+  }
+
+  const normalizedColor = color.trim()
+
+  if (!normalizedColor.startsWith('#')) {
+    return null
+  }
+
+  const hexValue = normalizedColor.slice(1)
+  const expandedHex = hexValue.length === 3
+    ? hexValue
+      .split('')
+      .map((character) => character.repeat(2))
+      .join('')
+    : hexValue
+
+  if (!/^[\da-f]{6}$/i.test(expandedHex)) {
+    return null
+  }
+
+  return {
+    r: Number.parseInt(expandedHex.slice(0, 2), 16),
+    g: Number.parseInt(expandedHex.slice(2, 4), 16),
+    b: Number.parseInt(expandedHex.slice(4, 6), 16),
+    a: 255,
+  }
+}
+
+function lerpChannel(fromValue, toValue, amount) {
+  return Math.round(fromValue + ((toValue - fromValue) * amount))
+}
+
+function isColorWithinTolerance(data, pixelIndex, seedColor, tolerance) {
+  return (
+    Math.abs(data[pixelIndex] - seedColor.r) <= tolerance &&
+    Math.abs(data[pixelIndex + 1] - seedColor.g) <= tolerance &&
+    Math.abs(data[pixelIndex + 2] - seedColor.b) <= tolerance &&
+    Math.abs(data[pixelIndex + 3] - seedColor.a) <= tolerance
+  )
+}
+
+export function floodFillCanvas(
+  canvas,
+  startX,
+  startY,
+  fillColor,
+  tolerance = 0,
+  options = {},
+) {
+  const context = canvas?.getContext('2d', { willReadFrequently: true })
+
+  if (!context) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  const targetColor = parseHexColor(fillColor)
+
+  if (!targetColor) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  const seedX = Math.floor(startX)
+  const seedY = Math.floor(startY)
+
+  if (
+    seedX < 0 ||
+    seedY < 0 ||
+    seedX >= canvas.width ||
+    seedY >= canvas.height
+  ) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+  const { data } = imageData
+  const seedIndex = ((seedY * canvas.width) + seedX) * 4
+  const seedColor = {
+    r: data[seedIndex],
+    g: data[seedIndex + 1],
+    b: data[seedIndex + 2],
+    a: data[seedIndex + 3],
+  }
+  const preserveAlpha = Boolean(options.preserveAlpha)
+  const restrictToVisiblePixels = Boolean(options.restrictToVisiblePixels)
+
+  if (restrictToVisiblePixels && seedColor.a === 0) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  const normalizedTolerance = clampColorChannel(tolerance)
+  const visited = new Uint8Array(canvas.width * canvas.height)
+  const stack = [[seedX, seedY]]
+  let changedPixelCount = 0
+
+  while (stack.length > 0) {
+    const nextPoint = stack.pop()
+
+    if (!nextPoint) {
+      continue
+    }
+
+    const [x, y] = nextPoint
+    const visitedIndex = (y * canvas.width) + x
+
+    if (visited[visitedIndex]) {
+      continue
+    }
+
+    visited[visitedIndex] = 1
+
+    const pixelIndex = visitedIndex * 4
+    const currentAlpha = data[pixelIndex + 3]
+
+    if (restrictToVisiblePixels && currentAlpha === 0) {
+      continue
+    }
+
+    if (!isColorWithinTolerance(data, pixelIndex, seedColor, normalizedTolerance)) {
+      continue
+    }
+
+    const nextAlpha = preserveAlpha ? currentAlpha : targetColor.a
+
+    if (
+      data[pixelIndex] !== targetColor.r ||
+      data[pixelIndex + 1] !== targetColor.g ||
+      data[pixelIndex + 2] !== targetColor.b ||
+      data[pixelIndex + 3] !== nextAlpha
+    ) {
+      data[pixelIndex] = targetColor.r
+      data[pixelIndex + 1] = targetColor.g
+      data[pixelIndex + 2] = targetColor.b
+      data[pixelIndex + 3] = nextAlpha
+      changedPixelCount += 1
+    }
+
+    if (x > 0) {
+      stack.push([x - 1, y])
+    }
+
+    if (x < canvas.width - 1) {
+      stack.push([x + 1, y])
+    }
+
+    if (y > 0) {
+      stack.push([x, y - 1])
+    }
+
+    if (y < canvas.height - 1) {
+      stack.push([x, y + 1])
+    }
+  }
+
+  if (changedPixelCount === 0) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  context.putImageData(imageData, 0, 0)
+
+  return {
+    changed: true,
+    changedPixelCount,
+  }
+}
+
+export function applyLinearGradientToCanvas(
+  canvas,
+  startPoint,
+  endPoint,
+  startColor,
+  endColor,
+  options = {},
+) {
+  const context = canvas?.getContext('2d', { willReadFrequently: true })
+
+  if (!context) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  const resolvedStartColor = parseHexColor(startColor)
+  const resolvedEndColor = typeof endColor === 'string'
+    ? parseHexColor(endColor)
+    : endColor
+
+  if (!resolvedStartColor || !resolvedEndColor) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  const startX = Number(startPoint?.x)
+  const startY = Number(startPoint?.y)
+  const endX = Number(endPoint?.x)
+  const endY = Number(endPoint?.y)
+
+  if (
+    !Number.isFinite(startX) ||
+    !Number.isFinite(startY) ||
+    !Number.isFinite(endX) ||
+    !Number.isFinite(endY)
+  ) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  const deltaX = endX - startX
+  const deltaY = endY - startY
+  const vectorLengthSquared = (deltaX * deltaX) + (deltaY * deltaY)
+
+  if (vectorLengthSquared <= 0.0001) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+  const { data } = imageData
+  const restrictToVisiblePixels = Boolean(options.restrictToVisiblePixels)
+  const preserveAlphaMask = Boolean(options.preserveAlphaMask)
+  let changedPixelCount = 0
+
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const pixelIndex = ((y * canvas.width) + x) * 4
+      const currentAlpha = data[pixelIndex + 3]
+
+      if (restrictToVisiblePixels && currentAlpha === 0) {
+        continue
+      }
+
+      const relativeX = (x + 0.5) - startX
+      const relativeY = (y + 0.5) - startY
+      const projection = ((relativeX * deltaX) + (relativeY * deltaY)) / vectorLengthSquared
+      const amount = Math.max(0, Math.min(1, projection))
+      const interpolatedAlpha = lerpChannel(resolvedStartColor.a, resolvedEndColor.a, amount)
+      const nextAlpha = preserveAlphaMask
+        ? Math.round((interpolatedAlpha * currentAlpha) / 255)
+        : interpolatedAlpha
+      const nextRed = lerpChannel(resolvedStartColor.r, resolvedEndColor.r, amount)
+      const nextGreen = lerpChannel(resolvedStartColor.g, resolvedEndColor.g, amount)
+      const nextBlue = lerpChannel(resolvedStartColor.b, resolvedEndColor.b, amount)
+
+      if (
+        data[pixelIndex] !== nextRed ||
+        data[pixelIndex + 1] !== nextGreen ||
+        data[pixelIndex + 2] !== nextBlue ||
+        data[pixelIndex + 3] !== nextAlpha
+      ) {
+        data[pixelIndex] = nextRed
+        data[pixelIndex + 1] = nextGreen
+        data[pixelIndex + 2] = nextBlue
+        data[pixelIndex + 3] = nextAlpha
+        changedPixelCount += 1
+      }
+    }
+  }
+
+  if (changedPixelCount === 0) {
+    return { changed: false, changedPixelCount: 0 }
+  }
+
+  context.putImageData(imageData, 0, 0)
+
+  return {
+    changed: true,
+    changedPixelCount,
+  }
+}
+
 export function loadImageElement(src) {
   return new Promise((resolve, reject) => {
     const image = new Image()

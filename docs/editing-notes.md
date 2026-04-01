@@ -101,11 +101,37 @@ SVG support is intentionally simple:
 - SVGs can be imported and treated as sharp, SVG-backed image layers during normal viewing and transforms
 - the app does not support SVG path editing, anchor editing, stroke editing, or boolean ops
 - pen strokes on SVG-backed image layers create a separate raster drawing layer above the SVG instead of converting the SVG layer itself
+- the bucket fill tool currently skips SVG-backed image layers rather than flattening them in place
 - SVG-backed image layers cannot be merged with other layers
 - some bitmap-only tools still rely on the existing raster workflow when temporary canvas data is needed for that specific SVG layer
 - tool selection alone should not visibly degrade or distort SVG layers; only the actively edited SVG layer should enter the temporary bitmap path during a bitmap-tool interaction
 
 This keeps SVG support compatible with the current architecture without introducing a full vector editing subsystem.
+
+### Bucket Fill MVP Scope
+
+Current bucket fill behavior is intentionally narrow:
+
+- only raster layers and bitmap image layers are supported
+- the fill algorithm is contiguous only
+- matching is based on seed-pixel RGBA similarity and a user-facing tolerance slider
+- each click becomes one committed history step
+- text, shapes, groups, and SVG-backed image layers are out of scope for v1
+
+If future work expands this feature, it should continue to reuse the existing raster surface cache and avoid introducing a second bitmap-editing pipeline.
+
+### Gradient Tool MVP Scope
+
+Current gradient behavior is also intentionally narrow:
+
+- only raster layers and bitmap image layers are supported
+- only linear gradients are supported
+- available modes are `BG -> FG` and `BG -> Transparent`
+- the gradient is applied directly onto the clicked target layer
+- a live overlay preview line appears during the drag, but it is transient UI only and not part of document/export state
+- text, shapes, groups, and SVG-backed image layers are out of scope for v1
+
+If future work expands this feature, keep the preview in overlay/transient state and keep the bitmap write path aligned with the existing raster surface cache.
 
 ### Selection Behavior
 

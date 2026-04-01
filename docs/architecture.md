@@ -2,7 +2,7 @@
 
 ## Summary
 
-This app is a client-side React + Vite editor prototype for building and editing a layered mobile-sized composition. It behaves like a lightweight design tool with a document model, layer stack, editable text, raster painting, erasing, lasso selection, snapping, zooming, and an asset library.
+This app is a client-side React + Vite editor prototype for building and editing a layered mobile-sized composition. It behaves like a lightweight design tool with a document model, layer stack, editable text, raster painting, gradient application, bucket fill, erasing, lasso selection, snapping, zooming, and an asset library.
 
 The architecture is simple in packaging but dense in implementation:
 
@@ -82,6 +82,8 @@ The app uses normal React DOM for UI chrome and individual layer wrappers, but a
 - clone/crop canvases
 - serialize canvas to PNG data URL
 - apply masks
+- apply linear gradients on bitmap surfaces
+- perform contiguous flood fill on bitmap surfaces
 - translate pointer coordinates into canvas-local coordinates
 
 `src/App.jsx` also keeps a `rasterSurfacesRef` map. Each erasable layer can have:
@@ -100,6 +102,7 @@ Feature logic is split into focused helper modules:
 
 - `penTool.js`: smooth stroke generation and brush behavior
 - `eraserTool.js`: erase/mask drawing ops
+- `raster.js`: also hosts the gradient and bucket-fill bitmap implementations used for bitmap layers
 - `lassoTool.js`: polygon selection and floating selection extraction
 - `moveSnapping.js`: snapping to frame center and edges
 - `viewport.js`: screen/world coordinate transforms
@@ -115,7 +118,8 @@ The main data flow for most interactions is:
 3. A transient interaction object is stored in `interactionRef`.
 4. Pointer move events update either:
    - transient document state via `setTransient`, or
-   - in-memory canvases via `rasterSurfacesRef`
+   - in-memory canvases via `rasterSurfacesRef`, or
+   - transient overlay state such as the gradient preview line
 5. Pointer up finalizes the result.
 6. The result is committed into document history with `commit` or `commitTransientChange`.
 

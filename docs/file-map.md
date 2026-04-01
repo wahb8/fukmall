@@ -68,6 +68,8 @@ This document describes what each tracked file in the repo currently does.
 - contains the project file workflow for new/open/save and the runtime reset path used when loading a file
 - contains the export controls for flattened PNG/JPEG downloads
 - contains the SVG tool-mode render switching logic so SVG layers stay on the normal `<img>` path until a bitmap edit actually starts on that layer
+- contains the gradient tool wiring, including mode selection, drag interaction state, and the transient overlay preview line
+- contains the bucket fill tool wiring, including toolbar controls, tolerance state, and bitmap-layer fill commits
 - contains the asset library panel structure, including the fixed header and scrollable asset list region
 - contains move interaction behavior such as snapping and temporary Shift axis locking
 - this is currently the most important file in the repo
@@ -113,6 +115,8 @@ This document describes what each tracked file in the repo currently does.
 - clones/crops canvases
 - serializes canvases to data URLs
 - applies erase/mask composition
+- contains the linear gradient bitmap helper used by the gradient tool
+- contains the contiguous flood-fill helper used by the bucket tool
 - converts DOM pointer positions into canvas-local coordinates
 
 ### `src/lib/exportDocument.js`
@@ -194,6 +198,10 @@ This document describes what each tracked file in the repo currently does.
 ### `src/assets/add text.svg`
 
 - toolbar/icon asset for text insertion
+
+### `src/assets/bucket.svg`
+
+- toolbar/icon asset for the bucket fill tool
 
 ### `src/assets/Close (X).svg`
 
