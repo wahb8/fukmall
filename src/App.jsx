@@ -4563,6 +4563,39 @@ function App() {
                           </select>
                         </label>
                         <label className="property-field">
+                          <span>Letter Spacing</span>
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={selectedLayer.letterSpacing ?? 0}
+                            onChange={(event) =>
+                              applyTextLayerUpdate(
+                                selectedLayer.id,
+                                (layer) => updateTextStyle(layer, {
+                                  letterSpacing: Number(event.target.value) || 0,
+                                }),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="property-field">
+                          <span>Line Height</span>
+                          <input
+                            type="number"
+                            min="0.5"
+                            step="0.05"
+                            value={selectedLayer.lineHeight ?? 1.15}
+                            onChange={(event) =>
+                              applyTextLayerUpdate(
+                                selectedLayer.id,
+                                (layer) => updateTextStyle(layer, {
+                                  lineHeight: Math.max(0.5, Number(event.target.value) || 1.15),
+                                }),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="property-field">
                           <span>Color</span>
                           <input
                             type="color"
