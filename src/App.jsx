@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import addImageIcon from './assets/add image.svg'
+import addLayerIcon from './assets/add layer.svg'
 import addTextIcon from './assets/add text.svg'
 import bucketIcon from './assets/bucket.svg'
 import closeIcon from './assets/Close (X).svg'
@@ -642,7 +643,8 @@ function App() {
   const [draggedAssetId, setDraggedAssetId] = useState(null)
   const [activeSvgToolLayerId, setActiveSvgToolLayerId] = useState(null)
   const [isCanvasAssetDropActive, setIsCanvasAssetDropActive] = useState(false)
-  const [isSnapEnabled, setIsSnapEnabled] = useState(true)
+  const [areToolsOnLeft, setAreToolsOnLeft] = useState(true)
+  const [isSnapEnabled] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
   const [isOpeningFile, setIsOpeningFile] = useState(false)
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false)
@@ -3815,6 +3817,134 @@ function App() {
     )
   }
 
+  const leftToolButtons = (
+    <div className="toolbar-tools">
+      <div className="toolbar-tools-row">
+        <button
+          className={currentTool === 'select' ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => setActiveTool('select')}
+          aria-label="Select"
+        >
+          <img className="button-icon" src={pointerIcon} alt="" aria-hidden="true" />
+        </button>
+        <button
+          className={currentTool === 'pen' ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => setActiveTool('pen')}
+          aria-label="Pen"
+        >
+          <img className="button-icon" src={penIcon} alt="" aria-hidden="true" />
+        </button>
+        <button
+          className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => setActiveTool('eraser')}
+          aria-label="Eraser"
+        >
+          <img className="button-icon" src={eraserIcon} alt="" aria-hidden="true" />
+        </button>
+        <button
+          className={currentTool === 'zoom' ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => setActiveTool('zoom')}
+          onDoubleClick={() => setViewport({ zoom: 1, offsetX: 0, offsetY: 0 })}
+          aria-label="Zoom"
+        >
+          <img className="button-icon" src={zoomIcon} alt="" aria-hidden="true" />
+        </button>
+      </div>
+      <div className="toolbar-tools-row">
+        <button
+          className={currentTool === 'bucket' ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => setActiveTool('bucket')}
+          aria-label="Bucket Fill"
+        >
+          <img className="button-icon" src={bucketIcon} alt="" aria-hidden="true" />
+        </button>
+        <button
+          className={currentTool === 'gradient' ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => setActiveTool('gradient')}
+          aria-label="Gradient"
+        >
+          <img className="button-icon" src={gradientIcon} alt="" aria-hidden="true" />
+        </button>
+        <button
+          className={currentTool === 'lasso' ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => setActiveTool('lasso')}
+          aria-label="Lasso"
+        >
+          <img className="button-icon" src={lassoIcon} alt="" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  )
+
+  const rightToolButtons = (
+    <>
+      <button
+        className={currentTool === 'select' ? 'action-button active' : 'action-button'}
+        type="button"
+        onClick={() => setActiveTool('select')}
+        aria-label="Select"
+      >
+        <img className="button-icon" src={pointerIcon} alt="" aria-hidden="true" />
+      </button>
+      <button
+        className={currentTool === 'pen' ? 'action-button active' : 'action-button'}
+        type="button"
+        onClick={() => setActiveTool('pen')}
+        aria-label="Pen"
+      >
+        <img className="button-icon" src={penIcon} alt="" aria-hidden="true" />
+      </button>
+      <button
+        className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
+        type="button"
+        onClick={() => setActiveTool('eraser')}
+        aria-label="Eraser"
+      >
+        <img className="button-icon" src={eraserIcon} alt="" aria-hidden="true" />
+      </button>
+      <button
+        className={currentTool === 'bucket' ? 'action-button active' : 'action-button'}
+        type="button"
+        onClick={() => setActiveTool('bucket')}
+        aria-label="Bucket Fill"
+      >
+        <img className="button-icon" src={bucketIcon} alt="" aria-hidden="true" />
+      </button>
+      <button
+        className={currentTool === 'gradient' ? 'action-button active' : 'action-button'}
+        type="button"
+        onClick={() => setActiveTool('gradient')}
+        aria-label="Gradient"
+      >
+        <img className="button-icon" src={gradientIcon} alt="" aria-hidden="true" />
+      </button>
+      <button
+        className={currentTool === 'lasso' ? 'action-button active' : 'action-button'}
+        type="button"
+        onClick={() => setActiveTool('lasso')}
+        aria-label="Lasso"
+      >
+        <img className="button-icon" src={lassoIcon} alt="" aria-hidden="true" />
+      </button>
+      <button
+        className={currentTool === 'zoom' ? 'action-button active' : 'action-button'}
+        type="button"
+        onClick={() => setActiveTool('zoom')}
+        onDoubleClick={() => setViewport({ zoom: 1, offsetX: 0, offsetY: 0 })}
+        aria-label="Zoom"
+      >
+        <img className="button-icon" src={zoomIcon} alt="" aria-hidden="true" />
+      </button>
+    </>
+  )
+
   return (
     <main className="app-shell">
       <input
@@ -3886,65 +4016,16 @@ function App() {
       </div>
       <section className="editor-panel">
         <header className="editor-topbar">
-          <div />
+          {areToolsOnLeft ? leftToolButtons : <div />}
           <div className="toolbar-actions">
             <button
-              className={currentTool === 'select' ? 'action-button active' : 'action-button'}
+              className="action-button"
               type="button"
-              onClick={() => setActiveTool('select')}
-              aria-label="Select"
+              onClick={() => setAreToolsOnLeft((currentValue) => !currentValue)}
             >
-              <img className="button-icon" src={pointerIcon} alt="" aria-hidden="true" />
+              Change Position
             </button>
-            <button
-              className={currentTool === 'pen' ? 'action-button active' : 'action-button'}
-              type="button"
-              onClick={() => setActiveTool('pen')}
-              aria-label="Pen"
-            >
-              <img className="button-icon" src={penIcon} alt="" aria-hidden="true" />
-            </button>
-            <button
-              className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
-              type="button"
-              onClick={() => setActiveTool('eraser')}
-              aria-label="Eraser"
-            >
-              <img className="button-icon" src={eraserIcon} alt="" aria-hidden="true" />
-            </button>
-            <button
-              className={currentTool === 'bucket' ? 'action-button active' : 'action-button'}
-              type="button"
-              onClick={() => setActiveTool('bucket')}
-              aria-label="Bucket Fill"
-            >
-              <img className="button-icon" src={bucketIcon} alt="" aria-hidden="true" />
-            </button>
-            <button
-              className={currentTool === 'gradient' ? 'action-button active' : 'action-button'}
-              type="button"
-              onClick={() => setActiveTool('gradient')}
-              aria-label="Gradient"
-            >
-              <img className="button-icon" src={gradientIcon} alt="" aria-hidden="true" />
-            </button>
-            <button
-              className={currentTool === 'lasso' ? 'action-button active' : 'action-button'}
-              type="button"
-              onClick={() => setActiveTool('lasso')}
-              aria-label="Lasso"
-            >
-              <img className="button-icon" src={lassoIcon} alt="" aria-hidden="true" />
-            </button>
-            <button
-              className={currentTool === 'zoom' ? 'action-button active' : 'action-button'}
-              type="button"
-              onClick={() => setActiveTool('zoom')}
-              onDoubleClick={() => setViewport({ zoom: 1, offsetX: 0, offsetY: 0 })}
-              aria-label="Zoom"
-            >
-              <img className="button-icon" src={zoomIcon} alt="" aria-hidden="true" />
-            </button>
+            {!areToolsOnLeft && rightToolButtons}
             {(currentTool === 'pen' || currentTool === 'eraser') && (
               <>
                 <label className="toolbar-range">
@@ -4042,20 +4123,6 @@ function App() {
               aria-label="Add Text"
             >
               <img className="button-icon" src={addTextIcon} alt="" aria-hidden="true" />
-            </button>
-            <button
-              className="action-button"
-              type="button"
-              onClick={() =>
-                addLayer(() =>
-                  createRasterLayer({
-                    name: 'Drawing Layer',
-                  }),
-                )
-              }
-              aria-label="Add Drawing"
-            >
-              Layer
             </button>
             <button
               className="action-button"
@@ -4402,6 +4469,22 @@ function App() {
                     </div>
                   )
                 })}
+              </div>
+              <div className="layer-panel-footer">
+                <button
+                  className="action-button layer-panel-add-button"
+                  type="button"
+                  onClick={() =>
+                    addLayer(() =>
+                      createRasterLayer({
+                        name: 'Drawing Layer',
+                      }),
+                    )
+                  }
+                  aria-label="Add Drawing"
+                >
+                  <img className="button-icon" src={addLayerIcon} alt="" aria-hidden="true" />
+                </button>
               </div>
             </section>
 

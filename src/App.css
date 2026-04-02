@@ -67,6 +67,30 @@
   align-items: flex-start;
 }
 
+.toolbar-tools,
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.toolbar-tools {
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.toolbar-tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.toolbar-tools .action-button {
+  padding: 0.7rem 0.88rem;
+}
+
 .editor-topbar h1,
 .panel-header h2,
 .canvas-panel-header h2 {
@@ -108,11 +132,7 @@
 }
 
 .toolbar-actions {
-  display: flex;
-  flex-wrap: wrap;
   justify-content: flex-end;
-  align-items: flex-start;
-  gap: 0.75rem;
 }
 
 .topbar-menu {
@@ -702,6 +722,22 @@
   gap: 0.45rem;
 }
 
+.layer-panel-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.9rem;
+}
+
+.layer-panel-add-button {
+  padding: 0.72rem 1rem;
+  font-size: 0.96rem;
+}
+
+.layer-panel-add-button .button-icon {
+  width: 1.12rem;
+  height: 1.12rem;
+}
+
 .layer-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -745,6 +781,11 @@
 .toolbar-actions .action-button .button-icon {
   width: 1.6rem;
   height: 1.6rem;
+}
+
+.toolbar-tools .action-button .button-icon {
+  width: 1.26rem;
+  height: 1.26rem;
 }
 
 .toolbar-actions > .action-button .button-icon {
