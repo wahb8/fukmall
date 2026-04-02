@@ -280,8 +280,7 @@
 
 .action-button,
 .icon-button,
-.delete-button,
-.inspector-toggle {
+.delete-button {
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   padding: 0.72rem 1rem;
@@ -302,16 +301,14 @@
 
 .action-button:hover,
 .icon-button:hover,
-.delete-button:hover,
-.inspector-toggle:hover {
+.delete-button:hover {
   transform: translateY(-1px);
   border-color: var(--accent);
 }
 
 .action-button:disabled,
 .icon-button:disabled,
-.delete-button:disabled,
-.inspector-toggle:disabled {
+.delete-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
   transform: none;
@@ -319,10 +316,6 @@
 
 .delete-button {
   color: #991b1b;
-}
-
-.inspector-toggle {
-  width: 100%;
 }
 
 .workspace-grid {
@@ -597,6 +590,7 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-height: 0;
 }
 
 .asset-panel {
@@ -708,12 +702,28 @@
   padding: 1rem;
 }
 
+.inspector-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(265px, calc(100vh - 32rem));
+  overflow: hidden;
+}
+
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 0.75rem;
   padding-bottom: 0.9rem;
+}
+
+.inspector-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.2rem;
 }
 
 .layer-list {

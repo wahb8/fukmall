@@ -73,6 +73,24 @@ export function createTextLayer(overrides = {}) {
   return syncTextLayerLayout(normalizedTextLayer)
 }
 
+export function createTextShadowLayer(sourceLayer, overrides = {}) {
+  return createTextLayer({
+    ...sourceLayer,
+    id: crypto.randomUUID(),
+    name: `${sourceLayer.name} Shadow`,
+    color: '#000000',
+    opacity: overrides.opacity ?? 0.4,
+    x: sourceLayer.x + (overrides.offsetX ?? 8),
+    y: sourceLayer.y + (overrides.offsetY ?? 8),
+    eraseMask: '',
+    paintOverlayBitmap: '',
+    shadowLayerId: null,
+    isTextShadow: true,
+    shadowSourceLayerId: sourceLayer.id,
+    ...overrides,
+  })
+}
+
 export function createShapeLayer(overrides = {}) {
   return createBaseLayer({
     name: 'Shape',
@@ -260,12 +278,35 @@ export function removeLayers(documentState, layerIds) {
     return documentState
   }
 
+  for (const layer of documentState.layers) {
+    if (idsToRemove.has(layer.id)) {
+      if (layer.type === 'text' && layer.shadowLayerId) {
+        idsToRemove.add(layer.shadowLayerId)
+      }
+
+      continue
+    }
+
+    if (layer.type === 'text' && layer.shadowLayerId && idsToRemove.has(layer.shadowLayerId)) {
+      idsToRemove.add(layer.shadowLayerId)
+    }
+  }
+
   const selectedLayerIds = Array.isArray(documentState.selectedLayerIds)
     ? documentState.selectedLayerIds
     : documentState.selectedLayerId
       ? [documentState.selectedLayerId]
       : []
-  const nextLayersAfterRemoval = documentState.layers.filter((layer) => !idsToRemove.has(layer.id))
+  const nextLayersAfterRemoval = documentState.layers
+    .filter((layer) => !idsToRemove.has(layer.id))
+    .map((layer) => (
+      layer.type === 'text' && layer.shadowLayerId && idsToRemove.has(layer.shadowLayerId)
+        ? {
+          ...layer,
+          shadowLayerId: null,
+        }
+        : layer
+    ))
   const nextSelectedLayerIds = selectedLayerIds.filter((id) => !idsToRemove.has(id))
   const selectedLayerWasRemoved = documentState.selectedLayerId
     ? idsToRemove.has(documentState.selectedLayerId)

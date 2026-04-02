@@ -48,6 +48,7 @@ import {
   createGroupLayer,
   createImageLayer,
   createRasterLayer,
+  createTextShadowLayer,
   createShapeLayer,
   createTextLayer,
   duplicateLayer,
@@ -571,6 +572,10 @@ function createTransparentColorFromHex(color) {
   }
 }
 
+const DEFAULT_TEXT_SHADOW_OFFSET_X = 8
+const DEFAULT_TEXT_SHADOW_OFFSET_Y = 8
+const DEFAULT_TEXT_SHADOW_OPACITY = 0.4
+
 function layerLocalPointToDocumentPoint(layer, surfaceWidth, surfaceHeight, point) {
   if (!layer || !point || surfaceWidth <= 0 || surfaceHeight <= 0) {
     return null
@@ -624,7 +629,6 @@ function App() {
     canUndo,
     canRedo,
   } = useHistory(createInitialDocument())
-  const [isInspectorOpen, setIsInspectorOpen] = useState(false)
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
   const [activeTool, setActiveTool] = useState('select')
@@ -664,6 +668,9 @@ function App() {
   const selectedLayer = selectedLayers.length === 1
     ? selectedLayers[0]
     : findLayer(documentState, documentState.selectedLayerId)
+  const selectedLayerShadow = selectedLayer?.type === 'text' && !selectedLayer?.isTextShadow && selectedLayer.shadowLayerId
+    ? findLayer(documentState, selectedLayer.shadowLayerId)
+    : null
   const selectionBounds = getSelectionBoundsFromLayers(selectedLayers)
   const hasMultiSelection = selectedLayerIds.length > 1
   const currentTool = activeTool
@@ -2214,6 +2221,99 @@ function App() {
     commit((currentDocument) => updater(currentDocument))
   }
 
+  function syncShadowLayerForTextSource(currentDocument, sourceLayerId) {
+    const sourceLayer = findLayer(currentDocument, sourceLayerId)
+
+    if (!sourceLayer || sourceLayer.type !== 'text' || sourceLayer.isTextShadow || !sourceLayer.shadowLayerId) {
+      return currentDocument
+    }
+
+    const shadowLayer = findLayer(currentDocument, sourceLayer.shadowLayerId)
+
+    if (!shadowLayer || shadowLayer.type !== 'text' || !shadowLayer.isTextShadow) {
+      return updateLayer(currentDocument, sourceLayer.id, {
+        shadowLayerId: null,
+      })
+    }
+
+    const offsetX = shadowLayer.x - sourceLayer.x
+    const offsetY = shadowLayer.y - sourceLayer.y
+
+    return updateLayer(currentDocument, shadowLayer.id, {
+      name: `${sourceLayer.name} Shadow`,
+      text: sourceLayer.text,
+      fontFamily: sourceLayer.fontFamily,
+      fontSize: sourceLayer.fontSize,
+      fontWeight: sourceLayer.fontWeight,
+      fontStyle: sourceLayer.fontStyle,
+      lineHeight: sourceLayer.lineHeight,
+      letterSpacing: sourceLayer.letterSpacing,
+      textAlign: sourceLayer.textAlign,
+      mode: sourceLayer.mode,
+      boxWidth: sourceLayer.boxWidth,
+      boxHeight: sourceLayer.boxHeight,
+      measuredWidth: sourceLayer.measuredWidth,
+      measuredHeight: sourceLayer.measuredHeight,
+      width: sourceLayer.width,
+      height: sourceLayer.height,
+      rotation: sourceLayer.rotation,
+      scaleX: sourceLayer.scaleX,
+      scaleY: sourceLayer.scaleY,
+      x: sourceLayer.x + offsetX,
+      y: sourceLayer.y + offsetY,
+      color: '#000000',
+      shadowSourceLayerId: sourceLayer.id,
+    })
+  }
+
+  function handleAddTextShadow() {
+    if (!selectedLayer || selectedLayer.type !== 'text' || selectedLayer.isTextShadow) {
+      return
+    }
+
+    commit((currentDocument) => {
+      const sourceLayer = findLayer(currentDocument, selectedLayer.id)
+
+      if (!sourceLayer || sourceLayer.type !== 'text' || sourceLayer.isTextShadow) {
+        return currentDocument
+      }
+
+      const existingShadow = sourceLayer.shadowLayerId
+        ? findLayer(currentDocument, sourceLayer.shadowLayerId)
+        : null
+
+      if (existingShadow?.type === 'text' && existingShadow.isTextShadow) {
+        return currentDocument
+      }
+
+      const shadowLayer = createTextShadowLayer(sourceLayer, {
+        offsetX: DEFAULT_TEXT_SHADOW_OFFSET_X,
+        offsetY: DEFAULT_TEXT_SHADOW_OFFSET_Y,
+        opacity: DEFAULT_TEXT_SHADOW_OPACITY,
+      })
+      const sourceIndex = currentDocument.layers.findIndex((layer) => layer.id === sourceLayer.id)
+
+      if (sourceIndex === -1) {
+        return currentDocument
+      }
+
+      const nextLayers = [...currentDocument.layers]
+      nextLayers.splice(sourceIndex, 0, shadowLayer)
+
+      return {
+        ...currentDocument,
+        layers: nextLayers.map((layer) => (
+          layer.id === sourceLayer.id
+            ? {
+              ...layer,
+              shadowLayerId: shadowLayer.id,
+            }
+            : layer
+        )),
+      }
+    })
+  }
+
   function deleteSelectedLayers() {
     commit((currentDocument) => {
       const currentSelectedLayerIds = Array.isArray(currentDocument.selectedLayerIds)
@@ -2544,19 +2644,32 @@ function App() {
       return
     }
 
-    applyDocumentChange((currentDocument) =>
-      updateLayer(currentDocument, selectedLayer.id, patch),
-    )
+    applyDocumentChange((currentDocument) => {
+      const nextDocument = updateLayer(currentDocument, selectedLayer.id, patch)
+
+      if (selectedLayer.type === 'text' && !selectedLayer.isTextShadow) {
+        return syncShadowLayerForTextSource(nextDocument, selectedLayer.id)
+      }
+
+      return nextDocument
+    })
   }
 
   function applyTextLayerUpdate(layerId, updater, applyTransient = false) {
     const runner = applyTransient ? setTransient : applyDocumentChange
 
-    runner((currentDocument) =>
-      updateLayer(currentDocument, layerId, (layer) => (
+    runner((currentDocument) => {
+      const nextDocument = updateLayer(currentDocument, layerId, (layer) => (
         layer.type === 'text' ? updater(layer) : layer
-      )),
-    )
+      ))
+      const nextLayer = findLayer(nextDocument, layerId)
+
+      if (nextLayer?.type === 'text' && !nextLayer.isTextShadow) {
+        return syncShadowLayerForTextSource(nextDocument, layerId)
+      }
+
+      return nextDocument
+    })
   }
 
   function getActiveLassoLayer() {
@@ -4488,23 +4601,8 @@ function App() {
               </div>
             </section>
 
-            <button
-              className="inspector-toggle"
-              type="button"
-              onClick={() => setIsInspectorOpen((currentValue) => !currentValue)}
-            >
-              {isInspectorOpen ? 'Hide Selected Layer' : 'Show Selected Layer'}
-            </button>
-
-            {isInspectorOpen && (
-              <section className="panel-card">
-                <div className="panel-header">
-                  <div>
-                    <p className="eyebrow">Selected Layer</p>
-                    <h2>{selectedLayer ? selectedLayer.name : 'Nothing selected'}</h2>
-                  </div>
-                </div>
-
+            <section className="panel-card inspector-panel">
+                <div className="inspector-panel-body">
                 {hasMultiSelection ? (
                   <div className="group-note full-width">
                     {selectedLayerIds.length} layers selected. Multi-selection currently supports
@@ -4514,6 +4612,18 @@ function App() {
                   <div className="property-grid">
                     {selectedLayer.type === 'text' && (
                       <>
+                        {!selectedLayer.isTextShadow && (
+                          <label className="property-field full-width">
+                            <span>Text Shadow</span>
+                            <button
+                              className={selectedLayerShadow ? 'action-button active' : 'action-button'}
+                              type="button"
+                              onClick={handleAddTextShadow}
+                            >
+                              Add Shadow
+                            </button>
+                          </label>
+                        )}
                         <label className="property-field">
                           <span>Font Size</span>
                           <input
@@ -4603,6 +4713,55 @@ function App() {
                             onChange={(event) => updateSelectedLayer({ color: event.target.value })}
                           />
                         </label>
+                        {!selectedLayer.isTextShadow && selectedLayerShadow && (
+                          <>
+                            <label className="property-field">
+                              <span>Shadow X</span>
+                              <input
+                                type="number"
+                                value={selectedLayerShadow.x - selectedLayer.x}
+                                onChange={(event) =>
+                                  applyDocumentChange((currentDocument) =>
+                                    updateLayer(currentDocument, selectedLayerShadow.id, {
+                                      x: selectedLayer.x + (Number(event.target.value) || 0),
+                                    }),
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="property-field">
+                              <span>Shadow Y</span>
+                              <input
+                                type="number"
+                                value={selectedLayerShadow.y - selectedLayer.y}
+                                onChange={(event) =>
+                                  applyDocumentChange((currentDocument) =>
+                                    updateLayer(currentDocument, selectedLayerShadow.id, {
+                                      y: selectedLayer.y + (Number(event.target.value) || 0),
+                                    }),
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="property-field">
+                              <span>Shadow Opacity</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                value={selectedLayerShadow.opacity}
+                                onChange={(event) =>
+                                  applyDocumentChange((currentDocument) =>
+                                    updateLayer(currentDocument, selectedLayerShadow.id, {
+                                      opacity: Math.max(0, Math.min(1, Number(event.target.value) || 0)),
+                                    }),
+                                  )
+                                }
+                              />
+                            </label>
+                          </>
+                        )}
                       </>
                     )}
                     <label className="property-field">
@@ -4826,8 +4985,8 @@ function App() {
                     Select a layer from the canvas or the stack to edit its properties.
                   </p>
                 )}
+                </div>
               </section>
-            )}
           </aside>
         </div>
       </section>
