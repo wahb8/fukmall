@@ -62,11 +62,18 @@ Current behavior:
 - full documents can be saved and reopened through `.kryop` project files
 - only the current document is saved in v1, not the full undo/redo stack
 - global colors are still persisted separately in `localStorage`
+- saved/opened documents also pass through normalization, which repairs selection state and strips disabled group layers
 - runtime-only editor state such as live canvas caches, refs, lasso/floating selections, and drag state should continue to be treated as non-persistent
 
 ### Group Layers
 
-Groups are visual placeholders, not real nested containers.
+Group layers are currently disabled for users.
+
+Current behavior:
+
+- the seeded new-file document no longer includes a group placeholder
+- normalized document state strips group layers from project files before they re-enter the app
+- internal group-layer helpers are still kept in the codebase for later implementation work
 
 ### Default New File State
 
@@ -142,6 +149,17 @@ That means:
 - tool switches should not leave the document with no selected layer
 - lasso startup should preserve the current selected target layer
 - opening or creating a new file should rebuild selection from the loaded document state
+- invalid saved selection IDs should be treated as recoverable and normalized to a valid fallback layer when possible
+
+### Prompt Input
+
+The prompt-style input below the canvas is currently visual-only.
+
+That means:
+
+- it is rendered and styled in the UI
+- it does not currently generate content or modify the document
+- future work can either wire it into a real flow or remove it cleanly
 
 ## Testing Reality
 

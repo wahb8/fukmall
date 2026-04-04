@@ -52,22 +52,42 @@ Primary custom properties are defined in `src/App.css`.
 
 ### Custom Font
 
-The app locally registers:
+The app locally registers bundled font families from `src/index.css`, including:
 
+- `AbrilFatface`
+- `AlfaSlabOne`
+- `AtkinsonHyperlegibleMono`
+- `Caprasimo`
 - `Fixture`
-
-from:
-
-- `src/assets/fonts/Fixture-Black.ttf`
+- `Gelasio`
+- `MerriweatherSans`
+- `MPLUS1Code`
+- `Oi`
+- `Ramaraja`
+- `REM`
+- `Ubuntu`
+- `Ultra`
 
 ### Text Layer Fonts
 
 Available text layer font options currently include:
 
+- AbrilFatface
+- AlfaSlabOne
 - Arial
+- AtkinsonHyperlegibleMono
+- Caprasimo
 - Fixture
+- Gelasio
 - Inter
+- MerriweatherSans
+- MPLUS1Code
+- Oi
+- Ramaraja
+- REM
 - Roboto
+- Ubuntu
+- Ultra
 - Georgia
 - Times New Roman
 - Courier New
@@ -105,6 +125,8 @@ Asset cards now use a masonry-like layout:
 - the list packs vertically without leaving large row gaps
 - each card includes a small delete button anchored to the lower-right area of the card chrome rather than over the thumbnail
 
+While an asset is being dragged over the stage, the canvas receives an accent-colored active-drop outline.
+
 ## Stage and Canvas
 
 The visible stage is styled as a phone-like artboard container:
@@ -133,6 +155,13 @@ Buttons and controls are visually consistent:
 Selection and active states primarily use teal.
 
 Danger states use dark red text rather than aggressive red fills.
+
+The top toolbar also includes:
+
+- a `File` dropdown anchored near the top-left of the app shell
+- a `Change Position` button that flips the tool cluster between left and right layouts
+- contextual range/select controls for brush size, eraser size, bucket tolerance, and gradient mode
+- a compact history control cluster for undo/redo
 
 ## Motion and Animation
 
@@ -170,7 +199,11 @@ Selected layers use:
 
 Passive selections use dashed outlines.
 
-Group layers are styled as soft placeholder blocks with dashed borders to signal incomplete functionality.
+Inline text editing swaps the rendered text canvas for a textarea with a dashed teal border.
+
+There is currently no active group-layer-specific UI because the group feature is disabled.
+
+Below the canvas there is a styled prompt shell with a single input, but it is currently visual-only and not connected to editing logic.
 
 ## Responsive Notes
 

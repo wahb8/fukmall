@@ -22,6 +22,8 @@ This document describes what each tracked file in the repo currently does.
 ### `eslint.config.js`
 
 - ESLint configuration for the Vite/React project
+- ignores `dist/`
+- applies the recommended base JS rules plus React Hooks and Vite React Refresh rules for `js`/`jsx` files
 
 ### `index.html`
 
@@ -54,7 +56,7 @@ This document describes what each tracked file in the repo currently does.
 ### `src/index.css`
 
 - very small global stylesheet
-- registers the `Fixture` font face from local assets
+- registers the full local font catalog used by the editor UI and text inspector
 - sets global background/text defaults
 - forces the custom pointer cursor through the whole app
 
@@ -63,7 +65,9 @@ This document describes what each tracked file in the repo currently does.
 - main application component
 - owns editor UI, tool state, document state integration, layer rendering, keyboard shortcuts, drag/drop, viewport, and canvas interaction flow
 - creates the default document, including the full-canvas white background layer used for new files
+- no longer exposes group layers in the seeded document or inspector UI
 - contains the image import sizing and placement logic for both direct imports and asset-library drops
+- contains text-shadow creation and shadow-property editing for text layers
 - contains the simple SVG-backed image import/render flow, including the behavior that pen strokes on SVG layers create a new raster layer above the SVG
 - contains the project file workflow for new/open/save and the runtime reset path used when loading a file
 - contains the export controls for flattened PNG/JPEG downloads
@@ -71,6 +75,8 @@ This document describes what each tracked file in the repo currently does.
 - contains the gradient tool wiring, including mode selection, drag interaction state, and the transient overlay preview line
 - contains the bucket fill tool wiring, including toolbar controls, tolerance state, and bitmap-layer fill commits
 - contains the asset library panel structure, including the fixed header and scrollable asset list region
+- contains the top toolbar layout toggle, zoom-tool reset behavior, and file-menu interactions
+- contains a currently unwired prompt-style input below the canvas
 - contains move interaction behavior such as snapping and temporary Shift axis locking
 - this is currently the most important file in the repo
 
@@ -80,6 +86,7 @@ This document describes what each tracked file in the repo currently does.
 - defines colors, layout, panels, stage, controls, selection frames, responsive behavior, and visual language
 - constrains the asset library panel height and makes the thumbnail region scroll independently from the header
 - controls the masonry-like asset card layout and the asset delete button placement
+- styles the file menu dropdown, active asset-drop canvas state, shared multi-selection frame, inline text editor, and the prompt shell below the canvas
 
 ## Hooks
 
@@ -101,8 +108,9 @@ This document describes what each tracked file in the repo currently does.
 
 - document and layer model helpers
 - creates each layer type
+- still retains the internal `createGroupLayer()` helper for later work, even though group layers are disabled in the current product
 - image layers now carry source metadata such as `sourceKind`
-- handles selection, append/insert/remove, duplication, move, merge-down support, SVG merge restrictions, and alpha-lock helpers
+- handles selection, append/insert/remove, duplication, move, merge-down support, SVG merge restrictions, linked text-shadow cleanup, and alpha-lock helpers
 
 ### `src/lib/raster.js`
 
@@ -111,18 +119,21 @@ This document describes what each tracked file in the repo currently does.
 - loads image sources into canvases
 - resolves image dimensions from normal image sources and SVG sources
 - detects SVG-backed image sources and extracts intrinsic SVG dimensions from `width`, `height`, and `viewBox`
+- decodes inline/data-URL SVG markup before sizing when needed
 - can rasterize image sources to an explicit target canvas size when the editor needs a higher-resolution working surface
 - clones/crops canvases
 - serializes canvases to data URLs
 - applies erase/mask composition
 - contains the linear gradient bitmap helper used by the gradient tool
 - contains the contiguous flood-fill helper used by the bucket tool
+- contains text-canvas composition helpers for editable text, erase masks, and paint overlays
 - converts DOM pointer positions into canvas-local coordinates
 
 ### `src/lib/exportDocument.js`
 
 - renders the current document into an offscreen export canvas
 - flattens visible layers in stack order
+- current exports only render active user-facing layer types; disabled group layers are not part of the export path
 - supports PNG and JPEG downloads
 - reuses text mask/overlay composition so exported artwork matches the editor view
 
@@ -130,28 +141,34 @@ This document describes what each tracked file in the repo currently does.
 
 - serializes and validates `.kryop` project files
 - normalizes loaded document state
+- strips disabled group layers during normalization so they do not re-enter the UI through saved files
+- repairs invalid saved selection state by falling back to the last valid layer when possible
 - downloads project files with app metadata and format versioning
 
 ### `src/lib/textLayer.js`
 
 - current text system
 - measures text, wraps box text, syncs text layout into layer bounds, updates text style/content, and renders text to canvas
+- defaults new text layers to box mode with left alignment, `1.15` line height, and `0` letter spacing
 
 ### `src/lib/penTool.js`
 
 - stroke smoothing and brush drawing helpers
 - applies low-pass and Chaikin-style smoothing
 - provides drag thresholds and minimum point spacing
+- draws both single-point dots and smoothed multi-point brush strokes
 
 ### `src/lib/eraserTool.js`
 
 - primitive eraser/mask brush operations
 - supports both destructive erase on raster/image layers and mask painting for text layers
+- implements both line strokes and single-click dots with round caps
 
 ### `src/lib/lassoTool.js`
 
 - polygon/lasso selection helpers
 - computes bounds, extracts selected pixels to a floating canvas, clears selected regions, and renders selection outlines
+- can convert lassoed content into a movable floating-selection object
 
 ### `src/lib/moveSnapping.js`
 
@@ -164,16 +181,19 @@ This document describes what each tracked file in the repo currently does.
 
 - viewport math helpers
 - converts between world/document coordinates and screen coordinates
+- clamps zoom between configured minimum and maximum values
 - handles zooming around a given screen point
 
 ### `src/lib/colors.js`
 
 - stores global foreground/background colors
 - persists the pair in `localStorage`
+- uses the storage key `fukmall.global-colors`
 
 ### `src/lib/fontOptions.js`
 
 - exports the list of font-family options shown in the text inspector
+- includes both bundled local fonts and fallback system fonts
 
 ### `src/lib/textObject.js`
 

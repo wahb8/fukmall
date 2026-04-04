@@ -45,7 +45,6 @@ import {
   clearSelection,
   cloneLayer,
   createDocument,
-  createGroupLayer,
   createImageLayer,
   createRasterLayer,
   createTextShadowLayer,
@@ -323,16 +322,9 @@ function createInitialDocument() {
     text: 'A cleaner\nlayer stack',
     fontSize: 40,
   })
-  const group = createGroupLayer({
-    name: 'Empty Group',
-    x: 460,
-    y: 78,
-    width: 180,
-    height: 120,
-  })
 
   return createDocument(
-    [whiteBackground, background, card, title, group],
+    [whiteBackground, background, card, title],
     background.id,
   )
 }
@@ -850,17 +842,6 @@ function App() {
       context.fillStyle = layer.fill
       drawRoundedRect(context, layer.width, layer.height, layer.radius)
       context.fill()
-      context.restore()
-      return
-    }
-
-    if (layer.type === 'group') {
-      context.fillStyle = 'rgba(255, 247, 237, 0.92)'
-      context.strokeStyle = 'rgba(120, 92, 55, 0.32)'
-      context.lineWidth = 1
-      drawRoundedRect(context, layer.width, layer.height, 24)
-      context.fill()
-      context.stroke()
       context.restore()
       return
     }
@@ -3865,13 +3846,6 @@ function App() {
             />
           </div>
         )}
-        {layer.type === 'group' && (
-          <div className="layer-body group-layer-body">
-            <span>Group</span>
-            <small>{layer.childIds.length} child layers</small>
-          </div>
-        )}
-
         {isSelected && currentTool === 'select' && !hasMultiSelection && (
           <div className="selection-frame" aria-hidden="true">
             {HANDLE_DIRECTIONS.map((handle) => (
@@ -4973,12 +4947,6 @@ function App() {
                       </div>
                     )}
 
-                    {selectedLayer.type === 'group' && (
-                      <div className="group-note full-width">
-                        Groups are modeled as layers already, but nested child management is
-                        intentionally left out of this MVP.
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <p className="empty-state">

@@ -23,6 +23,9 @@ Stored in normal React state and not part of undo history:
 - drag UI state
 - viewport
 - snap guides
+- toolbar side placement
+- file-menu open state
+- open/export busy flags
 
 Opening a file or creating a new file should clear this transient state and rebuild it from the new document context instead of trying to preserve the old runtime session.
 
@@ -35,6 +38,7 @@ Refs are used for mutable runtime objects that should not trigger rerenders:
 - raster surface cache map
 - copied layer buffer
 - last editable pen layer
+- hidden file/input refs and drag-preview image refs
 
 The active interaction object can also carry temporary movement metadata such as:
 
@@ -61,6 +65,9 @@ Image layers may also carry source metadata such as:
 - `sourceKind`
 
 This is used to distinguish normal bitmap-backed image layers from SVG-backed image layers.
+
+Group layer data may still exist in older code paths or project files, but normalization currently
+filters those layers out before they enter active editor state.
 
 ## History Model
 
@@ -156,6 +163,7 @@ There are several related selection concepts:
 
 - single and multi-selection stored in the document
 - when layers exist, the app now tries to keep a valid selected layer rather than allowing the editor to drift into an empty-selection state
+- project-file normalization also repairs invalid saved selection IDs by falling back to the last remaining layer when possible
 
 ### Lasso Selection
 
@@ -193,5 +201,7 @@ Current file model:
 
 - files are saved as `.kryop`
 - files store app metadata, a format version, and the serialized document only
+- document normalization currently removes disabled group layers during load/save normalization
+- file normalization also rebuilds valid single/multi-selection state when saved IDs are stale
 - undo/redo history is intentionally not stored in v1
 - runtime-only refs and raster caches are rebuilt after load instead of being serialized

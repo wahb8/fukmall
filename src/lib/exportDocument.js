@@ -39,17 +39,6 @@ async function drawLayerToContext(context, layer) {
     return
   }
 
-  if (layer.type === 'group') {
-    context.fillStyle = 'rgba(255, 247, 237, 0.92)'
-    context.strokeStyle = 'rgba(120, 92, 55, 0.32)'
-    context.lineWidth = 1
-    drawRoundedRect(context, layer.width, layer.height, 24)
-    context.fill()
-    context.stroke()
-    context.restore()
-    return
-  }
-
   if (layer.type === 'text') {
     const maskCanvas = await createMaskCanvasFromSource(
       layer.eraseMask ?? '',

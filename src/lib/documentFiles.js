@@ -15,8 +15,14 @@ function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
   return documentState.layers.at(-1)?.id ?? null
 }
 
+function isSupportedDocumentLayer(layer) {
+  return layer?.type !== 'group'
+}
+
 export function normalizeDocumentState(documentState) {
-  const layers = Array.isArray(documentState?.layers) ? documentState.layers : []
+  const layers = Array.isArray(documentState?.layers)
+    ? documentState.layers.filter(isSupportedDocumentLayer)
+    : []
   const selectedLayerIds = Array.isArray(documentState?.selectedLayerIds)
     ? documentState.selectedLayerIds.filter((layerId) => findLayer({ layers }, layerId))
     : []

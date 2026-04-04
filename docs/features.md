@@ -10,7 +10,6 @@ The initial document includes:
 - a hero image layer
 - an orange rounded rectangle shape layer
 - an editable text layer
-- an empty group layer placeholder
 
 This seed data is created inside `src/App.jsx` through `createInitialDocument()`.
 
@@ -27,6 +26,7 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - use a `src`/`bitmap` data URL or image URL
 - can be resized, moved, duplicated, and alpha locked
 - support painting and erasing inside the image frame
+- direct imports currently come through an `image/*` file picker
 - direct image imports now preserve the source image's intrinsic dimensions by default
 - asset-library drops now use the same intrinsic-dimension behavior
 - imported image layers continue to use `scaleX: 1` and `scaleY: 1` unless the user resizes them later
@@ -63,15 +63,24 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 
 - text remains editable as structured text, not flattened by default
 - support point text and box text modes
-- support font family, size, weight, color, and wrapping
+- new text layers default to box mode
+- support font family, size, weight, color, wrapping, letter spacing, and line height
 - erasing is stored as a mask bitmap
 - painting is stored in a separate overlay bitmap so text content can still be edited later
 
+### Text Shadows
+
+- text layers can create a linked shadow layer from the inspector
+- the shadow copies the source text content and typography settings while using black fill by default
+- the inspector exposes shadow X offset, Y offset, and opacity controls when a linked shadow exists
+- deleting the source text layer also removes its linked shadow layer
+
 ### Group Layers
 
-- placeholder representation of a group
-- visually rendered as a framed block
-- nested child management is intentionally not implemented yet
+- group layers are currently disabled in the product UI
+- new files no longer seed a placeholder group layer
+- project-file normalization strips group layers from loaded documents so the feature stays inaccessible to users for now
+- the internal layer model still retains group-related helpers so the feature can be resumed later
 
 ## Selection
 
@@ -86,6 +95,7 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 ### Multi-Selection
 
 - selection state supports multiple layer IDs
+- `Shift`-click on canvas layers or layer rows toggles layers into and out of the current selection
 - current support is mostly shared move and shared resize
 - inspector editing is still effectively single-layer oriented
 - shared move now also supports the same temporary `Shift` axis lock behavior
@@ -98,6 +108,7 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - can extract the selected region into a floating selection canvas
 - selected pixels can then be moved or deleted
 - floating selection dragging supports the same temporary `Shift` axis lock behavior as normal layer movement
+- the toolbar exposes a `Sel to Layer` action for committing the active lasso/floating selection into a new layer
 
 The lasso workflow is one of the more advanced features in the app and relies on canvas extraction rather than vector selection metadata.
 
@@ -107,6 +118,7 @@ The lasso workflow is one of the more advanced features in the app and relies on
 
 - paints on raster, image, or text layers
 - smooths strokes from sampled pointer points
+- exposes a toolbar brush-size slider with a current default value of `16`
 - for text layers, paint is written into a separate overlay canvas
 - for raster/image layers, paint is applied directly to the offscreen bitmap
 - if the user starts a pen stroke on an SVG image layer, the app first creates a new raster layer above it and paints onto that new layer
@@ -116,6 +128,7 @@ The lasso workflow is one of the more advanced features in the app and relies on
 
 - erases directly from raster/image surfaces
 - for text layers, it writes into an erase mask instead of destroying the original text definition
+- exposes a toolbar eraser-size slider with a current default value of `28`
 
 ### Gradient Tool
 
@@ -185,11 +198,12 @@ The left sidebar functions as a small asset library.
 
 It supports:
 
-- importing local image files
+- importing local PNG, JPG, SVG, and WEBP files
 - storing imported assets in component state
 - dragging assets from the sidebar onto the canvas
 - creating image layers from dropped assets
 - removing imported assets through a small delete button on each asset card
+- showing a highlighted canvas drop state while an asset is dragged over the stage
 
 Layout behavior:
 
@@ -211,8 +225,17 @@ Supported behavior includes:
 - zoom in/out
 - zooming around a point
 - coordinate conversion between screen and document space
+- right-click or `Alt` with the zoom tool zooms out instead of in
+- double-clicking the zoom tool button resets the viewport to `zoom: 1`, `offsetX: 0`, and `offsetY: 0`
 
 The stage visually represents a 1080 x 1440 document inside a 428px-wide display frame.
+
+There is also a prompt-style input rendered below the canvas, but it is currently presentational only and is not wired into document generation or editing behavior.
+
+## Toolbar Layout
+
+- the editor includes a `Change Position` control that flips the tool cluster between left-side and right-side layouts
+- this is a transient UI preference only and is not persisted across sessions
 
 ## Export
 
@@ -241,6 +264,8 @@ Supported actions:
 - New File
 - Save File
 - Open File
+- Export PNG
+- Export JPEG
 
 Project file behavior:
 
@@ -248,6 +273,7 @@ Project file behavior:
 - saved files include app metadata, a format version, and the serialized document only
 - undo/redo history is not saved in v1
 - opening a file replaces the current document and resets transient editor runtime state
+- the File menu closes on outside click or `Escape`
 
 ## Snapping
 
@@ -272,11 +298,13 @@ The app currently supports:
 - `Ctrl/Cmd + Shift + Z`: redo
 - `Ctrl + Y`: redo
 - `Ctrl/Cmd + C`: copy selected layer
-- `Ctrl/Cmd + V`: paste copied layer with an offset
+- `Ctrl/Cmd + V`: paste copied layer with a `24px` offset on both axes
 - `Delete` or `Backspace`: delete selected layer or active floating/lasso selection
 - `X`: swap foreground/background colors
 - `D`: reset global colors
 - `Enter`: clear current layer selection
+- while editing text, `Ctrl/Cmd + Enter` commits the text edit
+- while editing text, `Escape` cancels the inline text editor
 
 ## Persistence
 
@@ -293,3 +321,4 @@ Currently not persisted between sessions unless saved as a project file:
 - asset library
 - viewport
 - tool settings beyond current session
+- toolbar-left/right placement

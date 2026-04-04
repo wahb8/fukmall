@@ -27,6 +27,7 @@ The architecture is simple in packaging but dense in implementation:
 - selection and interaction flow
 - keyboard shortcuts
 - layer inspector
+- text-shadow orchestration for text layers
 - asset library import/drag-drop
 - project-file open/save/new actions
 - flattened export actions
@@ -56,7 +57,10 @@ Each layer is an object with common transform/display fields such as:
 - `scaleX`, `scaleY`
 - `lockTransparentPixels`
 
-Layer-specific fields are then added for `shape`, `image`, `raster`, `text`, and `group`.
+Layer-specific fields are currently active for `shape`, `image`, `raster`, and `text`.
+
+The codebase still retains an internal `group` layer shape for future work, but group layers are
+currently filtered out of normalized document state so the feature is not user-accessible.
 
 ### 3. History Layer
 
@@ -108,6 +112,7 @@ Feature logic is split into focused helper modules:
 - `viewport.js`: screen/world coordinate transforms
 - `textLayer.js`: text measurement, wrapping, layout sync, and canvas rendering
 - `colors.js`: global foreground/background storage
+- `documentFiles.js`: project-file parsing, normalization, and download helpers
 
 ## Data Flow
 
