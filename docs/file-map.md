@@ -68,6 +68,7 @@ This document describes what each tracked file in the repo currently does.
 - no longer exposes group layers in the seeded document or inspector UI
 - contains the image import sizing and placement logic for both direct imports and asset-library drops
 - contains text-shadow creation and shadow-property editing for text layers
+- contains the text inspector alignment control and the double-click-to-edit wiring for selected text layers
 - contains the simple SVG-backed image import/render flow, including the behavior that pen strokes on SVG layers create a new raster layer above the SVG
 - contains the project file workflow for new/open/save and the runtime reset path used when loading a file
 - contains the export controls for flattened PNG/JPEG downloads
@@ -75,9 +76,14 @@ This document describes what each tracked file in the repo currently does.
 - contains the gradient tool wiring, including mode selection, drag interaction state, and the transient overlay preview line
 - contains the bucket fill tool wiring, including toolbar controls, tolerance state, and bitmap-layer fill commits
 - contains the asset library panel structure, including the fixed header and scrollable asset list region
-- contains the top toolbar layout toggle, zoom-tool reset behavior, and file-menu interactions
+- contains the fixed left-side tool layout, zoom-tool reset behavior, and file-menu interactions
 - contains a currently unwired prompt-style input below the canvas
 - contains move interaction behavior such as snapping and temporary Shift axis locking
+- contains the selected-frame move behavior so already-selected layers can be dragged from their transformed selection frame without another opaque-pixel hit
+- contains the inline text-editor caret placement behavior so edit mode opens with the cursor at the end of the text
+- contains the current resize-session snapshot logic and the `5000 x 5000` absolute resize cap
+- contains the raster pen surface-expansion logic, including the stable preview-offset behavior that prevents the layer from twitching while a stroke grows beyond the current working surface
+- contains the live document-state ref used by long-lived pointer handlers so paint/edit mapping follows the current layer transform after move operations
 - this is currently the most important file in the repo
 
 ### `src/App.css`
@@ -87,6 +93,8 @@ This document describes what each tracked file in the repo currently does.
 - constrains the asset library panel height and makes the thumbnail region scroll independently from the header
 - controls the masonry-like asset card layout and the asset delete button placement
 - styles the file menu dropdown, active asset-drop canvas state, shared multi-selection frame, inline text editor, and the prompt shell below the canvas
+- makes the single-layer selection frame interactive so it can act as the move region for already-selected layers
+- styles the segmented alignment control in the text inspector
 
 ## Hooks
 
@@ -150,6 +158,8 @@ This document describes what each tracked file in the repo currently does.
 - current text system
 - measures text, wraps box text, syncs text layout into layer bounds, updates text style/content, and renders text to canvas
 - defaults new text layers to box mode with left alignment, `1.15` line height, and `0` letter spacing
+- preserves point-text horizontal anchors across content/alignment updates
+- applies left/center/right alignment in both normal line rendering and letter-spaced glyph rendering
 
 ### `src/lib/penTool.js`
 

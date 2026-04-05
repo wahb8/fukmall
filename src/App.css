@@ -421,7 +421,7 @@
 
 .canvas-layer {
   position: absolute;
-  transform-origin: top left;
+  transform-origin: center center;
   cursor: grab;
   user-select: none;
 }
@@ -514,6 +514,10 @@
   inset: 0;
   border: 2px solid var(--selection);
   pointer-events: none;
+}
+
+.selection-frame.interactive {
+  pointer-events: auto;
 }
 
 .selection-frame.passive {
@@ -909,6 +913,38 @@
 .property-field textarea {
   min-height: 110px;
   resize: vertical;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.segmented-control-button {
+  padding: 0.72rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.segmented-control-button:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+.segmented-control-button.active {
+  border-color: rgba(15, 118, 110, 0.42);
+  background: rgba(20, 184, 166, 0.14);
+  color: var(--accent-strong);
 }
 
 

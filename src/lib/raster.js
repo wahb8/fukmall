@@ -52,6 +52,35 @@ function extractSvgMarkup(source) {
   return null
 }
 
+function parseSvgPreserveAspectRatio(value) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return {
+      align: 'xMidYMid',
+      mode: 'meet',
+    }
+  }
+
+  const normalizedValue = value.trim()
+
+  if (normalizedValue === 'none') {
+    return {
+      align: 'none',
+      mode: 'none',
+    }
+  }
+
+  const [alignToken = 'xMidYMid', modeToken = 'meet'] = normalizedValue.split(/\s+/)
+  const normalizedAlign = /^x(Min|Mid|Max)Y(Min|Mid|Max)$/.test(alignToken)
+    ? alignToken
+    : 'xMidYMid'
+  const normalizedMode = modeToken === 'slice' ? 'slice' : 'meet'
+
+  return {
+    align: normalizedAlign,
+    mode: normalizedMode,
+  }
+}
+
 export function inferImageSourceKindFromSrc(src) {
   if (typeof src !== 'string') {
     return 'bitmap'
@@ -129,6 +158,116 @@ export function getSvgIntrinsicDimensionsFromSource(src) {
   }
 
   return null
+}
+
+export function getSvgDrawRectForBox(src, boxWidth, boxHeight) {
+  const intrinsicDimensions = getSvgIntrinsicDimensionsFromSource(src)
+  const svgMarkup = extractSvgMarkup(src)
+
+  if (!intrinsicDimensions || !svgMarkup) {
+    return {
+      x: 0,
+      y: 0,
+      width: boxWidth,
+      height: boxHeight,
+    }
+  }
+
+  let preserveAspectRatio = {
+    align: 'xMidYMid',
+    mode: 'meet',
+  }
+  let hasViewBox = false
+
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const document = new DOMParser().parseFromString(svgMarkup, 'image/svg+xml')
+      const svgElement = document.documentElement
+
+      if (svgElement?.nodeName?.toLowerCase() === 'svg') {
+        hasViewBox = Boolean(svgElement.getAttribute('viewBox'))
+        preserveAspectRatio = parseSvgPreserveAspectRatio(
+          svgElement.getAttribute('preserveAspectRatio'),
+        )
+      }
+    } catch {
+      // Fall back to the default SVG viewport behavior.
+    }
+  }
+
+  if (!hasViewBox) {
+    return {
+      x: 0,
+      y: 0,
+      width: boxWidth,
+      height: boxHeight,
+    }
+  }
+
+  if (preserveAspectRatio.mode === 'none' || preserveAspectRatio.align === 'none') {
+    return {
+      x: 0,
+      y: 0,
+      width: boxWidth,
+      height: boxHeight,
+    }
+  }
+
+  const intrinsicRatio = intrinsicDimensions.width / Math.max(intrinsicDimensions.height, 1)
+  const boxRatio = boxWidth / Math.max(boxHeight, 1)
+  const shouldLimitByWidth = preserveAspectRatio.mode === 'slice'
+    ? boxRatio < intrinsicRatio
+    : boxRatio > intrinsicRatio
+  const drawWidth = shouldLimitByWidth
+    ? boxWidth
+    : boxHeight * intrinsicRatio
+  const drawHeight = shouldLimitByWidth
+    ? boxWidth / Math.max(intrinsicRatio, Number.EPSILON)
+    : boxHeight
+  const remainingX = boxWidth - drawWidth
+  const remainingY = boxHeight - drawHeight
+  const align = preserveAspectRatio.align
+  const alignX = align.startsWith('xMin') ? 0 : align.startsWith('xMax') ? 1 : 0.5
+  const alignY = align.endsWith('YMin') ? 0 : align.endsWith('YMax') ? 1 : 0.5
+
+  return {
+    x: remainingX * alignX,
+    y: remainingY * alignY,
+    width: drawWidth,
+    height: drawHeight,
+  }
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+
+export async function createCanvasFromRenderedSvgBox(src, width, height) {
+  const resolvedWidth = Math.max(1, Math.round(width))
+  const resolvedHeight = Math.max(1, Math.round(height))
+  const wrappedSvgMarkup = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${resolvedWidth}" height="${resolvedHeight}" viewBox="0 0 ${resolvedWidth} ${resolvedHeight}">
+      <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${resolvedWidth}px;height:${resolvedHeight}px;overflow:hidden;">
+          <img
+            src="${escapeHtmlAttribute(src)}"
+            style="display:block;width:100%;height:100%;margin:0;padding:0;border:0;"
+          />
+        </div>
+      </foreignObject>
+    </svg>
+  `.trim()
+  const wrappedSvgSource = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(wrappedSvgMarkup)}`
+
+  try {
+    return await createCanvasFromSource(wrappedSvgSource, resolvedWidth, resolvedHeight)
+  } catch {
+    return createCanvasFromSource(src, resolvedWidth, resolvedHeight)
+  }
 }
 
 export function createCanvasElement() {

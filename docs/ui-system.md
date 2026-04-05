@@ -159,7 +159,6 @@ Danger states use dark red text rather than aggressive red fills.
 The top toolbar also includes:
 
 - a `File` dropdown anchored near the top-left of the app shell
-- a `Change Position` button that flips the tool cluster between left and right layouts
 - contextual range/select controls for brush size, eraser size, bucket tolerance, and gradient mode
 - a compact history control cluster for undo/redo
 

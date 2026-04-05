@@ -5,6 +5,7 @@ export const DEFAULT_TEXT_LINE_HEIGHT = 1.15
 export const DEFAULT_TEXT_LETTER_SPACING = 0
 export const DEFAULT_TEXT_ALIGN = 'left'
 export const DEFAULT_TEXT_MODE = 'box'
+const POINT_TEXT_HORIZONTAL_PADDING = 8
 
 function getMeasureContext() {
   if (!TEXT_MEASURE_CONTEXT) {
@@ -97,14 +98,56 @@ export function measureTextLayer(layer) {
   const measuredHeight = Math.max(lines.length, 1) * lineHeight
 
   return {
-    width: Math.ceil(measuredWidth + 8),
+    width: Math.ceil(measuredWidth + POINT_TEXT_HORIZONTAL_PADDING),
     height: Math.ceil(measuredHeight + 8),
     lines,
     lineHeight,
   }
 }
 
-export function syncTextLayerLayout(layer) {
+function getPointTextAnchorX(layer) {
+  const contentWidth = Math.max((layer.width ?? 0) - POINT_TEXT_HORIZONTAL_PADDING, 0)
+  const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
+
+  if (textAlign === 'center') {
+    return layer.x + (contentWidth / 2)
+  }
+
+  if (textAlign === 'right') {
+    return layer.x + contentWidth
+  }
+
+  return layer.x
+}
+
+function getPointTextXFromAnchor(anchorX, width, textAlign) {
+  const contentWidth = Math.max((width ?? 0) - POINT_TEXT_HORIZONTAL_PADDING, 0)
+
+  if (textAlign === 'center') {
+    return anchorX - (contentWidth / 2)
+  }
+
+  if (textAlign === 'right') {
+    return anchorX - contentWidth
+  }
+
+  return anchorX
+}
+
+function preservePointTextAnchor(previousLayer, nextLayer) {
+  if (!previousLayer || previousLayer.mode !== 'point' || nextLayer.mode !== 'point') {
+    return nextLayer
+  }
+
+  const anchorX = getPointTextAnchorX(previousLayer)
+
+  return {
+    ...nextLayer,
+    x: getPointTextXFromAnchor(anchorX, nextLayer.width, nextLayer.textAlign ?? DEFAULT_TEXT_ALIGN),
+  }
+}
+
+export function syncTextLayerLayout(layer, previousLayer = null) {
   const measurement = measureTextLayer(layer)
   const normalizedBoxWidth = layer.mode === 'box'
     ? Math.max(layer.boxWidth ?? measurement.width, 1)
@@ -113,7 +156,7 @@ export function syncTextLayerLayout(layer) {
     ? Math.max(layer.boxHeight ?? measurement.height, measurement.height, 1)
     : null
 
-  return {
+  const nextLayer = {
     ...layer,
     boxWidth: normalizedBoxWidth,
     boxHeight: normalizedBoxHeight,
@@ -122,6 +165,8 @@ export function syncTextLayerLayout(layer) {
     width: layer.mode === 'box' ? normalizedBoxWidth : measurement.width,
     height: layer.mode === 'box' ? normalizedBoxHeight : measurement.height,
   }
+
+  return preservePointTextAnchor(previousLayer, nextLayer)
 }
 
 export function updateTextContent(layer, text) {
@@ -129,14 +174,14 @@ export function updateTextContent(layer, text) {
     ...layer,
     text,
     name: String(text ?? '').replace(/\s+/g, ' ').trim() || 'New Text',
-  })
+  }, layer)
 }
 
 export function updateTextStyle(layer, updates) {
   return syncTextLayerLayout({
     ...layer,
     ...updates,
-  })
+  }, layer)
 }
 
 export function updateTextLayerFont(layer, fontFamily) {
@@ -157,7 +202,7 @@ export function resizeBoxText(layer, newBoxWidth, newBoxHeight = null) {
     mode: 'box',
     boxWidth: Math.max(newBoxWidth, 1),
     boxHeight: newBoxHeight,
-  })
+  }, layer)
 }
 
 export function getTextBounds(layer) {
@@ -173,10 +218,13 @@ export function renderTextLayer(context, layer) {
   const measurement = measureTextLayer(layer)
   const letterSpacing = layer.letterSpacing ?? DEFAULT_TEXT_LETTER_SPACING
   const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
+  const availableWidth = layer.mode === 'box'
+    ? layer.width
+    : Math.max(measurement.width - POINT_TEXT_HORIZONTAL_PADDING, 0)
   const drawX = textAlign === 'center'
-    ? (measurement.width - 8) / 2
+    ? availableWidth / 2
     : textAlign === 'right'
-      ? measurement.width - 4
+      ? availableWidth
       : 0
 
   context.save()
@@ -194,7 +242,12 @@ export function renderTextLayer(context, layer) {
       return
     }
 
-    let glyphX = drawX
+    const lineWidth = measureTextWidth(context, line, letterSpacing)
+    let glyphX = textAlign === 'center'
+      ? (availableWidth - lineWidth) / 2
+      : textAlign === 'right'
+        ? availableWidth - lineWidth
+        : 0
 
     for (const glyph of Array.from(line)) {
       context.fillText(glyph, glyphX, y)

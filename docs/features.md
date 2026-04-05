@@ -58,13 +58,20 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - can be auto-created when the pen tool needs a drawable target
 - persisted as PNG data URLs
 - support alpha lock
+- raster pen editing no longer auto-crops the layer to the first painted alpha bounds on commit
+- raster pen strokes can expand the working surface when the user paints past the current edge
+- during that expansion, the on-canvas preview stays visually anchored instead of making the layer jump or chase the brush
 
 ### Text Layers
 
 - text remains editable as structured text, not flattened by default
 - support point text and box text modes
 - new text layers default to box mode
-- support font family, size, weight, color, wrapping, letter spacing, and line height
+- support font family, size, weight, color, wrapping, letter spacing, line height, and text alignment
+- support `left`, `center`, and `right` alignment as a real text-layer property
+- for box text, alignment positions each wrapped line inside the text box
+- for point text, alignment changes the horizontal anchor behavior:
+  left extends rightward from the anchor, center stays centered on the anchor, and right extends leftward from the anchor
 - erasing is stored as a mask bitmap
 - painting is stored in a separate overlay bitmap so text content can still be edited later
 
@@ -89,6 +96,7 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - click a layer or layer row to select it
 - inspector edits operate on the selected layer
 - resize handles appear on selection
+- once a layer is already selected, dragging from anywhere inside its transformed selection frame starts move immediately, even over transparent pixels
 - moving a layer while holding `Shift` now constrains movement to either horizontal or vertical after drag direction is detected
 - as long as the document has layers, the editor now keeps at least one layer selected
 
@@ -123,6 +131,9 @@ The lasso workflow is one of the more advanced features in the app and relies on
 - for raster/image layers, paint is applied directly to the offscreen bitmap
 - if the user starts a pen stroke on an SVG image layer, the app first creates a new raster layer above it and paints onto that new layer
 - if the document has no layers, starting to draw with the pen creates a new raster layer automatically
+- raster pen drawing is no longer limited by the first visible painted bounds or by a stale pre-move box
+- after moving a raster layer, later pen strokes map against the layer's current transform rather than its old position
+- when a raster stroke grows beyond the current working surface, the preview surface expands without shifting the layer visually during the active gesture
 
 ### Eraser Tool
 
@@ -136,7 +147,7 @@ The lasso workflow is one of the more advanced features in the app and relies on
 - uses click-and-drag interaction where drag start sets the gradient start and drag end sets the gradient end
 - supports two modes in the toolbar:
   - `BG -> FG`
-  - `BG -> Transparent`
+  - `FG -> Transparent`
 - applies the final gradient directly onto the clicked target layer rather than creating a separate layer
 - commits each gradient application as a single undoable history step
 - shows a live overlay preview line while dragging so the user can see direction and spread before release
@@ -187,6 +198,9 @@ Text layers support:
 - font selection from a fixed list
 - bold toggle
 - color editing
+- left/center/right alignment in the inspector
+- double-click editing even when the text layer is already selected
+- inline editing now places the caret at the end of the text when edit mode opens
 
 Important current limitation:
 
@@ -231,11 +245,6 @@ Supported behavior includes:
 The stage visually represents a 1080 x 1440 document inside a 428px-wide display frame.
 
 There is also a prompt-style input rendered below the canvas, but it is currently presentational only and is not wired into document generation or editing behavior.
-
-## Toolbar Layout
-
-- the editor includes a `Change Position` control that flips the tool cluster between left-side and right-side layouts
-- this is a transient UI preference only and is not persisted across sessions
 
 ## Export
 
@@ -290,6 +299,13 @@ Guides are rendered on an overlay canvas while dragging.
 
 When movement is axis-locked with `Shift`, snapping remains active only on the unconstrained axis.
 
+## Resize Behavior
+
+- single-layer resize now uses a stable pointer-down snapshot for the full drag instead of re-basing limits from intermediate transient sizes
+- reversing direction during the same resize drag can grow the layer back up naturally instead of getting capped by the smallest transient state reached earlier in the drag
+- resize still preserves the existing minimum-size behavior, anchor-handle behavior, and temporary `Shift` proportional resize behavior
+- the editor now caps resize results at an absolute maximum of `5000 x 5000`
+
 ## Keyboard Shortcuts
 
 The app currently supports:
@@ -321,4 +337,3 @@ Currently not persisted between sessions unless saved as a project file:
 - asset library
 - viewport
 - tool settings beyond current session
-- toolbar-left/right placement

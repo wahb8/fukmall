@@ -23,7 +23,6 @@ Stored in normal React state and not part of undo history:
 - drag UI state
 - viewport
 - snap guides
-- toolbar side placement
 - file-menu open state
 - open/export busy flags
 
@@ -36,6 +35,7 @@ Refs are used for mutable runtime objects that should not trigger rerenders:
 - DOM elements
 - in-progress interaction metadata
 - raster surface cache map
+- a live ref of the current document state used by long-lived pointer handlers so edit mapping does not use stale pre-move layer geometry
 - copied layer buffer
 - last editable pen layer
 - hidden file/input refs and drag-preview image refs
@@ -121,6 +121,7 @@ Each erasable layer may have a cache entry with:
 - `paintOverlayCanvas`
 - `visibleCanvas`
 - `layerElement`
+- temporary preview layout offsets/sizing for raster stroke expansion
 - `bitmapKey`
 - `syncToken`
 
@@ -133,6 +134,12 @@ Without this cache, every pointer move would require:
 - rerendering more of the app than necessary
 
 The cache lets the app draw immediately and only persist the final result when the gesture ends.
+
+For raster pen drawing, the cache also now carries the temporary preview-expansion state used when a stroke reaches beyond the current working surface:
+
+- the offscreen working canvas can expand during the gesture
+- the visible preview canvas is offset inside the existing layer wrapper so the layer does not visually jump during the stroke
+- the final expanded layer geometry is committed on pointer-up so the saved result matches what the user saw while drawing
 
 For SVG-backed image layers, the cache is also the bridge into bitmap-only tools:
 
@@ -152,8 +159,15 @@ They combine:
 - an optional erase mask bitmap
 - an optional paint overlay bitmap
 - measured layout fields such as `measuredWidth` and `measuredHeight`
+- alignment state through `textAlign`
 
 This allows the app to keep text editable while still supporting paint and erase operations on top of it.
+
+Point text also now preserves its horizontal anchor when content or alignment changes:
+
+- `left` keeps the anchor at the left edge
+- `center` keeps the anchor at the visual midpoint
+- `right` keeps the anchor at the right edge
 
 ## Selection State
 
@@ -188,6 +202,7 @@ These are separate because lasso/floating selection is pixel-region state, not j
 - a lot of logic depends on synchronization between React state and mutable refs
 - async surface generation can race if multiple updates happen quickly
 - the boundary between document truth and render cache truth is subtle
+- raster pen drawing now has a clearer split between transient preview surface growth and final committed layer geometry
 - SVG-backed image layers now have a mixed render model: normal display can stay vector-backed, while some bitmap workflows use temporary raster surfaces and pen drawing creates separate raster layers above the SVG
 - SVG-backed layers now also have tool-mode switching behavior: normal tool selection alone should not swap them into the temporary raster path, only active editing should
 

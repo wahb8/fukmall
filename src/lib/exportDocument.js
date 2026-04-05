@@ -1,5 +1,6 @@
 import {
   composeTextLayerCanvases,
+  createCanvasFromRenderedSvgBox,
   createMaskCanvasFromSource,
   createSizedCanvas,
   loadImageElement,
@@ -27,9 +28,10 @@ async function drawLayerToContext(context, layer) {
 
   context.save()
   context.globalAlpha = layer.opacity
-  context.translate(layer.x, layer.y)
+  context.translate(layer.x + (layer.width / 2), layer.y + (layer.height / 2))
   context.rotate((layer.rotation * Math.PI) / 180)
   context.scale(layer.scaleX, layer.scaleY)
+  context.translate(-(layer.width / 2), -(layer.height / 2))
 
   if (layer.type === 'shape') {
     context.fillStyle = layer.fill
@@ -66,6 +68,18 @@ async function drawLayerToContext(context, layer) {
     : layer.bitmap
 
   if (!source) {
+    context.restore()
+    return
+  }
+
+  if (layer.type === 'image' && layer.sourceKind === 'svg') {
+    const svgCanvasResult = await createCanvasFromRenderedSvgBox(
+      source,
+      layer.width,
+      layer.height,
+    )
+
+    context.drawImage(svgCanvasResult.canvas, 0, 0, layer.width, layer.height)
     context.restore()
     return
   }

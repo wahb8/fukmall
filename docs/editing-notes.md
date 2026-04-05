@@ -83,11 +83,39 @@ Fresh documents now start with a full-canvas white background layer at the botto
 
 Paint overlay on text layers does not intelligently remap when text content/font changes significantly.
 
+### Text Alignment And Edit Entry
+
+Text layout now depends on a real `textAlign` layer field.
+
+Current behavior:
+
+- `left`, `center`, and `right` alignment are rendered through the shared text layout/render helpers
+- box text alignment affects per-line placement inside the box while preserving wrapping/reflow
+- point text alignment preserves the layer's intended horizontal anchor when content or alignment changes
+- the selected-layer selection frame now forwards double-click into text editing for text layers
+- when inline editing opens, the textarea caret is moved to the end of the current text
+
+If future work changes text editing again, preserve the shared renderer path so editor view, inline editing, and export do not drift apart.
+
 ### History Scaling
 
 History stores full state snapshots, not patches.
 
 This is acceptable for an MVP but may become expensive for larger documents or persistent storage.
+
+### Raster Pen Surface Model
+
+Recent behavior changes made raster pen editing less brittle, but also more subtle internally:
+
+- raster pen commits should not auto-crop the layer down to the first painted alpha bounds
+- after moving a raster layer, later paint interactions must resolve coordinates from the layer's current transform, not stale geometry captured by older pointer handlers
+- when a raster stroke grows beyond the current working surface, the transient preview should expand inside the cache layer without making the layer appear to pan or re-center during the gesture
+
+If future work touches raster painting again, preserve the split between:
+
+- stable on-screen layer placement during the live stroke
+- transient preview-only surface expansion in the raster cache
+- final committed layer geometry written on pointer-up
 
 ### Import Behavior
 
@@ -133,7 +161,7 @@ Current gradient behavior is also intentionally narrow:
 
 - only raster layers and bitmap image layers are supported
 - only linear gradients are supported
-- available modes are `BG -> FG` and `BG -> Transparent`
+- available modes are `BG -> FG` and `FG -> Transparent`
 - the gradient is applied directly onto the clicked target layer
 - a live overlay preview line appears during the drag, but it is transient UI only and not part of document/export state
 - text, shapes, groups, and SVG-backed image layers are out of scope for v1
@@ -147,9 +175,18 @@ The editor now tries to keep a valid selection whenever layers exist.
 That means:
 
 - tool switches should not leave the document with no selected layer
+- once a layer is selected in select mode, move-start should come from the visible transformed selection frame rather than requiring another opaque-pixel hit
 - lasso startup should preserve the current selected target layer
 - opening or creating a new file should rebuild selection from the loaded document state
 - invalid saved selection IDs should be treated as recoverable and normalized to a valid fallback layer when possible
+
+### Resize Behavior
+
+Resize now depends on a stable pointer-down snapshot:
+
+- size limits during a single drag should be derived from the resize session start state, not from intermediate transient sizes reached mid-drag
+- reversing direction during the same drag should remain possible
+- the editor now hard-caps resize results at `5000 x 5000`
 
 ### Prompt Input
 

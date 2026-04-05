@@ -151,31 +151,20 @@ export function createFloatingSelection(layer, sourceCanvas, selection, mode, re
   }
 }
 
-export function renderLassoSelection(context, selection, layer, sourceCanvas) {
-  if (!context || !selection?.points?.length || !layer) {
+export function renderLassoSelection(context, selection) {
+  if (!context || !selection?.points?.length) {
     return
   }
-
-  const sourceWidth = sourceCanvas?.width ?? layer.width
-  const sourceHeight = sourceCanvas?.height ?? layer.height
-  const scaleX = layer.width / Math.max(sourceWidth, 1)
-  const scaleY = layer.height / Math.max(sourceHeight, 1)
 
   context.save()
   context.setLineDash([8, 6])
   context.lineWidth = 1.5
   context.strokeStyle = '#ffffff'
-  traceSelectionPath(context, selection.points, (point) => ({
-    x: layer.x + (point.x * scaleX),
-    y: layer.y + (point.y * scaleY),
-  }))
+  traceSelectionPath(context, selection.points)
   context.stroke()
   context.lineDashOffset = 7
   context.strokeStyle = '#0f172a'
-  traceSelectionPath(context, selection.points, (point) => ({
-    x: layer.x + (point.x * scaleX),
-    y: layer.y + (point.y * scaleY),
-  }))
+  traceSelectionPath(context, selection.points)
   context.stroke()
   context.restore()
 }
