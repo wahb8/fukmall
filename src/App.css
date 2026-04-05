@@ -468,6 +468,9 @@
   resize: none;
   outline: none;
   background: rgba(255, 254, 249, 0.96);
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .shape-layer-body,
@@ -958,6 +961,25 @@
   background: rgba(255, 247, 237, 0.84);
   border: 1px dashed var(--line-strong);
   font-size: 0.92rem;
+}
+
+.inline-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.linked-layer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.linked-layer-actions strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1120px) {

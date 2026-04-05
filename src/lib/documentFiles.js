@@ -1,4 +1,4 @@
-import { findLayer } from './layers'
+import { findLayer, normalizeLinkedLayerReferences } from './layers'
 
 const PROJECT_APP_NAME = 'Fukmall'
 const PROJECT_FORMAT_VERSION = 1
@@ -20,9 +20,9 @@ function isSupportedDocumentLayer(layer) {
 }
 
 export function normalizeDocumentState(documentState) {
-  const layers = Array.isArray(documentState?.layers)
+  const layers = normalizeLinkedLayerReferences(Array.isArray(documentState?.layers)
     ? documentState.layers.filter(isSupportedDocumentLayer)
-    : []
+    : [])
   const selectedLayerIds = Array.isArray(documentState?.selectedLayerIds)
     ? documentState.selectedLayerIds.filter((layerId) => findLayer({ layers }, layerId))
     : []

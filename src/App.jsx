@@ -60,6 +60,7 @@ import {
   insertLayer,
   isSvgImageLayer,
   isRasterLayer,
+  linkLayerPair,
   mergeLayerDown,
   moveLayer,
   moveLayerToIndex,
@@ -68,6 +69,7 @@ import {
   selectSingleLayer,
   setLayerAlphaLock,
   toggleLayerInSelection,
+  unlinkLayerPair,
   updateLayer,
 } from './lib/layers'
 import {
@@ -473,6 +475,81 @@ function createBitmapEditableLayerPatch(layer, bitmap, overrides = {}) {
   }
 
   return createImageLayerBitmapPatch(layer, bitmap, overrides)
+}
+
+function shouldLocalizeEmptyRasterLayerForPen(layer) {
+  return Boolean(layer) && layer.type === 'raster' && !layer.bitmap &&
+    layer.x === 0 &&
+    layer.y === 0 &&
+    layer.width === DOCUMENT_WIDTH &&
+    layer.height === DOCUMENT_HEIGHT
+}
+
+function createLocalizedRasterLayerForPenStart(layer, documentPoint, brushSize) {
+  if (!layer || !documentPoint) {
+    return layer
+  }
+
+  const initialSize = Math.max(1, Math.ceil(brushSize + 4))
+
+  return {
+    ...layer,
+    x: documentPoint.x - (initialSize / 2),
+    y: documentPoint.y - (initialSize / 2),
+    width: initialSize,
+    height: initialSize,
+  }
+}
+
+function scaleLayerAroundOwnCenter(layer, ratioX, ratioY) {
+  if (!layer) {
+    return layer
+  }
+
+  if (layer.type === 'text') {
+    if (layer.mode === 'box') {
+      const nextWidth = clampValue(layer.width * ratioX, MIN_LAYER_WIDTH, MAX_LAYER_SIZE)
+      const nextHeight = clampValue(layer.height * ratioY, MIN_LAYER_HEIGHT, MAX_LAYER_SIZE)
+      const centerX = layer.x + (layer.width / 2)
+      const centerY = layer.y + (layer.height / 2)
+
+      return resizeBoxText(
+        {
+          ...layer,
+          x: centerX - (nextWidth / 2),
+          y: centerY - (nextHeight / 2),
+        },
+        nextWidth,
+        nextHeight,
+      )
+    }
+
+    const maximumScaleX = MAX_LAYER_SIZE / Math.max(layer.width, 1)
+    const maximumScaleY = MAX_LAYER_SIZE / Math.max(layer.height, 1)
+
+    return {
+      ...resizePointTextTransform(
+        layer,
+        clampValue(layer.scaleX * ratioX, 0.1, maximumScaleX),
+        clampValue(layer.scaleY * ratioY, 0.1, maximumScaleY),
+      ),
+      width: layer.measuredWidth ?? layer.width,
+      height: layer.measuredHeight ?? layer.height,
+    }
+  }
+
+  const nextWidth = clampValue(layer.width * ratioX, MIN_LAYER_WIDTH, MAX_LAYER_SIZE)
+  const nextHeight = clampValue(layer.height * ratioY, MIN_LAYER_HEIGHT, MAX_LAYER_SIZE)
+  const centerX = layer.x + (layer.width / 2)
+  const centerY = layer.y + (layer.height / 2)
+
+  return {
+    ...layer,
+    x: centerX - (nextWidth / 2),
+    y: centerY - (nextHeight / 2),
+    width: nextWidth,
+    height: nextHeight,
+  }
 }
 
 function getSvgRasterSurfaceDimensions(layer) {
@@ -965,6 +1042,14 @@ function App() {
   const selectedLayerShadow = selectedLayer?.type === 'text' && !selectedLayer?.isTextShadow && selectedLayer.shadowLayerId
     ? findLayer(documentState, selectedLayer.shadowLayerId)
     : null
+  const linkedLayer = selectedLayer?.linkedLayerId
+    ? findLayer(documentState, selectedLayer.linkedLayerId)
+    : null
+  const canLinkSelectedLayers = selectedLayerIds.length === 2
+  const selectedPairAlreadyLinked = canLinkSelectedLayers && (
+    selectedLayers[0]?.linkedLayerId === selectedLayers[1]?.id &&
+    selectedLayers[1]?.linkedLayerId === selectedLayers[0]?.id
+  )
   const selectionBounds = getSelectionBoundsFromLayers(selectedLayers)
   const hasMultiSelection = selectedLayerIds.length > 1
   const currentTool = activeTool
@@ -1326,21 +1411,6 @@ function App() {
       return
     }
 
-    if (!selectedLayerIds.length && documentState.layers.length > 0) {
-      const fallbackSelectedLayerId = getFallbackSelectedLayerId(documentState)
-
-      if (!fallbackSelectedLayerId) {
-        return
-      }
-
-      setTransient((currentDocument) => ({
-        ...currentDocument,
-        selectedLayerId: fallbackSelectedLayerId,
-        selectedLayerIds: [fallbackSelectedLayerId],
-      }))
-      return
-    }
-
     if (lassoSelection && !findLayer(documentState, lassoSelection.sourceLayerId)) {
       setLassoSelection(null)
     }
@@ -1547,12 +1617,21 @@ function App() {
         }
         setActiveMoveGuides(snapResult.guides)
 
-        setTransient((currentDocument) =>
-          updateLayer(currentDocument, interaction.layerId, {
+        setTransient((currentDocument) => {
+          let nextDocument = updateLayer(currentDocument, interaction.layerId, {
             x: snapResult.x,
             y: snapResult.y,
-          }),
-        )
+          })
+
+          if (interaction.linkedLayerId && interaction.linkedOriginalPosition) {
+            nextDocument = updateLayer(nextDocument, interaction.linkedLayerId, {
+              x: interaction.linkedOriginalPosition.x + (snapResult.x - interaction.startX),
+              y: interaction.linkedOriginalPosition.y + (snapResult.y - interaction.startY),
+            })
+          }
+
+          return nextDocument
+        })
       }
 
       if (interaction.type === 'move-multi') {
@@ -1726,28 +1805,39 @@ function App() {
           hasChanged: true,
         }
 
-        setTransient((currentDocument) =>
-          updateLayer(currentDocument, interaction.layerId, (layer) => {
+        setTransient((currentDocument) => {
+          let linkedRatioX = nextWidth / Math.max(interaction.startWidth, 1)
+          let linkedRatioY = nextHeight / Math.max(interaction.startHeight, 1)
+          let nextPrimaryLayer = null
+          let nextDocument = updateLayer(currentDocument, interaction.layerId, (layer) => {
             if (interaction.layerType === 'text') {
               if (layer.mode === 'box') {
-                const nextWidth = Math.max(
+                const resizedWidth = Math.max(
                   minimumWidth,
                   nextFrameWidth / Math.max(Math.abs(interaction.startScaleX), 0.1),
                 )
-                const nextHeight = Math.max(
+                const resizedHeight = Math.max(
                   minimumHeight,
                   nextFrameHeight / Math.max(Math.abs(interaction.startScaleY), 0.1),
                 )
 
-                return resizeBoxText(
+                linkedRatioX = resizedWidth / Math.max(interaction.startWidth, 1)
+                linkedRatioY = resizedHeight / Math.max(interaction.startHeight, 1)
+
+                nextPrimaryLayer = resizeBoxText(
                   {
                     ...layer,
                     x: nextX,
                     y: nextY,
                   },
-                  nextWidth,
-                  nextHeight,
+                  resizedWidth,
+                  resizedHeight,
                 )
+
+                linkedRatioX = nextPrimaryLayer.width / Math.max(interaction.startWidth, 1)
+                linkedRatioY = nextPrimaryLayer.height / Math.max(interaction.startHeight, 1)
+
+                return nextPrimaryLayer
               }
 
               const nextScaleX = Math.max(
@@ -1759,7 +1849,7 @@ function App() {
                 interaction.startScaleY * (nextHeight / Math.max(interaction.startHeight, 1)),
               )
 
-              return {
+              nextPrimaryLayer = {
                 ...resizePointTextTransform(
                   {
                     ...layer,
@@ -1772,17 +1862,43 @@ function App() {
                 width: layer.measuredWidth ?? layer.width,
                 height: layer.measuredHeight ?? layer.height,
               }
+
+              linkedRatioX = nextScaleX / Math.max(interaction.startScaleX, 0.0001)
+              linkedRatioY = nextScaleY / Math.max(interaction.startScaleY, 0.0001)
+
+              return nextPrimaryLayer
             }
 
-            return {
+            nextPrimaryLayer = {
               ...layer,
               x: nextX,
               y: nextY,
               width: nextWidth,
               height: nextHeight,
             }
-          }),
-        )
+
+            linkedRatioX = nextPrimaryLayer.width / Math.max(interaction.startWidth, 1)
+            linkedRatioY = nextPrimaryLayer.height / Math.max(interaction.startHeight, 1)
+
+            return nextPrimaryLayer
+          })
+
+          if (interaction.linkedLayerId && interaction.linkedLayerStart) {
+            nextDocument = updateLayer(nextDocument, interaction.linkedLayerId, (layer) => (
+              scaleLayerAroundOwnCenter(
+                {
+                  ...layer,
+                  ...interaction.linkedLayerStart,
+                  linkedLayerId: layer.linkedLayerId,
+                },
+                linkedRatioX,
+                linkedRatioY,
+              )
+            ))
+          }
+
+          return nextDocument
+        })
       }
 
       if (interaction.type === 'resize-multi') {
@@ -2752,7 +2868,7 @@ function App() {
       const nextLayers = [...currentDocument.layers]
       nextLayers.splice(sourceIndex, 0, shadowLayer)
 
-      return {
+      const nextDocument = {
         ...currentDocument,
         layers: nextLayers.map((layer) => (
           layer.id === sourceLayer.id
@@ -2763,7 +2879,37 @@ function App() {
             : layer
         )),
       }
+
+      return linkLayerPair(nextDocument, sourceLayer.id, shadowLayer.id)
     })
+  }
+
+  function handleLinkSelectedLayers() {
+    if (!canLinkSelectedLayers || selectedLayers.length !== 2) {
+      return
+    }
+
+    applyDocumentChange((currentDocument) => linkLayerPair(
+      currentDocument,
+      selectedLayers[0].id,
+      selectedLayers[1].id,
+    ))
+  }
+
+  function handleUnlinkSelectedLayers() {
+    if (!canLinkSelectedLayers || selectedLayers.length !== 2) {
+      return
+    }
+
+    applyDocumentChange((currentDocument) => unlinkLayerPair(currentDocument, selectedLayers[0].id))
+  }
+
+  function handleUnlinkSelectedLayer() {
+    if (!selectedLayer?.linkedLayerId) {
+      return
+    }
+
+    applyDocumentChange((currentDocument) => unlinkLayerPair(currentDocument, selectedLayer.id))
   }
 
   function deleteSelectedLayers() {
@@ -3361,10 +3507,22 @@ function App() {
     }
 
     const { width, height } = getFrameDimensions(layer)
+    const linkedPartner = layer.linkedLayerId
+      ? findLayer(documentState, layer.linkedLayerId)
+      : null
     selectDocumentLayer(layer.id)
     interactionRef.current = {
       type: 'move',
       layerId: layer.id,
+      startX: layer.x,
+      startY: layer.y,
+      linkedLayerId: linkedPartner?.id ?? null,
+      linkedOriginalPosition: linkedPartner
+        ? {
+          x: linkedPartner.x,
+          y: linkedPartner.y,
+        }
+        : null,
       offsetX: documentPoint.x - layer.x,
       offsetY: documentPoint.y - layer.y,
       frameWidth: width,
@@ -3435,11 +3593,15 @@ function App() {
     }
 
     const { width, height } = getFrameDimensions(layer)
+    const linkedPartner = layer.linkedLayerId
+      ? findLayer(documentState, layer.linkedLayerId)
+      : null
     selectDocumentLayer(layer.id)
     interactionRef.current = {
       type: 'resize',
       layerId: layer.id,
       layerType: layer.type,
+      linkedLayerId: linkedPartner?.id ?? null,
       handle,
       pointerStart: {
         x: documentPoint.x,
@@ -3453,6 +3615,22 @@ function App() {
       startScaleY: layer.scaleY,
       startRotation: layer.rotation,
       startMode: layer.mode,
+      linkedLayerStart: linkedPartner
+        ? {
+          x: linkedPartner.x,
+          y: linkedPartner.y,
+          width: linkedPartner.width,
+          height: linkedPartner.height,
+          scaleX: linkedPartner.scaleX,
+          scaleY: linkedPartner.scaleY,
+          type: linkedPartner.type,
+          mode: linkedPartner.mode,
+          measuredWidth: linkedPartner.measuredWidth,
+          measuredHeight: linkedPartner.measuredHeight,
+          boxWidth: linkedPartner.boxWidth,
+          boxHeight: linkedPartner.boxHeight,
+        }
+        : null,
       frameWidth: width,
       frameHeight: height,
       originDocument: documentState,
@@ -3478,25 +3656,40 @@ function App() {
       penLayer.type === 'image' && penLayer.sourceKind === 'svg' ? penLayer.id : null,
     )
 
-    const surfaceCanvas = await ensureRasterLayerSurface(penLayer)
-    const surfaceEntry = rasterSurfacesRef.current.get(penLayer.id)
+    const surfaceEntry = getRasterSurfaceEntry(penLayer.id)
     const isTextPenLayer = penLayer.type === 'text'
     let interactionLayer = penLayer
-    let interactionSurface = surfaceCanvas
+    const initialDocumentPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+    let interactionSurface = null
+
+    if (shouldLocalizeEmptyRasterLayerForPen(penLayer) && initialDocumentPoint) {
+      interactionLayer = createLocalizedRasterLayerForPenStart(
+        penLayer,
+        initialDocumentPoint,
+        penSize,
+      )
+      interactionSurface = createTransparentCanvas(interactionLayer.width, interactionLayer.height)
+      surfaceEntry.previewOffsetX = penLayer.x - interactionLayer.x
+      surfaceEntry.previewOffsetY = penLayer.y - interactionLayer.y
+      surfaceEntry.previewWidth = interactionLayer.width
+      surfaceEntry.previewHeight = interactionLayer.height
+    } else {
+      interactionSurface = await ensureRasterLayerSurface(penLayer)
+    }
 
     if (penLayer.type === 'raster') {
-      const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
-      const localPoint = documentPoint ? toLayerLocalPoint(penLayer, documentPoint) : null
+      const documentPoint = initialDocumentPoint ?? toDocumentCoordinates(event, canvasRef.current, viewport)
+      const localPoint = documentPoint ? toLayerLocalPoint(interactionLayer, documentPoint) : null
       const expansion = localPoint
-        ? expandRasterLayerSurfaceToFitPoint(penLayer, surfaceCanvas, localPoint, (penSize / 2) + 2)
+        ? expandRasterLayerSurfaceToFitPoint(interactionLayer, interactionSurface, localPoint, (penSize / 2) + 2)
         : null
 
       if (expansion) {
         interactionLayer = expansion.layer
         interactionSurface = expansion.canvas
         surfaceEntry.offscreenCanvas = expansion.canvas
-        surfaceEntry.previewOffsetX = expansion.shiftX
-        surfaceEntry.previewOffsetY = expansion.shiftY
+        surfaceEntry.previewOffsetX += expansion.shiftX
+        surfaceEntry.previewOffsetY += expansion.shiftY
         surfaceEntry.previewWidth = expansion.layer.width
         surfaceEntry.previewHeight = expansion.layer.height
       }
@@ -4563,7 +4756,7 @@ function App() {
             />
           </div>
         )}
-        {isSelected && currentTool === 'select' && !hasMultiSelection && (
+        {isSelected && currentTool === 'select' && !hasMultiSelection && !isEditingText && (
           <div
             className="selection-frame interactive"
             onPointerDown={(event) => startMove(event, layer)}
@@ -4587,7 +4780,7 @@ function App() {
             ))}
           </div>
         )}
-        {isSelected && currentTool === 'select' && hasMultiSelection && (
+        {isSelected && currentTool === 'select' && hasMultiSelection && !isEditingText && (
           <div className="selection-frame passive" aria-hidden="true" />
         )}
       </div>
@@ -5141,6 +5334,9 @@ function App() {
                           {isAlphaLocked(layer) && (
                             <span className="layer-flag-chip">alpha lock</span>
                           )}
+                          {layer.linkedLayerId && (
+                            <span className="layer-flag-chip">linked</span>
+                          )}
                         </div>
                       </div>
 
@@ -5237,26 +5433,51 @@ function App() {
             <section className="panel-card inspector-panel">
                 <div className="inspector-panel-body">
                 {hasMultiSelection ? (
-                  <div className="group-note full-width">
-                    {selectedLayerIds.length} layers selected. Multi-selection currently supports
-                    shared move and scale. Inspector editing remains single-layer only for now.
-                  </div>
+                  <>
+                    <div className="group-note full-width">
+                      {selectedLayerIds.length} layers selected. Multi-selection currently supports
+                      shared move and scale. Inspector editing remains single-layer only for now.
+                    </div>
+                    {canLinkSelectedLayers && (
+                      <div className="inline-action-row">
+                        <button
+                          className={selectedPairAlreadyLinked ? 'action-button active' : 'action-button'}
+                          type="button"
+                          onClick={handleLinkSelectedLayers}
+                          disabled={selectedPairAlreadyLinked}
+                        >
+                          {selectedPairAlreadyLinked ? 'Layers Linked' : 'Link Layers'}
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          onClick={handleUnlinkSelectedLayers}
+                          disabled={!selectedPairAlreadyLinked}
+                        >
+                          Unlink
+                        </button>
+                      </div>
+                    )}
+                  </>
                 ) : selectedLayer ? (
                   <div className="property-grid">
+                    {linkedLayer && (
+                      <label className="property-field full-width">
+                        <span>Linked To</span>
+                        <div className="linked-layer-actions">
+                          <strong>{linkedLayer.name}</strong>
+                          <button
+                            className="action-button"
+                            type="button"
+                            onClick={handleUnlinkSelectedLayer}
+                          >
+                            Unlink
+                          </button>
+                        </div>
+                      </label>
+                    )}
                     {selectedLayer.type === 'text' && (
                       <>
-                        {!selectedLayer.isTextShadow && (
-                          <label className="property-field full-width">
-                            <span>Text Shadow</span>
-                            <button
-                              className={selectedLayerShadow ? 'action-button active' : 'action-button'}
-                              type="button"
-                              onClick={handleAddTextShadow}
-                            >
-                              Add Shadow
-                            </button>
-                          </label>
-                        )}
                         <label className="property-field">
                           <span>Font Size</span>
                           <input
@@ -5423,6 +5644,18 @@ function App() {
                             </label>
                           </>
                         )}
+                        {!selectedLayer.isTextShadow && (
+                          <label className="property-field full-width">
+                            <span>Text Shadow</span>
+                            <button
+                              className={selectedLayerShadow ? 'action-button active' : 'action-button'}
+                              type="button"
+                              onClick={handleAddTextShadow}
+                            >
+                              Add Shadow
+                            </button>
+                          </label>
+                        )}
                       </>
                     )}
                     <label className="property-field">
@@ -5574,11 +5807,6 @@ function App() {
                             />
                           </label>
                         )}
-                        <div className="group-note full-width">
-                          Text paint stays in a separate overlay bitmap so the text remains editable.
-                          Large text or font changes keep the overlay positioned in the layer frame,
-                          but do not remap old paint to new glyph shapes.
-                        </div>
                       </>
                     )}
 
@@ -5606,24 +5834,6 @@ function App() {
 
                     {selectedLayer.type === 'image' && (
                       <>
-                        <label className="property-field full-width">
-                          <span>Image Source</span>
-                          <input
-                            type="text"
-                            value={selectedLayer.src}
-                            onChange={(event) =>
-                              updateSelectedLayer({
-                                src: event.target.value,
-                                bitmap: event.target.value,
-                                sourceKind: inferImageSourceKindFromSrc(event.target.value),
-                              })
-                            }
-                          />
-                        </label>
-                        <div className="group-note full-width">
-                          Image layers support alpha lock and direct pixel painting inside the image
-                          frame. Transparent pixels stay protected while alpha lock is enabled.
-                        </div>
                       </>
                     )}
 

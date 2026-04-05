@@ -22,6 +22,7 @@ function createBaseLayer(overrides) {
     rotation: 0,
     scaleX: 1,
     scaleY: 1,
+    linkedLayerId: null,
     lockTransparentPixels: false,
     ...overrides,
   }
@@ -158,6 +159,39 @@ export function updateLayer(documentState, layerId, updater) {
   }
 }
 
+export function normalizeLinkedLayerReferences(layers) {
+  const safeLayers = Array.isArray(layers) ? layers : []
+  const layerIds = new Set(safeLayers.map((layer) => layer.id))
+  const sanitizedLayers = safeLayers.map((layer) => ({
+    ...layer,
+    linkedLayerId: (
+      layer.linkedLayerId &&
+      layer.linkedLayerId !== layer.id &&
+      layerIds.has(layer.linkedLayerId)
+    )
+      ? layer.linkedLayerId
+      : null,
+  }))
+  const layersById = new Map(sanitizedLayers.map((layer) => [layer.id, layer]))
+
+  return sanitizedLayers.map((layer) => {
+    if (!layer.linkedLayerId) {
+      return layer
+    }
+
+    const linkedLayer = layersById.get(layer.linkedLayerId)
+
+    if (!linkedLayer || linkedLayer.linkedLayerId !== layer.id) {
+      return {
+        ...layer,
+        linkedLayerId: null,
+      }
+    }
+
+    return layer
+  })
+}
+
 export function appendLayer(documentState, layer) {
   return {
     layers: [...documentState.layers, layer],
@@ -204,6 +238,7 @@ export function cloneLayer(layer, overrides = {}) {
     ...layer,
     id: crypto.randomUUID(),
     name: `${layer.name} Copy`,
+    linkedLayerId: null,
     childIds: Array.isArray(layer.childIds) ? [...layer.childIds] : layer.childIds,
     ...overrides,
   }
@@ -300,12 +335,15 @@ export function removeLayers(documentState, layerIds) {
   const nextLayersAfterRemoval = documentState.layers
     .filter((layer) => !idsToRemove.has(layer.id))
     .map((layer) => (
-      layer.type === 'text' && layer.shadowLayerId && idsToRemove.has(layer.shadowLayerId)
-        ? {
-          ...layer,
-          shadowLayerId: null,
-        }
-        : layer
+      ({
+        ...layer,
+        linkedLayerId: idsToRemove.has(layer.linkedLayerId) ? null : (layer.linkedLayerId ?? null),
+        ...(layer.type === 'text' && layer.shadowLayerId && idsToRemove.has(layer.shadowLayerId)
+          ? {
+            shadowLayerId: null,
+          }
+          : {}),
+      })
     ))
   const nextSelectedLayerIds = selectedLayerIds.filter((id) => !idsToRemove.has(id))
   const selectedLayerWasRemoved = documentState.selectedLayerId
@@ -321,6 +359,72 @@ export function removeLayers(documentState, layerIds) {
     selectedLayerIds: nextSelectedLayerIds.length > 0
       ? nextSelectedLayerIds
       : (selectedLayerWasRemoved && fallbackSelectedLayerId ? [fallbackSelectedLayerId] : []),
+  }
+}
+
+export function linkLayerPair(documentState, firstLayerId, secondLayerId) {
+  if (!firstLayerId || !secondLayerId || firstLayerId === secondLayerId) {
+    return documentState
+  }
+
+  const firstLayer = findLayer(documentState, firstLayerId)
+  const secondLayer = findLayer(documentState, secondLayerId)
+
+  if (!firstLayer || !secondLayer) {
+    return documentState
+  }
+
+  return {
+    ...documentState,
+    layers: documentState.layers.map((layer) => {
+      if (layer.id === firstLayerId) {
+        return {
+          ...layer,
+          linkedLayerId: secondLayerId,
+        }
+      }
+
+      if (layer.id === secondLayerId) {
+        return {
+          ...layer,
+          linkedLayerId: firstLayerId,
+        }
+      }
+
+      if (layer.linkedLayerId === firstLayerId || layer.linkedLayerId === secondLayerId) {
+        return {
+          ...layer,
+          linkedLayerId: null,
+        }
+      }
+
+      return layer
+    }),
+  }
+}
+
+export function unlinkLayerPair(documentState, layerId) {
+  const sourceLayer = findLayer(documentState, layerId)
+
+  if (!sourceLayer?.linkedLayerId) {
+    return documentState
+  }
+
+  const linkedLayerId = sourceLayer.linkedLayerId
+
+  return {
+    ...documentState,
+    layers: documentState.layers.map((layer) => (
+      layer.id === layerId ||
+      layer.id === linkedLayerId ||
+      layer.linkedLayerId === layerId ||
+      layer.linkedLayerId === linkedLayerId
+        ? {
+          ...layer,
+          linkedLayerId: null,
+        }
+        : layer
+    )),
   }
 }
 
