@@ -24,7 +24,7 @@ That means:
 There are signs of active expansion:
 
 - newer modules such as `colors`, `lassoTool`, `moveSnapping`, `textLayer`, and `viewport`
-- leftover starter files such as the default `README.md`, `react.svg`, and `vite.svg`
+- leftover starter assets such as `react.svg` and `vite.svg`
 - a legacy-looking `textObject.js` helper
 
 This is a normal state for a prototype, but it means code style and ownership boundaries are not fully settled yet.
@@ -62,8 +62,21 @@ Current behavior:
 - full documents can be saved and reopened through `.kryop` project files
 - only the current document is saved in v1, not the full undo/redo stack
 - global colors are still persisted separately in `localStorage`
-- saved/opened documents also pass through normalization, which repairs selection state and strips disabled group layers
+- saved/opened documents also pass through normalization, which repairs selection state, repairs invalid linked-layer references, and strips disabled group layers
 - runtime-only editor state such as live canvas caches, refs, lasso/floating selections, and drag state should continue to be treated as non-persistent
+
+### New File Workflow
+
+The file workflow now includes document creation UI, not just open/save/export.
+
+Current behavior:
+
+- `New File` opens a modal for document name, width, and height
+- creating a new file rebuilds the seeded demo document at the requested dimensions
+- choosing `New File` while the current document is dirty opens an unsaved-changes confirmation modal first
+- the app also registers a browser `beforeunload` prompt while unsaved changes exist
+
+If future work changes file workflows, keep the dirty-state logic, filename sanitization, and runtime reset behavior aligned with the current save/open/new implementation.
 
 ### Group Layers
 
@@ -151,6 +164,8 @@ Current bucket fill behavior is intentionally narrow:
 - the fill algorithm is contiguous only
 - matching is based on seed-pixel RGBA similarity and a user-facing tolerance slider
 - each click becomes one committed history step
+- non-alpha-locked fills can now expand beyond the old bitmap edge when the contiguous region reaches that edge
+- that expansion is still finite and currently stops at the document bounds
 - text, shapes, groups, and SVG-backed image layers are out of scope for v1
 
 If future work expands this feature, it should continue to reuse the existing raster surface cache and avoid introducing a second bitmap-editing pipeline.
@@ -163,6 +178,7 @@ Current gradient behavior is also intentionally narrow:
 - only linear gradients are supported
 - available modes are `BG -> FG` and `FG -> Transparent`
 - the gradient is applied directly onto the clicked target layer
+- non-alpha-locked gradients can now expand the target bitmap when the dragged gradient line extends beyond the old bitmap bounds
 - a live overlay preview line appears during the drag, but it is transient UI only and not part of document/export state
 - text, shapes, groups, and SVG-backed image layers are out of scope for v1
 
@@ -179,6 +195,22 @@ That means:
 - lasso startup should preserve the current selected target layer
 - opening or creating a new file should rebuild selection from the loaded document state
 - invalid saved selection IDs should be treated as recoverable and normalized to a valid fallback layer when possible
+
+One important consequence is that the current `Enter` shortcut does not produce an empty selection when layers exist; selection normalization keeps a valid layer selected.
+
+### Linked Layers
+
+The app now has a lightweight generic linked-layer system in addition to text shadows.
+
+Current behavior:
+
+- any two selected layers can be linked from the inspector
+- linked pairs move together during single-layer move gestures
+- linked pairs resize together during single-layer resize gestures
+- link validity depends on reciprocal references, and project-file normalization clears stale or one-sided links
+- deleting one linked layer should leave the remaining layer intact but unlinked
+
+If future work changes transform behavior, keep the linked move/resize path in sync with the normal single-layer interaction path so the pair stays visually coherent.
 
 ### Resize Behavior
 

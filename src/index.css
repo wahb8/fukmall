@@ -6,9 +6,30 @@
 }
 
 @font-face {
+  font-family: 'Alyamama';
+  src: url('./assets/fonts/Alyamama-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+}
+
+@font-face {
   font-family: 'AlfaSlabOne';
   src: url('./assets/fonts/AlfaSlabOne-Regular.ttf') format('truetype');
   font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Amiri';
+  src: url('./assets/fonts/Amiri-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Amiri';
+  src: url('./assets/fonts/Amiri-Bold.ttf') format('truetype');
+  font-weight: 700;
   font-style: normal;
 }
 
@@ -27,9 +48,65 @@
 }
 
 @font-face {
+  font-family: 'BadeenDisplay';
+  src: url('./assets/BadeenDisplay-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Cairo';
+  src: url('./assets/fonts/Cairo-VariableFont_slnt,wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Cairo';
+  src: url('./assets/fonts/Cairo-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Cairo';
+  src: url('./assets/fonts/Cairo-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
   font-family: 'Caprasimo';
   src: url('./assets/fonts/Caprasimo-Regular.ttf') format('truetype');
   font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Changa';
+  src: url('./assets/fonts/Changa-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Changa';
+  src: url('./assets/fonts/Changa-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'ElMessiri';
+  src: url('./assets/fonts/ElMessiri-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'ElMessiri';
+  src: url('./assets/fonts/ElMessiri-Bold.ttf') format('truetype');
+  font-weight: 700;
   font-style: normal;
 }
 
@@ -51,6 +128,13 @@
   font-family: 'Gelasio';
   src: url('./assets/fonts/Gelasio-Bold.ttf') format('truetype');
   font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Lalezar';
+  src: url('./assets/fonts/Lalezar-Regular.ttf') format('truetype');
+  font-weight: 400;
   font-style: normal;
 }
 
@@ -97,6 +181,20 @@
 }
 
 @font-face {
+  font-family: 'ReemKufi';
+  src: url('./assets/fonts/ReemKufi-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'ReemKufi';
+  src: url('./assets/fonts/ReemKufi-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
   font-family: 'REM';
   src: url('./assets/fonts/REM-Thin.ttf') format('truetype');
   font-weight: 100;
@@ -118,6 +216,20 @@
 }
 
 @font-face {
+  font-family: 'Rubik';
+  src: url('./assets/fonts/Rubik-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Rubik';
+  src: url('./assets/fonts/Rubik-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
   font-family: 'Ubuntu';
   src: url('./assets/fonts/Ubuntu-Regular.ttf') format('truetype');
   font-weight: 400;
@@ -135,6 +247,20 @@
   font-family: 'Ultra';
   src: url('./assets/fonts/Ultra-Regular.ttf') format('truetype');
   font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Zain';
+  src: url('./assets/fonts/Zain-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Zain';
+  src: url('./assets/fonts/Zain-Bold.ttf') format('truetype');
+  font-weight: 700;
   font-style: normal;
 }
 

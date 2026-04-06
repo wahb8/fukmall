@@ -1,16 +1,37 @@
-# React + Vite
+# Fukmall
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Fukmall is a client-side React + Vite layered composition editor prototype. It behaves like a compact design tool for a mobile-sized document, with layered artwork editing, text editing, raster painting, erasing, bucket fill, gradients, lasso selection, snapping, asset import, project-file save/open, and flattened PNG/JPEG export.
 
-Currently, two official plugins are available:
+## Getting Started
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run dev
+```
 
-## React Compiler
+Other useful scripts:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `npm run build`
+- `npm run lint`
+- `npm run preview`
 
-## Expanding the ESLint configuration
+## Project Shape
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `src/App.jsx` is the main app shell and currently owns most editor behavior.
+- `src/lib/` contains the main helper seams for document state, bitmap operations, text layout, export, and file serialization.
+- `docs/` is the primary documentation set for architecture, features, state/history behavior, and editing constraints.
+
+## Documentation
+
+Start with:
+
+1. [`docs/architecture.md`](./docs/architecture.md)
+2. [`docs/state-and-history.md`](./docs/state-and-history.md)
+3. [`docs/features.md`](./docs/features.md)
+4. [`docs/file-map.md`](./docs/file-map.md)
+
+## Current Product Constraints
+
+- Group layers are intentionally disabled in the user-facing app, even though some internal helper code remains.
+- Undo/redo is snapshot-based and stored in memory only.
+- Project files save the current document, but not undo/redo history or session-local runtime state.

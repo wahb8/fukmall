@@ -285,6 +285,105 @@ export function createTransparentCanvas(width, height) {
   return createSizedCanvas(width, height)
 }
 
+function transformLayerLocalVectorToDocument(layer, x, y) {
+  const angle = ((layer?.rotation ?? 0) * Math.PI) / 180
+  const cosine = Math.cos(angle)
+  const sine = Math.sin(angle)
+  const scaledX = x * (layer?.scaleX ?? 1)
+  const scaledY = y * (layer?.scaleY ?? 1)
+
+  return {
+    x: (scaledX * cosine) - (scaledY * sine),
+    y: (scaledX * sine) + (scaledY * cosine),
+  }
+}
+
+export function expandBitmapSurfaceToFitBounds(
+  layer,
+  sourceCanvas,
+  coverageBounds,
+  options = {},
+) {
+  if (!layer || !sourceCanvas || !coverageBounds) {
+    return null
+  }
+
+  const padding = Math.max(0, Number(options.padding) || 0)
+  const minX = Math.min(Number(coverageBounds.minX), Number(coverageBounds.maxX))
+  const minY = Math.min(Number(coverageBounds.minY), Number(coverageBounds.maxY))
+  const maxX = Math.max(Number(coverageBounds.minX), Number(coverageBounds.maxX))
+  const maxY = Math.max(Number(coverageBounds.minY), Number(coverageBounds.maxY))
+
+  if (
+    !Number.isFinite(minX) ||
+    !Number.isFinite(minY) ||
+    !Number.isFinite(maxX) ||
+    !Number.isFinite(maxY)
+  ) {
+    return null
+  }
+
+  const expandLeft = Math.max(0, Math.ceil(padding - minX))
+  const expandTop = Math.max(0, Math.ceil(padding - minY))
+  const expandRight = Math.max(0, Math.ceil(maxX + padding - sourceCanvas.width))
+  const expandBottom = Math.max(0, Math.ceil(maxY + padding - sourceCanvas.height))
+
+  if (expandLeft === 0 && expandTop === 0 && expandRight === 0 && expandBottom === 0) {
+    return null
+  }
+
+  const nextWidth = sourceCanvas.width + expandLeft + expandRight
+  const nextHeight = sourceCanvas.height + expandTop + expandBottom
+  const nextCanvas = createTransparentCanvas(nextWidth, nextHeight)
+  const context = nextCanvas.getContext('2d')
+
+  if (!context) {
+    return null
+  }
+
+  context.drawImage(sourceCanvas, expandLeft, expandTop)
+
+  const surfaceScaleX = (layer.width ?? sourceCanvas.width) / Math.max(sourceCanvas.width, 1)
+  const surfaceScaleY = (layer.height ?? sourceCanvas.height) / Math.max(sourceCanvas.height, 1)
+  const expandLeftLocal = expandLeft * surfaceScaleX
+  const expandTopLocal = expandTop * surfaceScaleY
+  const expandRightLocal = expandRight * surfaceScaleX
+  const expandBottomLocal = expandBottom * surfaceScaleY
+  const nextLayerWidth = (layer.width ?? sourceCanvas.width) + expandLeftLocal + expandRightLocal
+  const nextLayerHeight = (layer.height ?? sourceCanvas.height) + expandTopLocal + expandBottomLocal
+  const centerDelta = transformLayerLocalVectorToDocument(
+    layer,
+    (expandRightLocal - expandLeftLocal) / 2,
+    (expandBottomLocal - expandTopLocal) / 2,
+  )
+  const currentCenterX = (layer.x ?? 0) + ((layer.width ?? sourceCanvas.width) / 2)
+  const currentCenterY = (layer.y ?? 0) + ((layer.height ?? sourceCanvas.height) / 2)
+  const nextCenterX = currentCenterX + centerDelta.x
+  const nextCenterY = currentCenterY + centerDelta.y
+  const nextLayer = {
+    ...layer,
+    x: nextCenterX - (nextLayerWidth / 2),
+    y: nextCenterY - (nextLayerHeight / 2),
+    width: nextLayerWidth,
+    height: nextLayerHeight,
+  }
+
+  return {
+    canvas: nextCanvas,
+    contentOffsetX: expandLeft,
+    contentOffsetY: expandTop,
+    width: nextCanvas.width,
+    height: nextCanvas.height,
+    layerShiftX: nextLayer.x - (layer.x ?? 0),
+    layerShiftY: nextLayer.y - (layer.y ?? 0),
+    expandLeft,
+    expandTop,
+    expandRight,
+    expandBottom,
+    layer: nextLayer,
+  }
+}
+
 export function cloneCanvas(sourceCanvas) {
   const canvas = createCanvasElement()
   canvas.width = sourceCanvas.width
@@ -459,15 +558,21 @@ export function floodFillCanvas(
   options = {},
 ) {
   const context = canvas?.getContext('2d', { willReadFrequently: true })
+  const reachedBoundary = {
+    left: false,
+    top: false,
+    right: false,
+    bottom: false,
+  }
 
   if (!context) {
-    return { changed: false, changedPixelCount: 0 }
+    return { changed: false, changedPixelCount: 0, reachedBoundary }
   }
 
   const targetColor = parseHexColor(fillColor)
 
   if (!targetColor) {
-    return { changed: false, changedPixelCount: 0 }
+    return { changed: false, changedPixelCount: 0, reachedBoundary }
   }
 
   const seedX = Math.floor(startX)
@@ -479,7 +584,7 @@ export function floodFillCanvas(
     seedX >= canvas.width ||
     seedY >= canvas.height
   ) {
-    return { changed: false, changedPixelCount: 0 }
+    return { changed: false, changedPixelCount: 0, reachedBoundary }
   }
 
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
@@ -495,7 +600,7 @@ export function floodFillCanvas(
   const restrictToVisiblePixels = Boolean(options.restrictToVisiblePixels)
 
   if (restrictToVisiblePixels && seedColor.a === 0) {
-    return { changed: false, changedPixelCount: 0 }
+    return { changed: false, changedPixelCount: 0, reachedBoundary }
   }
 
   const normalizedTolerance = clampColorChannel(tolerance)
@@ -528,6 +633,22 @@ export function floodFillCanvas(
 
     if (!isColorWithinTolerance(data, pixelIndex, seedColor, normalizedTolerance)) {
       continue
+    }
+
+    if (x === 0) {
+      reachedBoundary.left = true
+    }
+
+    if (y === 0) {
+      reachedBoundary.top = true
+    }
+
+    if (x === canvas.width - 1) {
+      reachedBoundary.right = true
+    }
+
+    if (y === canvas.height - 1) {
+      reachedBoundary.bottom = true
     }
 
     const nextAlpha = preserveAlpha ? currentAlpha : targetColor.a
@@ -563,7 +684,7 @@ export function floodFillCanvas(
   }
 
   if (changedPixelCount === 0) {
-    return { changed: false, changedPixelCount: 0 }
+    return { changed: false, changedPixelCount: 0, reachedBoundary }
   }
 
   context.putImageData(imageData, 0, 0)
@@ -571,6 +692,7 @@ export function floodFillCanvas(
   return {
     changed: true,
     changedPixelCount,
+    reachedBoundary,
   }
 }
 

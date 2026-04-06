@@ -6,6 +6,8 @@ export const DEFAULT_TEXT_LETTER_SPACING = 0
 export const DEFAULT_TEXT_ALIGN = 'left'
 export const DEFAULT_TEXT_MODE = 'box'
 const POINT_TEXT_HORIZONTAL_PADDING = 8
+const TEXT_VERTICAL_PADDING_TOP = 4
+const TEXT_VERTICAL_PADDING_BOTTOM = 4
 
 function getMeasureContext() {
   if (!TEXT_MEASURE_CONTEXT) {
@@ -19,6 +21,24 @@ export function getTextFont(layer) {
   const fontStyle = layer.fontStyle ? `${layer.fontStyle} ` : ''
   const fontWeight = layer.fontWeight ? `${layer.fontWeight} ` : ''
   return `${fontStyle}${fontWeight}${layer.fontSize}px ${layer.fontFamily}`
+}
+
+export async function loadTextLayerFont(layer) {
+  if (
+    typeof document === 'undefined' ||
+    !document.fonts ||
+    typeof document.fonts.load !== 'function'
+  ) {
+    return
+  }
+
+  const sampleText = String(layer?.text ?? ' ').trim() || ' '
+
+  try {
+    await document.fonts.load(getTextFont(layer), sampleText)
+  } catch {
+    // Fall back to the browser's available font stack.
+  }
 }
 
 export function measureTextWidth(context, text, letterSpacing = 0) {
@@ -99,7 +119,7 @@ export function measureTextLayer(layer) {
 
   return {
     width: Math.ceil(measuredWidth + POINT_TEXT_HORIZONTAL_PADDING),
-    height: Math.ceil(measuredHeight + 8),
+    height: Math.ceil(measuredHeight + TEXT_VERTICAL_PADDING_TOP + TEXT_VERTICAL_PADDING_BOTTOM),
     lines,
     lineHeight,
   }
@@ -235,7 +255,7 @@ export function renderTextLayer(context, layer) {
   context.textAlign = textAlign
 
   measurement.lines.forEach((line, index) => {
-    const y = index * measurement.lineHeight
+    const y = TEXT_VERTICAL_PADDING_TOP + (index * measurement.lineHeight)
 
     if (letterSpacing === 0) {
       context.fillText(line, drawX, y)

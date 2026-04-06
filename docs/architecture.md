@@ -40,6 +40,9 @@ The document model lives in `src/lib/layers.js`.
 
 The document currently contains:
 
+- `name`: document/file name
+- `width`: document width in pixels
+- `height`: document height in pixels
 - `layers`: a flat ordered array
 - `selectedLayerId`: single active layer
 - `selectedLayerIds`: multi-selection support
@@ -56,8 +59,15 @@ Each layer is an object with common transform/display fields such as:
 - `rotation`
 - `scaleX`, `scaleY`
 - `lockTransparentPixels`
+- `linkedLayerId`
 
 Layer-specific fields are currently active for `shape`, `image`, `raster`, and `text`.
+
+Linked layers are a lightweight relationship in the document model. A valid link is reciprocal:
+
+- each layer points at the other layer's ID through `linkedLayerId`
+- project-file normalization clears stale or one-sided links
+- text-shadow layers build on top of this same linking mechanism
 
 The codebase still retains an internal `group` layer shape for future work, but group layers are
 currently filtered out of normalized document state so the feature is not user-accessible.
@@ -96,6 +106,7 @@ The app uses normal React DOM for UI chrome and individual layer wrappers, but a
 - `maskCanvas`
 - `paintOverlayCanvas`
 - `visibleCanvas`
+- `layerElement`
 - a sync token and bitmap key
 
 That cache allows the UI to repaint quickly without rewriting the persisted document object on every pointer move.
@@ -124,7 +135,7 @@ The main data flow for most interactions is:
 4. Pointer move events update either:
    - transient document state via `setTransient`, or
    - in-memory canvases via `rasterSurfacesRef`, or
-   - transient overlay state such as the gradient preview line
+   - transient overlay state such as the gradient preview line, snap guides, or lasso overlays
 5. Pointer up finalizes the result.
 6. The result is committed into document history with `commit` or `commitTransientChange`.
 

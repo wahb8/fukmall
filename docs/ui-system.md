@@ -162,6 +162,11 @@ The top toolbar also includes:
 - contextual range/select controls for brush size, eraser size, bucket tolerance, and gradient mode
 - a compact history control cluster for undo/redo
 
+The file workflow also uses centered modal cards for:
+
+- unsaved-changes confirmation before creating a new file
+- new-file creation with document name, width, and height fields
+
 ## Motion and Animation
 
 There are no large bespoke animations or timeline-driven transitions.
@@ -197,6 +202,11 @@ Selected layers use:
 - resize handles with white fill and teal outline
 
 Passive selections use dashed outlines.
+
+Layer rows can also show compact chips for:
+
+- `alpha lock`
+- `linked`
 
 Inline text editing swaps the rendered text canvas for a textarea with a dashed teal border.
 

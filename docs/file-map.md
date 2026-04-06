@@ -32,8 +32,8 @@ This document describes what each tracked file in the repo currently does.
 
 ### `README.md`
 
-- default Vite starter README
-- does not document the current app behavior
+- repo-level project README
+- explains what the current app is, how to run it, and where to start in the docs
 
 ## Public Assets
 
@@ -68,9 +68,10 @@ This document describes what each tracked file in the repo currently does.
 - no longer exposes group layers in the seeded document or inspector UI
 - contains the image import sizing and placement logic for both direct imports and asset-library drops
 - contains text-shadow creation and shadow-property editing for text layers
+- contains generic linked-layer creation/unlinking behavior and the coupled move/resize handling for linked pairs
 - contains the text inspector alignment control and the double-click-to-edit wiring for selected text layers
 - contains the simple SVG-backed image import/render flow, including the behavior that pen strokes on SVG layers create a new raster layer above the SVG
-- contains the project file workflow for new/open/save and the runtime reset path used when loading a file
+- contains the project file workflow for new/open/save, the new-file and unsaved-changes modal flows, and the runtime reset path used when loading a file
 - contains the export controls for flattened PNG/JPEG downloads
 - contains the SVG tool-mode render switching logic so SVG layers stay on the normal `<img>` path until a bitmap edit actually starts on that layer
 - contains the gradient tool wiring, including mode selection, drag interaction state, and the transient overlay preview line
@@ -90,11 +91,12 @@ This document describes what each tracked file in the repo currently does.
 
 - primary styling file for the entire editor
 - defines colors, layout, panels, stage, controls, selection frames, responsive behavior, and visual language
+- styles the new-file and unsaved-changes modal surfaces
 - constrains the asset library panel height and makes the thumbnail region scroll independently from the header
 - controls the masonry-like asset card layout and the asset delete button placement
 - styles the file menu dropdown, active asset-drop canvas state, shared multi-selection frame, inline text editor, and the prompt shell below the canvas
 - makes the single-layer selection frame interactive so it can act as the move region for already-selected layers
-- styles the segmented alignment control in the text inspector
+- styles the segmented alignment control and linked-layer controls in the inspector
 
 ## Hooks
 
@@ -118,7 +120,8 @@ This document describes what each tracked file in the repo currently does.
 - creates each layer type
 - still retains the internal `createGroupLayer()` helper for later work, even though group layers are disabled in the current product
 - image layers now carry source metadata such as `sourceKind`
-- handles selection, append/insert/remove, duplication, move, merge-down support, SVG merge restrictions, linked text-shadow cleanup, and alpha-lock helpers
+- normalizes reciprocal linked-layer references
+- handles selection, append/insert/remove, duplication, generic layer linking/unlinking, move, merge-down support, SVG merge restrictions, linked text-shadow cleanup, and alpha-lock helpers
 
 ### `src/lib/raster.js`
 
@@ -151,6 +154,7 @@ This document describes what each tracked file in the repo currently does.
 - normalizes loaded document state
 - strips disabled group layers during normalization so they do not re-enter the UI through saved files
 - repairs invalid saved selection state by falling back to the last valid layer when possible
+- repairs invalid linked-layer references by keeping only valid reciprocal pairs
 - downloads project files with app metadata and format versioning
 
 ### `src/lib/textLayer.js`

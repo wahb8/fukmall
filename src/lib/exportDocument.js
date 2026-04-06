@@ -5,6 +5,7 @@ import {
   createSizedCanvas,
   loadImageElement,
 } from './raster'
+import { loadTextLayerFont } from './textLayer'
 
 function drawRoundedRect(context, width, height, radius) {
   const nextRadius = Math.max(0, Math.min(radius, width / 2, height / 2))
@@ -42,6 +43,7 @@ async function drawLayerToContext(context, layer) {
   }
 
   if (layer.type === 'text') {
+    await loadTextLayerFont(layer)
     const maskCanvas = await createMaskCanvasFromSource(
       layer.eraseMask ?? '',
       layer.width,

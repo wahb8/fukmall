@@ -8,6 +8,7 @@ The app uses several different categories of state inside `src/App.jsx`.
 
 Managed through `useHistory`, this is the state that participates in undo/redo:
 
+- document name and dimensions
 - document layers
 - selection state in the document object
 
@@ -16,6 +17,7 @@ Managed through `useHistory`, this is the state that participates in undo/redo:
 Stored in normal React state and not part of undo history:
 
 - open/closed inspector
+- new-file and unsaved-changes modal state
 - active tool
 - pen and eraser size
 - lasso/floating selection objects
@@ -25,6 +27,7 @@ Stored in normal React state and not part of undo history:
 - snap guides
 - file-menu open state
 - open/export busy flags
+- saved-document signature used for dirty-state tracking
 
 Opening a file or creating a new file should clear this transient state and rebuild it from the new document context instead of trying to preserve the old runtime session.
 
@@ -52,6 +55,9 @@ The document shape is intentionally minimal:
 
 ```js
 {
+  name: 'Untitled',
+  width: 1080,
+  height: 1440,
   layers: [],
   selectedLayerId: null,
   selectedLayerIds: []
@@ -65,6 +71,8 @@ Image layers may also carry source metadata such as:
 - `sourceKind`
 
 This is used to distinguish normal bitmap-backed image layers from SVG-backed image layers.
+
+Layers may also carry `linkedLayerId` when they are part of a mutual two-layer link.
 
 Group layer data may still exist in older code paths or project files, but normalization currently
 filters those layers out before they enter active editor state.
@@ -179,6 +187,12 @@ There are several related selection concepts:
 - when layers exist, the app now tries to keep a valid selected layer rather than allowing the editor to drift into an empty-selection state
 - project-file normalization also repairs invalid saved selection IDs by falling back to the last remaining layer when possible
 
+### Linked Layer State
+
+- two layers can be linked through reciprocal `linkedLayerId` fields
+- the link is normalized on file load so one-sided or self-links are cleared
+- linked text-shadow pairs use this same relationship model
+
 ### Lasso Selection
 
 - polygon points and bounds for a selected region within a source layer
@@ -218,5 +232,6 @@ Current file model:
 - files store app metadata, a format version, and the serialized document only
 - document normalization currently removes disabled group layers during load/save normalization
 - file normalization also rebuilds valid single/multi-selection state when saved IDs are stale
+- file normalization also repairs invalid linked-layer references by keeping only reciprocal valid pairs
 - undo/redo history is intentionally not stored in v1
 - runtime-only refs and raster caches are rebuilt after load instead of being serialized

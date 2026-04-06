@@ -82,6 +82,17 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - the inspector exposes shadow X offset, Y offset, and opacity controls when a linked shadow exists
 - deleting the source text layer also removes its linked shadow layer
 
+### Linked Layers
+
+- any two selected layers can be linked from the inspector
+- linked pairs move together during single-layer move interactions
+- linked pairs also resize together during single-layer resize interactions
+- resize linkage is ratio-based: the partner scales around its own center using the same width/height or scale ratio as the actively resized layer
+- the inspector exposes both pair-level `Link Layers` / `Unlink` actions for two selected layers and a single-layer `Linked To` readout with `Unlink`
+- linked layers show a `linked` chip in the layer list
+- deleting one linked layer keeps the other layer but clears the surviving link
+- text-shadow pairs are a special case built on top of the same linking mechanism
+
 ### Group Layers
 
 - group layers are currently disabled in the product UI
@@ -149,10 +160,13 @@ The lasso workflow is one of the more advanced features in the app and relies on
   - `BG -> FG`
   - `FG -> Transparent`
 - applies the final gradient directly onto the clicked target layer rather than creating a separate layer
+- for non-alpha-locked raster and bitmap image layers, the editable bitmap can expand when the dragged gradient line extends beyond the current bitmap bounds
+- when that expansion happens, old pixels stay visually anchored and the committed layer geometry grows to match the expanded bitmap
 - commits each gradient application as a single undoable history step
 - shows a live overlay preview line while dragging so the user can see direction and spread before release
 - the preview line is transient UI only and is not exported or saved into the document
 - does not support text layers, shape layers, group layers, or SVG-backed image layers in v1
+- alpha-locked layers keep the existing visible-alpha restriction and do not use expansion to paint into newly added transparent area
 
 ### Bucket Fill Tool
 
@@ -162,6 +176,8 @@ The lasso workflow is one of the more advanced features in the app and relies on
 - exposes a toolbar tolerance slider with a current default value of `200`
 - commits each fill as a single undoable history step
 - stays on the target layer rather than creating a new layer
+- for non-alpha-locked raster and bitmap image layers, fills that reach the current bitmap edge can expand the editable bitmap instead of treating the old bitmap boundary as a hard wall
+- bucket-fill expansion is finite and currently bounded by the document extents rather than becoming unbounded infinite fill
 - does not support text layers, shape layers, group layers, or SVG-backed image layers in v1
 - respects alpha lock on raster/image layers by preserving existing pixel alpha and avoiding fills that start in fully transparent regions when alpha lock is enabled
 
@@ -281,7 +297,13 @@ Project file behavior:
 - project files are saved as JSON-based `.kryop` files
 - saved files include app metadata, a format version, and the serialized document only
 - undo/redo history is not saved in v1
+- `New File` opens a modal where the user can set document name, width, and height
+- choosing `New File` while there are unsaved changes opens a confirmation modal before the new-file modal
+- the app registers a browser `beforeunload` prompt while unsaved changes exist
+- save/export filenames are derived from the current document name after filename sanitization
 - opening a file replaces the current document and resets transient editor runtime state
+- opening or loading a file also clears session-local runtime state such as the asset library, viewport, active tool, and raster caches
+- project-file normalization strips disabled group layers and repairs invalid selection and linked-layer references
 - the File menu closes on outside click or `Escape`
 
 ## Snapping
@@ -318,7 +340,7 @@ The app currently supports:
 - `Delete` or `Backspace`: delete selected layer or active floating/lasso selection
 - `X`: swap foreground/background colors
 - `D`: reset global colors
-- `Enter`: clear current layer selection
+- `Enter`: attempts to clear selection, but current selection-normalization behavior keeps a valid layer selected when layers exist
 - while editing text, `Ctrl/Cmd + Enter` commits the text edit
 - while editing text, `Escape` cancels the inline text editor
 

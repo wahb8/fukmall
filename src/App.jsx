@@ -84,6 +84,7 @@ import {
   createSizedCanvas,
   createMaskedCanvas,
   createCanvasFromSource,
+  expandBitmapSurfaceToFitBounds,
   createTransparentCanvas,
   createMaskCanvasFromSource,
   createEmptyMaskCanvas,
@@ -106,6 +107,7 @@ import {
 } from './lib/penTool'
 import { FONT_FAMILY_OPTIONS } from './lib/fontOptions'
 import {
+  loadTextLayerFont,
   resizeBoxText,
   resizePointTextTransform,
   updateTextContent,
@@ -823,16 +825,68 @@ function documentPointToLayerSurfacePoint(layer, surfaceCanvas, documentPoint, c
   }
 }
 
-function transformLayerLocalVectorToDocument(layer, x, y) {
-  const angle = (layer.rotation * Math.PI) / 180
-  const cosine = Math.cos(angle)
-  const sine = Math.sin(angle)
-  const scaledX = x * layer.scaleX
-  const scaledY = y * layer.scaleY
+function createSurfaceCoverageBoundsFromPoints(...points) {
+  const validPoints = points.filter((point) => (
+    Number.isFinite(point?.x) &&
+    Number.isFinite(point?.y)
+  ))
+
+  if (validPoints.length === 0) {
+    return null
+  }
 
   return {
-    x: (scaledX * cosine) - (scaledY * sine),
-    y: (scaledX * sine) + (scaledY * cosine),
+    minX: Math.min(...validPoints.map((point) => point.x)),
+    minY: Math.min(...validPoints.map((point) => point.y)),
+    maxX: Math.max(...validPoints.map((point) => point.x)),
+    maxY: Math.max(...validPoints.map((point) => point.y)),
+  }
+}
+
+function hasReachedCanvasBoundary(reachedBoundary) {
+  return Boolean(
+    reachedBoundary?.left ||
+    reachedBoundary?.top ||
+    reachedBoundary?.right ||
+    reachedBoundary?.bottom
+  )
+}
+
+function getBucketFillExpansionCoverageBounds(
+  layer,
+  surfaceCanvas,
+  reachedBoundary,
+  documentWidth,
+  documentHeight,
+) {
+  if (!layer || !surfaceCanvas || !hasReachedCanvasBoundary(reachedBoundary)) {
+    return null
+  }
+
+  const surfaceScaleX = surfaceCanvas.width / Math.max(layer.width, 1)
+  const surfaceScaleY = surfaceCanvas.height / Math.max(layer.height, 1)
+  const expandLeft = reachedBoundary.left
+    ? Math.max(0, layer.x) * surfaceScaleX
+    : 0
+  const expandTop = reachedBoundary.top
+    ? Math.max(0, layer.y) * surfaceScaleY
+    : 0
+  const expandRight = reachedBoundary.right
+    ? Math.max(0, documentWidth - (layer.x + layer.width)) * surfaceScaleX
+    : 0
+  const expandBottom = reachedBoundary.bottom
+    ? Math.max(0, documentHeight - (layer.y + layer.height)) * surfaceScaleY
+    : 0
+
+  if (expandLeft <= 0 && expandTop <= 0 && expandRight <= 0 && expandBottom <= 0) {
+    return null
+  }
+
+  return {
+    minX: -expandLeft,
+    minY: -expandTop,
+    maxX: surfaceCanvas.width + expandRight,
+    maxY: surfaceCanvas.height + expandBottom,
   }
 }
 
@@ -841,48 +895,17 @@ function expandRasterLayerSurfaceToFitPoint(layer, surfaceCanvas, localPoint, pa
     return null
   }
 
-  const expandLeft = Math.max(0, Math.ceil(padding - localPoint.x))
-  const expandTop = Math.max(0, Math.ceil(padding - localPoint.y))
-  const expandRight = Math.max(0, Math.ceil(localPoint.x + padding - layer.width))
-  const expandBottom = Math.max(0, Math.ceil(localPoint.y + padding - layer.height))
-
-  if (expandLeft === 0 && expandTop === 0 && expandRight === 0 && expandBottom === 0) {
-    return null
-  }
-
-  const nextWidth = surfaceCanvas.width + expandLeft + expandRight
-  const nextHeight = surfaceCanvas.height + expandTop + expandBottom
-  const nextCanvas = createTransparentCanvas(nextWidth, nextHeight)
-  const context = nextCanvas.getContext('2d')
-
-  if (!context) {
-    return null
-  }
-
-  context.drawImage(surfaceCanvas, expandLeft, expandTop)
-
-  const centerDelta = transformLayerLocalVectorToDocument(
+  return expandBitmapSurfaceToFitBounds(
     layer,
-    ((expandRight - expandLeft) / 2),
-    ((expandBottom - expandTop) / 2),
-  )
-  const currentCenterX = layer.x + (layer.width / 2)
-  const currentCenterY = layer.y + (layer.height / 2)
-  const nextCenterX = currentCenterX + centerDelta.x
-  const nextCenterY = currentCenterY + centerDelta.y
-
-  return {
-    canvas: nextCanvas,
-    shiftX: expandLeft,
-    shiftY: expandTop,
-    layer: {
-      ...layer,
-      x: nextCenterX - (nextWidth / 2),
-      y: nextCenterY - (nextHeight / 2),
-      width: nextWidth,
-      height: nextHeight,
+    surfaceCanvas,
+    {
+      minX: localPoint.x,
+      minY: localPoint.y,
+      maxX: localPoint.x,
+      maxY: localPoint.y,
     },
-  }
+    { padding },
+  )
 }
 
 function applySurfacePreviewLayout(entry) {
@@ -1343,6 +1366,7 @@ function App() {
     }
 
     if (layer.type === 'text') {
+      await loadTextLayerFont(layer)
       maskCanvas = await createMaskCanvasFromSource(
         layer.eraseMask ?? '',
         layer.width,
@@ -2200,11 +2224,11 @@ function App() {
             if (expansion) {
               nextRestoreCanvas = expansion.canvas
               expandedLayer = expansion.layer
-              nextPreviewOffsetX += expansion.shiftX
-              nextPreviewOffsetY += expansion.shiftY
+              nextPreviewOffsetX += expansion.contentOffsetX
+              nextPreviewOffsetY += expansion.contentOffsetY
               nextPoints = nextPoints.map((point) => ({
-                x: point.x + expansion.shiftX,
-                y: point.y + expansion.shiftY,
+                x: point.x + expansion.contentOffsetX,
+                y: point.y + expansion.contentOffsetY,
               }))
               layerExpanded = true
             }
@@ -2212,8 +2236,8 @@ function App() {
             if (sampleLocalPoint) {
               const expandedLocalPoint = expansion
                 ? {
-                  x: sampleLocalPoint.x + expansion.shiftX,
-                  y: sampleLocalPoint.y + expansion.shiftY,
+                  x: sampleLocalPoint.x + expansion.contentOffsetX,
+                  y: sampleLocalPoint.y + expansion.contentOffsetY,
                 }
                 : sampleLocalPoint
               layerPoint = clampSurfacePoint(expandedLayer, nextRestoreCanvas, expandedLocalPoint)
@@ -2419,7 +2443,12 @@ function App() {
         const surfaceEntry = rasterSurfacesRef.current.get(interaction.sourceLayerId)
         const interactionLayer = findLayer(liveDocumentState, interaction.sourceLayerId)
         const layerPoint = interactionLayer && surfaceEntry?.offscreenCanvas
-          ? toLayerSurfacePoint(event, interactionLayer, surfaceEntry.offscreenCanvas)
+          ? documentPointToLayerSurfacePoint(
+            interactionLayer,
+            surfaceEntry.offscreenCanvas,
+            documentPoint,
+            false,
+          )
           : null
 
         if (!layerPoint) {
@@ -2677,7 +2706,31 @@ function App() {
           sourceLayer &&
           interaction.restoreCanvas
         ) {
-          const workingCanvas = cloneCanvas(interaction.restoreCanvas)
+          const alphaLocked = isAlphaLocked(sourceLayer)
+          let workingCanvas = cloneCanvas(interaction.restoreCanvas)
+          let workingLayer = sourceLayer
+          let gradientStartPoint = interaction.startPoint
+          let gradientEndPoint = interaction.endPoint
+          const coverageBounds = alphaLocked
+            ? null
+            : createSurfaceCoverageBoundsFromPoints(interaction.startPoint, interaction.endPoint)
+          const expansion = coverageBounds
+            ? expandBitmapSurfaceToFitBounds(sourceLayer, workingCanvas, coverageBounds)
+            : null
+
+          if (expansion) {
+            workingCanvas = expansion.canvas
+            workingLayer = expansion.layer
+            gradientStartPoint = {
+              x: interaction.startPoint.x + expansion.contentOffsetX,
+              y: interaction.startPoint.y + expansion.contentOffsetY,
+            }
+            gradientEndPoint = {
+              x: interaction.endPoint.x + expansion.contentOffsetX,
+              y: interaction.endPoint.y + expansion.contentOffsetY,
+            }
+          }
+
           const gradientStartColor = interaction.mode === 'fg-to-transparent'
             ? globalColors.foreground
             : globalColors.background
@@ -2687,13 +2740,13 @@ function App() {
           const gradientResult = gradientEndColor
             ? applyLinearGradientToCanvas(
               workingCanvas,
-              interaction.startPoint,
-              interaction.endPoint,
+              gradientStartPoint,
+              gradientEndPoint,
               gradientStartColor,
               gradientEndColor,
               {
-                restrictToVisiblePixels: isAlphaLocked(sourceLayer),
-                preserveAlphaMask: isAlphaLocked(sourceLayer),
+                restrictToVisiblePixels: alphaLocked,
+                preserveAlphaMask: alphaLocked,
               },
             )
             : { changed: false }
@@ -2713,7 +2766,12 @@ function App() {
               return updateLayer(
                 currentDocument,
                 interaction.sourceLayerId,
-                createBitmapEditableLayerPatch(nextLayer, nextBitmap),
+                createBitmapEditableLayerPatch(nextLayer, nextBitmap, {
+                  x: workingLayer.x,
+                  y: workingLayer.y,
+                  width: workingLayer.width,
+                  height: workingLayer.height,
+                }),
               )
             })
           }
@@ -3932,8 +3990,8 @@ function App() {
         interactionLayer = expansion.layer
         interactionSurface = expansion.canvas
         surfaceEntry.offscreenCanvas = expansion.canvas
-        surfaceEntry.previewOffsetX += expansion.shiftX
-        surfaceEntry.previewOffsetY += expansion.shiftY
+        surfaceEntry.previewOffsetX += expansion.contentOffsetX
+        surfaceEntry.previewOffsetY += expansion.contentOffsetY
         surfaceEntry.previewWidth = expansion.layer.width
         surfaceEntry.previewHeight = expansion.layer.height
       }
@@ -4077,16 +4135,57 @@ function App() {
       return
     }
 
-    const workingCanvas = cloneCanvas(surfaceCanvas)
-    const fillResult = floodFillCanvas(
-      workingCanvas,
+    const alphaLocked = isAlphaLocked(fillLayer)
+    const initialFillResult = floodFillCanvas(
+      cloneCanvas(surfaceCanvas),
       layerPoint.x,
       layerPoint.y,
       globalColors.foreground,
       bucketTolerance,
       {
-        preserveAlpha: isAlphaLocked(fillLayer),
-        restrictToVisiblePixels: isAlphaLocked(fillLayer),
+        preserveAlpha: alphaLocked,
+        restrictToVisiblePixels: alphaLocked,
+      },
+    )
+
+    if (!initialFillResult.changed) {
+      return
+    }
+
+    let workingCanvas = cloneCanvas(surfaceCanvas)
+    let workingLayer = fillLayer
+    let shiftedLayerPoint = layerPoint
+    const expansionBounds = alphaLocked
+      ? null
+      : getBucketFillExpansionCoverageBounds(
+        fillLayer,
+        surfaceCanvas,
+        initialFillResult.reachedBoundary,
+        documentWidth,
+        documentHeight,
+      )
+    const expansion = expansionBounds
+      ? expandBitmapSurfaceToFitBounds(fillLayer, surfaceCanvas, expansionBounds)
+      : null
+
+    if (expansion) {
+      workingCanvas = expansion.canvas
+      workingLayer = expansion.layer
+      shiftedLayerPoint = {
+        x: layerPoint.x + expansion.contentOffsetX,
+        y: layerPoint.y + expansion.contentOffsetY,
+      }
+    }
+
+    const fillResult = floodFillCanvas(
+      workingCanvas,
+      shiftedLayerPoint.x,
+      shiftedLayerPoint.y,
+      globalColors.foreground,
+      bucketTolerance,
+      {
+        preserveAlpha: alphaLocked,
+        restrictToVisiblePixels: alphaLocked,
       },
     )
 
@@ -4109,7 +4208,12 @@ function App() {
       return updateLayer(
         currentDocument,
         fillLayer.id,
-        createBitmapEditableLayerPatch(currentLayer, nextBitmap),
+        createBitmapEditableLayerPatch(currentLayer, nextBitmap, {
+          x: workingLayer.x,
+          y: workingLayer.y,
+          width: workingLayer.width,
+          height: workingLayer.height,
+        }),
       )
     })
   }
