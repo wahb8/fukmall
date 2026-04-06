@@ -7,6 +7,9 @@ import {
 } from './textLayer'
 
 const DEFAULT_LAYER_OPACITY = 1
+export const DEFAULT_DOCUMENT_WIDTH = 1080
+export const DEFAULT_DOCUMENT_HEIGHT = 1440
+export const DEFAULT_DOCUMENT_NAME = 'Untitled'
 
 function createBaseLayer(overrides) {
   return {
@@ -28,10 +31,19 @@ function createBaseLayer(overrides) {
   }
 }
 
-export function createDocument(layers = [], selectedLayerId = null) {
+export function createDocument(
+  layers = [],
+  selectedLayerId = null,
+  width = DEFAULT_DOCUMENT_WIDTH,
+  height = DEFAULT_DOCUMENT_HEIGHT,
+  name = DEFAULT_DOCUMENT_NAME,
+) {
   const selectedLayerIds = selectedLayerId ? [selectedLayerId] : []
 
   return {
+    name,
+    width,
+    height,
     layers,
     selectedLayerId,
     selectedLayerIds,
@@ -124,8 +136,8 @@ export function createRasterLayer(overrides = {}) {
     type: 'raster',
     x: 0,
     y: 0,
-    width: 1080,
-    height: 1440,
+    width: DEFAULT_DOCUMENT_WIDTH,
+    height: DEFAULT_DOCUMENT_HEIGHT,
     bitmap: '',
     ...overrides,
   })
@@ -194,6 +206,7 @@ export function normalizeLinkedLayerReferences(layers) {
 
 export function appendLayer(documentState, layer) {
   return {
+    ...documentState,
     layers: [...documentState.layers, layer],
     selectedLayerId: layer.id,
     selectedLayerIds: [layer.id],
@@ -215,6 +228,7 @@ export function insertLayer(documentState, layer, afterLayerId = null) {
   nextLayers.splice(currentIndex + 1, 0, layer)
 
   return {
+    ...documentState,
     layers: nextLayers,
     selectedLayerId: layer.id,
     selectedLayerIds: [layer.id],
@@ -352,6 +366,7 @@ export function removeLayers(documentState, layerIds) {
   const fallbackSelectedLayerId = nextLayersAfterRemoval.at(-1)?.id ?? null
 
   return {
+    ...documentState,
     layers: nextLayersAfterRemoval,
     selectedLayerId: nextSelectedLayerIds.at(-1) ?? (
       selectedLayerWasRemoved ? fallbackSelectedLayerId : documentState.selectedLayerId
@@ -525,6 +540,7 @@ export function mergeLayerDown(documentState, selectedLayerId, mergedLayer) {
   nextLayers.splice(selectedIndex - 1, 2, mergedLayer)
 
   return {
+    ...documentState,
     layers: nextLayers,
     selectedLayerId: mergedLayer.id,
     selectedLayerIds: [mergedLayer.id],

@@ -45,6 +45,9 @@ import {
   clearSelection,
   cloneLayer,
   createDocument,
+  DEFAULT_DOCUMENT_NAME,
+  DEFAULT_DOCUMENT_HEIGHT,
+  DEFAULT_DOCUMENT_WIDTH,
   createImageLayer,
   createRasterLayer,
   createTextShadowLayer,
@@ -115,7 +118,12 @@ import {
   DEFAULT_SNAP_THRESHOLD,
 } from './lib/moveSnapping'
 import { exportDocumentImage } from './lib/exportDocument'
-import { downloadProjectFile, normalizeDocumentState, parseProjectFile } from './lib/documentFiles'
+import {
+  downloadProjectFile,
+  normalizeDocumentState,
+  parseProjectFile,
+  serializeProjectFile,
+} from './lib/documentFiles'
 
 const HANDLE_DIRECTIONS = [
   { key: 'nw', x: -1, y: -1 },
@@ -134,14 +142,15 @@ const MAX_LAYER_SIZE = 5000
 const DEFAULT_ERASER_SIZE = 28
 const DEFAULT_PEN_SIZE = 16
 const DEFAULT_BUCKET_TOLERANCE = 200
-const DOCUMENT_WIDTH = 1080
-const DOCUMENT_HEIGHT = 1440
+const MIN_DOCUMENT_DIMENSION = 1
 const DISPLAY_DOCUMENT_WIDTH = 428
-const BASE_DOCUMENT_SCALE = DISPLAY_DOCUMENT_WIDTH / DOCUMENT_WIDTH
+const TOOL_PANEL_ERROR_DURATION_MS = 4000
+const TOOL_PANEL_ERROR_FADE_DELAY_MS = 3200
 const MIN_VIEWPORT_ZOOM = 0.1
 const MAX_VIEWPORT_ZOOM = 8
 const VIEWPORT_ZOOM_STEP = 1.25
 const ASSET_DRAG_MIME_TYPE = 'application/x-fukmall-asset-id'
+const NO_LAYERS_TOOL_ERROR_MESSAGE = 'There are no layers to edit. Add a layer first.'
 
 function isSupportedAssetFile(file) {
   return Boolean(file) && /^image\/(png|jpeg|jpg|svg\+xml|webp)$/i.test(file.type)
@@ -375,48 +384,93 @@ function clampValue(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum)
 }
 
-function createInitialDocument() {
+function createInitialDocument(
+  width = DEFAULT_DOCUMENT_WIDTH,
+  height = DEFAULT_DOCUMENT_HEIGHT,
+  name = DEFAULT_DOCUMENT_NAME,
+) {
+  const scaleX = width / DEFAULT_DOCUMENT_WIDTH
+  const scaleY = height / DEFAULT_DOCUMENT_HEIGHT
   const whiteBackground = createShapeLayer({
     name: 'Background',
     x: 0,
     y: 0,
-    width: DOCUMENT_WIDTH,
-    height: DOCUMENT_HEIGHT,
+    width,
+    height,
     fill: '#ffffff',
     radius: 0,
   })
   const background = createImageLayer({
     name: 'Hero Image',
-    x: 76,
-    y: 62,
-    width: 360,
-    height: 260,
+    x: Math.round(76 * scaleX),
+    y: Math.round(62 * scaleY),
+    width: Math.max(MIN_LAYER_WIDTH, Math.round(360 * scaleX)),
+    height: Math.max(MIN_LAYER_HEIGHT, Math.round(260 * scaleY)),
     src: heroImage,
     bitmap: heroImage,
   })
   const card = createShapeLayer({
     name: 'Color Block',
-    x: 340,
-    y: 120,
-    width: 220,
-    height: 220,
+    x: Math.round(340 * scaleX),
+    y: Math.round(120 * scaleY),
+    width: Math.max(MIN_LAYER_WIDTH, Math.round(220 * scaleX)),
+    height: Math.max(MIN_LAYER_HEIGHT, Math.round(220 * scaleY)),
     fill: '#f97316',
     radius: 34,
   })
   const title = createTextLayer({
     name: 'Headline',
-    x: 126,
-    y: 114,
-    width: 300,
-    height: 120,
+    x: Math.round(126 * scaleX),
+    y: Math.round(114 * scaleY),
+    width: Math.max(MIN_LAYER_WIDTH, Math.round(300 * scaleX)),
+    height: Math.max(MIN_LAYER_HEIGHT, Math.round(120 * scaleY)),
     text: 'A cleaner\nlayer stack',
-    fontSize: 40,
+    fontSize: Math.max(8, Math.round(40 * Math.min(scaleX, scaleY))),
   })
 
   return createDocument(
     [whiteBackground, background, card, title],
     background.id,
+    width,
+    height,
+    name,
   )
+}
+
+function normalizeNewFileDimensionInput(value, fallback) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return fallback
+  }
+
+  return Math.max(MIN_DOCUMENT_DIMENSION, Math.round(numericValue))
+}
+
+function normalizeNewFileNameInput(value, fallback = DEFAULT_DOCUMENT_NAME) {
+  if (typeof value !== 'string') {
+    return fallback
+  }
+
+  const trimmedValue = value.trim()
+
+  return trimmedValue || fallback
+}
+
+function getDocumentFilenameBase(name, fallback) {
+  const normalizedName = normalizeNewFileNameInput(name, fallback)
+  const sanitizedName = normalizedName
+    .replace(/[<>:"/\\|?*]/g, '-')
+    .split('')
+    .filter((character) => {
+      const codePoint = character.charCodeAt(0)
+
+      return codePoint >= 32
+    })
+    .join('')
+    .trim()
+
+  return sanitizedName || fallback
 }
 
 function getImportedImageDimensions(width, height) {
@@ -426,9 +480,9 @@ function getImportedImageDimensions(width, height) {
   }
 }
 
-function clampImportedImagePosition(x, y, width, height) {
-  const maxX = DOCUMENT_WIDTH - width
-  const maxY = DOCUMENT_HEIGHT - height
+function clampImportedImagePosition(x, y, width, height, documentWidth, documentHeight) {
+  const maxX = documentWidth - width
+  const maxY = documentHeight - height
 
   return {
     x: maxX >= 0 ? Math.min(Math.max(0, x), maxX) : 0,
@@ -436,12 +490,14 @@ function clampImportedImagePosition(x, y, width, height) {
   }
 }
 
-function getDefaultImportedImagePosition(width, height) {
+function getDefaultImportedImagePosition(width, height, documentWidth, documentHeight) {
   return clampImportedImagePosition(
-    Math.round((DOCUMENT_WIDTH - width) / 2),
-    Math.round((DOCUMENT_HEIGHT - height) / 2),
+    Math.round((documentWidth - width) / 2),
+    Math.round((documentHeight - height) / 2),
     width,
     height,
+    documentWidth,
+    documentHeight,
   )
 }
 
@@ -477,12 +533,12 @@ function createBitmapEditableLayerPatch(layer, bitmap, overrides = {}) {
   return createImageLayerBitmapPatch(layer, bitmap, overrides)
 }
 
-function shouldLocalizeEmptyRasterLayerForPen(layer) {
+function shouldLocalizeEmptyRasterLayerForPen(layer, documentWidth, documentHeight) {
   return Boolean(layer) && layer.type === 'raster' && !layer.bitmap &&
     layer.x === 0 &&
     layer.y === 0 &&
-    layer.width === DOCUMENT_WIDTH &&
-    layer.height === DOCUMENT_HEIGHT
+    layer.width === documentWidth &&
+    layer.height === documentHeight
 }
 
 function createLocalizedRasterLayerForPenStart(layer, documentPoint, brushSize) {
@@ -697,7 +753,7 @@ function getPointerPositionWithinElement(pointerEvent, element) {
   }
 }
 
-function toDocumentCoordinates(pointerEvent, element, viewport) {
+function toDocumentCoordinates(pointerEvent, element, viewport, documentScale) {
   const pointerPosition = getPointerPositionWithinElement(pointerEvent, element)
 
   if (!pointerPosition) {
@@ -707,7 +763,7 @@ function toDocumentCoordinates(pointerEvent, element, viewport) {
   return {
     ...screenToWorld(pointerPosition.x, pointerPosition.y, {
       ...viewport,
-      zoom: viewport.zoom * BASE_DOCUMENT_SCALE,
+      zoom: viewport.zoom * documentScale,
     }),
   }
 }
@@ -989,6 +1045,8 @@ function App() {
   const copiedLayerRef = useRef(null)
   const lastPenEditableLayerIdRef = useRef(null)
   const textEditorRef = useRef(null)
+  const toolPanelErrorFadeTimeoutRef = useRef(null)
+  const toolPanelErrorClearTimeoutRef = useRef(null)
   const {
     present: documentState,
     commit,
@@ -999,11 +1057,24 @@ function App() {
     reset,
     canUndo,
     canRedo,
-  } = useHistory(createInitialDocument())
+  } = useHistory(createInitialDocument(DEFAULT_DOCUMENT_WIDTH, DEFAULT_DOCUMENT_HEIGHT))
   const documentStateRef = useRef(documentState)
   documentStateRef.current = documentState
+  const [savedDocumentSignature, setSavedDocumentSignature] = useState(() => (
+    serializeProjectFile(documentState)
+  ))
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
+  const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false)
+  const [isUnsavedChangesModalOpen, setIsUnsavedChangesModalOpen] = useState(false)
+  const [newFileNameInput, setNewFileNameInput] = useState(DEFAULT_DOCUMENT_NAME)
+  const [newFileWidthInput, setNewFileWidthInput] = useState(String(DEFAULT_DOCUMENT_WIDTH))
+  const [newFileHeightInput, setNewFileHeightInput] = useState(String(DEFAULT_DOCUMENT_HEIGHT))
+  const [toolPanelError, setToolPanelError] = useState({
+    message: '',
+    isVisible: false,
+    isFading: false,
+  })
   const [activeTool, setActiveTool] = useState('select')
   const [globalColors, setGlobalColors] = useState(() => loadColorsFromStorage())
   const [penSize, setPenSize] = useState(DEFAULT_PEN_SIZE)
@@ -1039,6 +1110,12 @@ function App() {
   const selectedLayer = selectedLayers.length === 1
     ? selectedLayers[0]
     : findLayer(documentState, documentState.selectedLayerId)
+  const documentWidth = documentState.width ?? DEFAULT_DOCUMENT_WIDTH
+  const documentHeight = documentState.height ?? DEFAULT_DOCUMENT_HEIGHT
+  const documentName = normalizeNewFileNameInput(documentState.name, DEFAULT_DOCUMENT_NAME)
+  const currentDocumentSignature = useMemo(() => serializeProjectFile(documentState), [documentState])
+  const hasUnsavedChanges = currentDocumentSignature !== savedDocumentSignature
+  const documentScale = DISPLAY_DOCUMENT_WIDTH / Math.max(documentWidth, 1)
   const selectedLayerShadow = selectedLayer?.type === 'text' && !selectedLayer?.isTextShadow && selectedLayer.shadowLayerId
     ? findLayer(documentState, selectedLayer.shadowLayerId)
     : null
@@ -1056,6 +1133,62 @@ function App() {
   const activeBrushTool = currentTool === 'eraser' ? 'eraser' : 'pen'
   const hasActiveLassoSelection = Boolean(lassoSelection?.isClosed)
   const hasFloatingSelection = Boolean(floatingSelection)
+
+  const clearToolPanelErrorTimers = useCallback(() => {
+    if (toolPanelErrorFadeTimeoutRef.current) {
+      window.clearTimeout(toolPanelErrorFadeTimeoutRef.current)
+      toolPanelErrorFadeTimeoutRef.current = null
+    }
+
+    if (toolPanelErrorClearTimeoutRef.current) {
+      window.clearTimeout(toolPanelErrorClearTimeoutRef.current)
+      toolPanelErrorClearTimeoutRef.current = null
+    }
+  }, [])
+
+  const showToolPanelError = useCallback((message) => {
+    clearToolPanelErrorTimers()
+    setToolPanelError({
+      message,
+      isVisible: true,
+      isFading: false,
+    })
+
+    toolPanelErrorFadeTimeoutRef.current = window.setTimeout(() => {
+      setToolPanelError((currentValue) => (
+        currentValue.isVisible
+          ? { ...currentValue, isFading: true }
+          : currentValue
+      ))
+      toolPanelErrorFadeTimeoutRef.current = null
+    }, TOOL_PANEL_ERROR_FADE_DELAY_MS)
+
+    toolPanelErrorClearTimeoutRef.current = window.setTimeout(() => {
+      setToolPanelError({
+        message: '',
+        isVisible: false,
+        isFading: false,
+      })
+      toolPanelErrorClearTimeoutRef.current = null
+    }, TOOL_PANEL_ERROR_DURATION_MS)
+  }, [clearToolPanelErrorTimers])
+
+  useEffect(() => (
+    () => {
+      clearToolPanelErrorTimers()
+    }
+  ), [clearToolPanelErrorTimers])
+
+  const activateTool = useCallback((nextTool) => {
+    setActiveTool(nextTool)
+
+    if (
+      !documentState.layers.length &&
+      ['pen', 'eraser', 'bucket', 'gradient'].includes(nextTool)
+    ) {
+      showToolPanelError(NO_LAYERS_TOOL_ERROR_MESSAGE)
+    }
+  }, [documentState.layers.length, showToolPanelError])
 
   const setForeground = useCallback((color) => {
     setGlobalColors((currentColors) => ({
@@ -1442,8 +1575,8 @@ function App() {
       return
     }
 
-    overlayCanvas.width = DOCUMENT_WIDTH
-    overlayCanvas.height = DOCUMENT_HEIGHT
+    overlayCanvas.width = documentWidth
+    overlayCanvas.height = documentHeight
 
     const context = overlayCanvas.getContext('2d')
 
@@ -1505,8 +1638,8 @@ function App() {
       context.lineWidth = 1.5
       context.setLineDash([10, 6])
       context.beginPath()
-      context.moveTo(DOCUMENT_WIDTH / 2, 0)
-      context.lineTo(DOCUMENT_WIDTH / 2, DOCUMENT_HEIGHT)
+      context.moveTo(documentWidth / 2, 0)
+      context.lineTo(documentWidth / 2, documentHeight)
       context.stroke()
       context.restore()
     }
@@ -1518,7 +1651,7 @@ function App() {
       context.setLineDash([10, 6])
       context.beginPath()
       context.moveTo(0, 0)
-      context.lineTo(0, DOCUMENT_HEIGHT)
+      context.lineTo(0, documentHeight)
       context.stroke()
       context.restore()
     }
@@ -1529,8 +1662,8 @@ function App() {
       context.lineWidth = 1.5
       context.setLineDash([10, 6])
       context.beginPath()
-      context.moveTo(DOCUMENT_WIDTH, 0)
-      context.lineTo(DOCUMENT_WIDTH, DOCUMENT_HEIGHT)
+      context.moveTo(documentWidth, 0)
+      context.lineTo(documentWidth, documentHeight)
       context.stroke()
       context.restore()
     }
@@ -1541,8 +1674,8 @@ function App() {
       context.lineWidth = 1.5
       context.setLineDash([10, 6])
       context.beginPath()
-      context.moveTo(0, DOCUMENT_HEIGHT / 2)
-      context.lineTo(DOCUMENT_WIDTH, DOCUMENT_HEIGHT / 2)
+      context.moveTo(0, documentHeight / 2)
+      context.lineTo(documentWidth, documentHeight / 2)
       context.stroke()
       context.restore()
     }
@@ -1554,7 +1687,7 @@ function App() {
       context.setLineDash([10, 6])
       context.beginPath()
       context.moveTo(0, 0)
-      context.lineTo(DOCUMENT_WIDTH, 0)
+      context.lineTo(documentWidth, 0)
       context.stroke()
       context.restore()
     }
@@ -1565,12 +1698,12 @@ function App() {
       context.lineWidth = 1.5
       context.setLineDash([10, 6])
       context.beginPath()
-      context.moveTo(0, DOCUMENT_HEIGHT)
-      context.lineTo(DOCUMENT_WIDTH, DOCUMENT_HEIGHT)
+      context.moveTo(0, documentHeight)
+      context.lineTo(documentWidth, documentHeight)
       context.stroke()
       context.restore()
     }
-  }, [activeMoveGuides, documentState, floatingSelection, gradientPreview, lassoSelection])
+  }, [activeMoveGuides, documentHeight, documentState, documentWidth, floatingSelection, gradientPreview, lassoSelection])
 
   useEffect(() => {
     function handlePointerMove(event) {
@@ -1583,7 +1716,7 @@ function App() {
 
       const liveDocumentState = documentStateRef.current
 
-      const documentPoint = toDocumentCoordinates(event, canvas, viewport)
+      const documentPoint = toDocumentCoordinates(event, canvas, viewport, documentScale)
 
       if (!documentPoint) {
         return
@@ -1602,8 +1735,8 @@ function App() {
           nextPosition.y,
           interaction.frameWidth,
           interaction.frameHeight,
-          DOCUMENT_WIDTH,
-          DOCUMENT_HEIGHT,
+          documentWidth,
+          documentHeight,
           {
             enabled: isSnapEnabled,
             enabledX: nextPosition.lockedAxis !== 'vertical',
@@ -1647,8 +1780,8 @@ function App() {
           nextPosition.y,
           interaction.frameWidth,
           interaction.frameHeight,
-          DOCUMENT_WIDTH,
-          DOCUMENT_HEIGHT,
+          documentWidth,
+          documentHeight,
           {
             enabled: isSnapEnabled,
             enabledX: nextPosition.lockedAxis !== 'vertical',
@@ -2051,7 +2184,7 @@ function App() {
           let layerPoint = null
 
           if (interaction.layerType === 'raster') {
-            const sampleDocumentPoint = toDocumentCoordinates(pointerSample, canvas, viewport)
+            const sampleDocumentPoint = toDocumentCoordinates(pointerSample, canvas, viewport, documentScale)
             const sampleLocalPoint = sampleDocumentPoint
               ? toLayerLocalPoint(expandedLayer, sampleDocumentPoint)
               : null
@@ -2615,7 +2748,19 @@ function App() {
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [commit, commitTransientChange, documentState, drawRasterLayer, globalColors, isSnapEnabled, setTransient, viewport])
+  }, [
+    commit,
+    commitTransientChange,
+    documentHeight,
+    documentScale,
+    documentState,
+    documentWidth,
+    drawRasterLayer,
+    globalColors,
+    isSnapEnabled,
+    setTransient,
+    viewport,
+  ])
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -2975,6 +3120,8 @@ function App() {
     if (selectedDocumentLayer && isSvgImageLayer(selectedDocumentLayer)) {
       const nextLayer = createRasterLayer({
         name: `${selectedDocumentLayer.name} Paint`,
+        width: documentWidth,
+        height: documentHeight,
       })
 
       lastPenEditableLayerIdRef.current = nextLayer.id
@@ -2989,6 +3136,8 @@ function App() {
     if (isSvgImageLayer(targetLayer)) {
       const nextLayer = createRasterLayer({
         name: `${targetLayer.name} Paint`,
+        width: documentWidth,
+        height: documentHeight,
       })
 
       lastPenEditableLayerIdRef.current = nextLayer.id
@@ -3011,6 +3160,8 @@ function App() {
 
     const nextLayer = createRasterLayer({
       name: 'Drawing Layer',
+      width: documentWidth,
+      height: documentHeight,
     })
 
     lastPenEditableLayerIdRef.current = nextLayer.id
@@ -3043,18 +3194,103 @@ function App() {
   }, [])
 
   const loadDocumentState = useCallback((nextDocumentState) => {
+    const normalizedDocument = normalizeDocumentState(nextDocumentState)
+
     resetEditorRuntimeState()
-    reset(normalizeDocumentState(nextDocumentState))
+    setIsNewFileModalOpen(false)
+    setIsUnsavedChangesModalOpen(false)
+    setSavedDocumentSignature(serializeProjectFile(normalizedDocument))
+    reset(normalizedDocument)
   }, [reset, resetEditorRuntimeState])
+
+  function openNewFileModal() {
+    setNewFileNameInput(DEFAULT_DOCUMENT_NAME)
+    setNewFileWidthInput(String(DEFAULT_DOCUMENT_WIDTH))
+    setNewFileHeightInput(String(DEFAULT_DOCUMENT_HEIGHT))
+    setIsNewFileModalOpen(true)
+  }
 
   function handleNewFile() {
     setIsFileMenuOpen(false)
-    loadDocumentState(createInitialDocument())
+
+    if (hasUnsavedChanges) {
+      setIsUnsavedChangesModalOpen(true)
+      return
+    }
+
+    openNewFileModal()
   }
+
+  const handleCancelNewFile = useCallback(() => {
+    setIsNewFileModalOpen(false)
+  }, [])
+
+  const handleCancelUnsavedChanges = useCallback(() => {
+    setIsUnsavedChangesModalOpen(false)
+  }, [])
+
+  const handleDiscardAndCreateNew = useCallback(() => {
+    setIsUnsavedChangesModalOpen(false)
+    openNewFileModal()
+  }, [])
+
+  const handleCreateNewFile = useCallback(() => {
+    const name = normalizeNewFileNameInput(newFileNameInput, DEFAULT_DOCUMENT_NAME)
+    const width = normalizeNewFileDimensionInput(newFileWidthInput, DEFAULT_DOCUMENT_WIDTH)
+    const height = normalizeNewFileDimensionInput(newFileHeightInput, DEFAULT_DOCUMENT_HEIGHT)
+
+    setNewFileNameInput(name)
+    setNewFileWidthInput(String(width))
+    setNewFileHeightInput(String(height))
+    loadDocumentState(createInitialDocument(width, height, name))
+  }, [loadDocumentState, newFileHeightInput, newFileNameInput, newFileWidthInput])
+
+  useEffect(() => {
+    if (!isNewFileModalOpen) {
+      return undefined
+    }
+
+    function handleNewFileModalKeyDown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        handleCancelNewFile()
+        return
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        handleCreateNewFile()
+      }
+    }
+
+    window.addEventListener('keydown', handleNewFileModalKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', handleNewFileModalKeyDown)
+    }
+  }, [handleCancelNewFile, handleCreateNewFile, isNewFileModalOpen])
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      return undefined
+    }
+
+    function handleBeforeUnload(event) {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [hasUnsavedChanges])
 
   function handleSaveFile() {
     setIsFileMenuOpen(false)
-    downloadProjectFile(documentState)
+    downloadProjectFile(documentState, getDocumentFilenameBase(documentName, 'fukmall-project'))
+    setSavedDocumentSignature(currentDocumentSignature)
   }
 
   function handleOpenFileClick() {
@@ -3094,9 +3330,10 @@ function App() {
     try {
       await exportDocumentImage(
         documentState,
-        DOCUMENT_WIDTH,
-        DOCUMENT_HEIGHT,
+        documentWidth,
+        documentHeight,
         format,
+        getDocumentFilenameBase(documentName, 'fukmall-export'),
       )
     } catch {
       // Ignore failed exports for the MVP.
@@ -3121,7 +3358,12 @@ function App() {
       const sourceKind = getImportedSourceKind(file, imageDataUrl)
       const { width, height } = await loadImageDimensionsFromSource(imageDataUrl)
       const dimensions = getImportedImageDimensions(width, height)
-      const position = getDefaultImportedImagePosition(dimensions.width, dimensions.height)
+      const position = getDefaultImportedImagePosition(
+        dimensions.width,
+        dimensions.height,
+        documentWidth,
+        documentHeight,
+      )
 
       addLayer(() =>
         createImageLayer({
@@ -3182,6 +3424,8 @@ function App() {
       Math.round(y - (height / 2)),
       width,
       height,
+      documentWidth,
+      documentHeight,
     )
 
     return createImageLayer({
@@ -3241,7 +3485,7 @@ function App() {
     setDraggedAssetId(null)
 
     const asset = assetLibrary.find((candidate) => candidate.id === assetId)
-    const dropPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+    const dropPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
 
     if (!asset || !dropPoint) {
       return
@@ -3295,7 +3539,7 @@ function App() {
   }
 
   function toLayerSurfacePoint(pointerEvent, layer, surfaceCanvas) {
-    const documentPoint = toDocumentCoordinates(pointerEvent, canvasRef.current, viewport)
+    const documentPoint = toDocumentCoordinates(pointerEvent, canvasRef.current, viewport, documentScale)
 
     if (!documentPoint) {
       return null
@@ -3471,7 +3715,7 @@ function App() {
       return
     }
 
-    const documentPoint = toDocumentCoordinates(event, canvas, viewport)
+    const documentPoint = toDocumentCoordinates(event, canvas, viewport, documentScale)
 
     if (!documentPoint) {
       return
@@ -3543,7 +3787,7 @@ function App() {
       return
     }
 
-    const documentPoint = toDocumentCoordinates(event, canvas, viewport)
+    const documentPoint = toDocumentCoordinates(event, canvas, viewport, documentScale)
 
     if (!documentPoint) {
       return
@@ -3659,10 +3903,10 @@ function App() {
     const surfaceEntry = getRasterSurfaceEntry(penLayer.id)
     const isTextPenLayer = penLayer.type === 'text'
     let interactionLayer = penLayer
-    const initialDocumentPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+    const initialDocumentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
     let interactionSurface = null
 
-    if (shouldLocalizeEmptyRasterLayerForPen(penLayer) && initialDocumentPoint) {
+    if (shouldLocalizeEmptyRasterLayerForPen(penLayer, documentWidth, documentHeight) && initialDocumentPoint) {
       interactionLayer = createLocalizedRasterLayerForPenStart(
         penLayer,
         initialDocumentPoint,
@@ -3678,7 +3922,7 @@ function App() {
     }
 
     if (penLayer.type === 'raster') {
-      const documentPoint = initialDocumentPoint ?? toDocumentCoordinates(event, canvasRef.current, viewport)
+      const documentPoint = initialDocumentPoint ?? toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
       const localPoint = documentPoint ? toLayerLocalPoint(interactionLayer, documentPoint) : null
       const expansion = localPoint
         ? expandRasterLayerSurfaceToFitPoint(interactionLayer, interactionSurface, localPoint, (penSize / 2) + 2)
@@ -3955,7 +4199,7 @@ function App() {
 
     const surfaceCanvas = await ensureRasterLayerSurface(lassoLayer)
     const surfaceEntry = rasterSurfacesRef.current.get(lassoLayer.id)
-    const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+    const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
 
     if (!surfaceCanvas || !surfaceEntry || !documentPoint) {
       return
@@ -3983,7 +4227,7 @@ function App() {
   }
 
   function beginFloatingSelectionDrag(event) {
-    const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+    const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
 
     if (!floatingSelection || !documentPoint || !isPointInsideFloatingSelection(documentPoint, floatingSelection)) {
       return false
@@ -4316,7 +4560,7 @@ function App() {
     }
 
     if (currentTool === 'select') {
-      const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+      const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
       const hitLayer = documentPoint ? getTopmostSelectableLayerAtPoint(documentPoint) : layer
 
       event.stopPropagation()
@@ -4358,7 +4602,7 @@ function App() {
       }
 
       if (lassoSelection?.sourceLayerId === lassoLayer.id) {
-        const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport)
+        const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
 
         if (documentPoint && !isPointInsidePolygon(documentPoint, lassoSelection.points)) {
           setLassoSelection(null)
@@ -4398,6 +4642,17 @@ function App() {
       return
     }
 
+    if (
+      !documentState.layers.length &&
+      (currentTool === 'pen' ||
+        currentTool === 'eraser' ||
+        currentTool === 'bucket' ||
+        currentTool === 'gradient')
+    ) {
+      showToolPanelError(NO_LAYERS_TOOL_ERROR_MESSAGE)
+      return
+    }
+
     if (currentTool === 'lasso') {
       if (beginFloatingSelectionDrag(event)) {
         return
@@ -4424,14 +4679,10 @@ function App() {
     }
 
     if (currentTool === 'pen') {
-      if (!documentState.layers.length) {
-        beginPenStroke(event, null)
-      } else {
-        const activePenLayer = getSingleSelectedLayer(documentState)
+      const activePenLayer = getSingleSelectedLayer(documentState)
 
-        if (activePenLayer && canPaintWithPenOnLayer(activePenLayer)) {
-          beginPenStroke(event, activePenLayer)
-        }
+      if (activePenLayer && canPaintWithPenOnLayer(activePenLayer)) {
+        beginPenStroke(event, activePenLayer)
       }
       return
     }
@@ -4522,17 +4773,17 @@ function App() {
       const nextViewport = zoomAtPoint(
         {
           ...currentViewport,
-          zoom: currentViewport.zoom * BASE_DOCUMENT_SCALE,
+          zoom: currentViewport.zoom * documentScale,
         },
         pointerPosition.x,
         pointerPosition.y,
         zoomFactor,
-        MIN_VIEWPORT_ZOOM * BASE_DOCUMENT_SCALE,
-        MAX_VIEWPORT_ZOOM * BASE_DOCUMENT_SCALE,
+        MIN_VIEWPORT_ZOOM * documentScale,
+        MAX_VIEWPORT_ZOOM * documentScale,
       )
 
       return {
-        zoom: nextViewport.zoom / BASE_DOCUMENT_SCALE,
+        zoom: nextViewport.zoom / documentScale,
         offsetX: nextViewport.offsetX,
         offsetY: nextViewport.offsetY,
       }
@@ -4832,7 +5083,7 @@ function App() {
         <button
           className={currentTool === 'select' ? 'action-button active' : 'action-button'}
           type="button"
-          onClick={() => setActiveTool('select')}
+          onClick={() => activateTool('select')}
           aria-label="Select"
         >
           <img className="button-icon" src={pointerIcon} alt="" aria-hidden="true" />
@@ -4840,7 +5091,7 @@ function App() {
         <button
           className={currentTool === 'pen' ? 'action-button active' : 'action-button'}
           type="button"
-          onClick={() => setActiveTool('pen')}
+          onClick={() => activateTool('pen')}
           aria-label="Pen"
         >
           <img className="button-icon" src={penIcon} alt="" aria-hidden="true" />
@@ -4848,7 +5099,7 @@ function App() {
         <button
           className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
           type="button"
-          onClick={() => setActiveTool('eraser')}
+          onClick={() => activateTool('eraser')}
           aria-label="Eraser"
         >
           <img className="button-icon" src={eraserIcon} alt="" aria-hidden="true" />
@@ -4856,7 +5107,7 @@ function App() {
         <button
           className={currentTool === 'zoom' ? 'action-button active' : 'action-button'}
           type="button"
-          onClick={() => setActiveTool('zoom')}
+          onClick={() => activateTool('zoom')}
           onDoubleClick={() => setViewport({ zoom: 1, offsetX: 0, offsetY: 0 })}
           aria-label="Zoom"
         >
@@ -4867,7 +5118,7 @@ function App() {
         <button
           className={currentTool === 'bucket' ? 'action-button active' : 'action-button'}
           type="button"
-          onClick={() => setActiveTool('bucket')}
+          onClick={() => activateTool('bucket')}
           aria-label="Bucket Fill"
         >
           <img className="button-icon" src={bucketIcon} alt="" aria-hidden="true" />
@@ -4875,7 +5126,7 @@ function App() {
         <button
           className={currentTool === 'gradient' ? 'action-button active' : 'action-button'}
           type="button"
-          onClick={() => setActiveTool('gradient')}
+          onClick={() => activateTool('gradient')}
           aria-label="Gradient"
         >
           <img className="button-icon" src={gradientIcon} alt="" aria-hidden="true" />
@@ -4883,7 +5134,7 @@ function App() {
         <button
           className={currentTool === 'lasso' ? 'action-button active' : 'action-button'}
           type="button"
-          onClick={() => setActiveTool('lasso')}
+          onClick={() => activateTool('lasso')}
           aria-label="Lasso"
         >
           <img className="button-icon" src={lassoIcon} alt="" aria-hidden="true" />
@@ -4903,6 +5154,118 @@ function App() {
           void handleOpenFile(event)
         }}
       />
+      {isUnsavedChangesModalOpen && (
+        <div
+          className="modal-backdrop"
+          onPointerDown={handleCancelUnsavedChanges}
+          role="presentation"
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Unsaved changes"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Unsaved Changes</p>
+                <h2>Create New File?</h2>
+              </div>
+            </div>
+            <div className="modal-body single-column">
+              <p className="modal-copy">
+                You have unsaved changes. Are you sure you want to create a new file without
+                saving?
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button
+                className="action-button"
+                type="button"
+                onClick={handleCancelUnsavedChanges}
+              >
+                Cancel
+              </button>
+              <button
+                className="action-button active"
+                type="button"
+                onClick={handleDiscardAndCreateNew}
+              >
+                Discard and Create New
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isNewFileModalOpen && (
+        <div
+          className="modal-backdrop"
+          onPointerDown={handleCancelNewFile}
+          role="presentation"
+        >
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="New file dimensions"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">New File</p>
+                <h2>Document Size</h2>
+              </div>
+            </div>
+            <div className="modal-body">
+              <label className="property-field full-width">
+                <span>Name</span>
+                <input
+                  type="text"
+                  value={newFileNameInput}
+                  onChange={(event) => setNewFileNameInput(event.target.value)}
+                />
+              </label>
+              <label className="property-field">
+                <span>Width</span>
+                <input
+                  type="number"
+                  min={MIN_DOCUMENT_DIMENSION}
+                  step="1"
+                  value={newFileWidthInput}
+                  onChange={(event) => setNewFileWidthInput(event.target.value)}
+                />
+              </label>
+              <label className="property-field">
+                <span>Height</span>
+                <input
+                  type="number"
+                  min={MIN_DOCUMENT_DIMENSION}
+                  step="1"
+                  value={newFileHeightInput}
+                  onChange={(event) => setNewFileHeightInput(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="modal-actions">
+              <button
+                className="action-button"
+                type="button"
+                onClick={handleCancelNewFile}
+              >
+                Cancel
+              </button>
+              <button
+                className="action-button active"
+                type="button"
+                onClick={handleCreateNewFile}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div ref={fileMenuRef} className="app-file-menu">
         <button
           className={isFileMenuOpen ? 'action-button active' : 'action-button'}
@@ -4964,6 +5327,13 @@ function App() {
       <section className="editor-panel">
         <header className="editor-topbar">
           {leftToolButtons}
+          <div
+            className={`tool-panel-error${toolPanelError.isVisible ? ' visible' : ''}${toolPanelError.isFading ? ' fading' : ''}`}
+            role="status"
+            aria-live="polite"
+          >
+            {toolPanelError.message}
+          </div>
           <div className="toolbar-actions">
             {(currentTool === 'pen' || currentTool === 'eraser') && (
               <>
@@ -5214,10 +5584,19 @@ function App() {
                 <div
                   className="canvas-viewport"
                   style={{
-                    transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * BASE_DOCUMENT_SCALE})`,
+                    width: `${documentWidth}px`,
+                    height: `${documentHeight}px`,
+                    transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * documentScale})`,
                   }}
                 >
-                  <div ref={canvasSurfaceRef} className="canvas-surface">
+                  <div
+                    ref={canvasSurfaceRef}
+                    className="canvas-surface"
+                    style={{
+                      width: `${documentWidth}px`,
+                      height: `${documentHeight}px`,
+                    }}
+                  >
                     {documentState.layers.map(renderLayer)}
                     {renderSharedSelectionOverlay()}
                     <canvas ref={overlayCanvasRef} className="canvas-overlay" aria-hidden="true" />
@@ -5420,6 +5799,8 @@ function App() {
                     addLayer(() =>
                       createRasterLayer({
                         name: 'Drawing Layer',
+                        width: documentWidth,
+                        height: documentHeight,
                       }),
                     )
                   }

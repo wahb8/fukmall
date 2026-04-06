@@ -1,4 +1,10 @@
-import { findLayer, normalizeLinkedLayerReferences } from './layers'
+import {
+  DEFAULT_DOCUMENT_HEIGHT,
+  DEFAULT_DOCUMENT_NAME,
+  DEFAULT_DOCUMENT_WIDTH,
+  findLayer,
+  normalizeLinkedLayerReferences,
+} from './layers'
 
 const PROJECT_APP_NAME = 'Fukmall'
 const PROJECT_FORMAT_VERSION = 1
@@ -19,10 +25,33 @@ function isSupportedDocumentLayer(layer) {
   return layer?.type !== 'group'
 }
 
+function normalizeDocumentDimension(value, fallback) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return fallback
+  }
+
+  return Math.max(1, Math.round(numericValue))
+}
+
+function normalizeDocumentName(value) {
+  if (typeof value !== 'string') {
+    return DEFAULT_DOCUMENT_NAME
+  }
+
+  const trimmedValue = value.trim()
+
+  return trimmedValue || DEFAULT_DOCUMENT_NAME
+}
+
 export function normalizeDocumentState(documentState) {
   const layers = normalizeLinkedLayerReferences(Array.isArray(documentState?.layers)
     ? documentState.layers.filter(isSupportedDocumentLayer)
     : [])
+  const name = normalizeDocumentName(documentState?.name)
+  const width = normalizeDocumentDimension(documentState?.width, DEFAULT_DOCUMENT_WIDTH)
+  const height = normalizeDocumentDimension(documentState?.height, DEFAULT_DOCUMENT_HEIGHT)
   const selectedLayerIds = Array.isArray(documentState?.selectedLayerIds)
     ? documentState.selectedLayerIds.filter((layerId) => findLayer({ layers }, layerId))
     : []
@@ -30,6 +59,9 @@ export function normalizeDocumentState(documentState) {
   const selectedLayerId = getFallbackSelectedLayerId({ layers }, preferredLayerId)
 
   return {
+    name,
+    width,
+    height,
     layers,
     selectedLayerId,
     selectedLayerIds: selectedLayerId
