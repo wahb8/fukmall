@@ -154,6 +154,14 @@ The current import rules are:
 
 If future work adds optional "fit to canvas" behavior, it should be an explicit user-facing action rather than the default import path.
 
+The app also now supports external desktop file drag/drop for supported image files.
+
+Current behavior:
+
+- external image drops reuse the direct file-import placement path rather than the asset-library drop path
+- the drop overlay is transient UI only and should not interfere with internal asset-library drags
+- detection should stay conservative so unsupported file drags do not trigger the import affordance
+
 ### Simple SVG Support
 
 SVG support is intentionally simple:

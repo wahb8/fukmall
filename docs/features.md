@@ -48,6 +48,7 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 ### Imported Image Placement
 
 - direct image import places the image centered within the `1080 x 1440` document when possible
+- dragging a supported image file in from the desktop now reuses this same centered direct-import placement behavior
 - asset-library drop places the image around the drop point
 - if an imported image would land partly outside the document, its position is clamped back into bounds
 - this keeps large imports, including full-canvas `1080 x 1440` images, from appearing incorrectly offset
@@ -245,6 +246,18 @@ Layout behavior:
 - each asset card sizes itself according to its name length instead of matching the tallest neighboring card
 
 This asset library is session-local. There is no persistence beyond the current page state.
+
+## External File Drop
+
+The editor also supports dragging supported image files in from the user's machine.
+
+Current behavior:
+
+- dragging a PNG, JPG, JPEG, WEBP, or SVG file over the app shows a stage-centered import overlay
+- dropping a supported image file imports it through the same direct image import flow used by the normal file picker
+- the browser's default file-open navigation is prevented for supported image drops
+- internal asset-library drag/drop remains separate and continues to use the existing asset MIME path
+- unsupported file types are ignored and do not show the image import overlay
 
 ## Viewport and Navigation
 

@@ -459,6 +459,12 @@
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.28);
 }
 
+.canvas-stage.external-file-drop-active {
+  box-shadow:
+    0 0 0 3px rgba(15, 118, 110, 0.28),
+    0 24px 60px rgba(15, 118, 110, 0.14);
+}
+
 .canvas-viewport {
   position: absolute;
   inset: 0 auto auto 0;
@@ -487,6 +493,36 @@
   height: 100%;
   pointer-events: none;
   z-index: 999;
+}
+
+.external-image-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1001;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.external-image-drop-card {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  border-radius: 22px;
+  background: rgba(255, 250, 242, 0.96);
+  box-shadow: 0 24px 64px rgba(68, 43, 15, 0.18);
+  color: var(--ink);
+  text-align: center;
+}
+
+.external-image-drop-card strong {
+  font-size: 1rem;
+  line-height: 1.3;
 }
 
 .canvas-prompt-shell {

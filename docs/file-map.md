@@ -96,6 +96,7 @@ This document describes what each tracked file in the repo currently does.
 - contains the current resize-session snapshot logic and the `5000 x 5000` absolute resize cap
 - contains the raster pen surface-expansion logic, including the stable preview-offset behavior that prevents the layer from twitching while a stroke grows beyond the current working surface
 - contains the live document-state ref used by long-lived pointer handlers so paint/edit mapping follows the current layer transform after move operations
+- contains the external desktop image-file drag/drop entry path, including supported-file detection, overlay state wiring, and reuse of the direct import flow
 - this is currently the most important file in the repo
 
 ## Editor-Specific App Modules
@@ -130,6 +131,11 @@ This document describes what each tracked file in the repo currently does.
 
 - presentational asset library sidebar
 - renders asset import UI, empty state, drag-start/drag-end wiring, and delete buttons
+
+### `src/components/editor/ExternalImageDropOverlay.jsx`
+
+- thin presentational overlay for supported external desktop image-file drags
+- communicates that dropping a supported image file will import it through the current import flow
 
 ### `src/components/editor/LayerPanel.jsx`
 

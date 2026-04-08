@@ -3,6 +3,7 @@ import './App.css'
 import addImageIcon from './assets/add image.svg'
 import { AssetLibraryPanel } from './components/editor/AssetLibraryPanel'
 import { EditorToolbar } from './components/editor/EditorToolbar'
+import { ExternalImageDropOverlay } from './components/editor/ExternalImageDropOverlay'
 import { FileMenu } from './components/editor/FileMenu'
 import { LayerPanel } from './components/editor/LayerPanel'
 import { PromptShell } from './components/editor/PromptShell'
@@ -146,6 +147,31 @@ function isSupportedAssetFile(file) {
   return Boolean(file) && /^image\/(png|jpeg|jpg|svg\+xml|webp)$/i.test(file.type)
 }
 
+function getSupportedImageFiles(files) {
+  return Array.from(files ?? []).filter(isSupportedAssetFile)
+}
+
+function isInternalAssetDrag(dataTransfer) {
+  return Boolean(dataTransfer?.types?.includes(ASSET_DRAG_MIME_TYPE))
+}
+
+function hasSupportedExternalImageDrag(dataTransfer) {
+  if (!dataTransfer || isInternalAssetDrag(dataTransfer)) {
+    return false
+  }
+
+  const items = Array.from(dataTransfer.items ?? [])
+
+  if (items.length > 0) {
+    return items.some((item) => (
+      item.kind === 'file' &&
+      /^image\/(png|jpeg|jpg|svg\+xml|webp)$/i.test(item.type)
+    ))
+  }
+
+  return getSupportedImageFiles(dataTransfer.files).length > 0
+}
+
 function getAssetKind(file) {
   const lowerName = file.name.toLowerCase()
 
@@ -181,7 +207,7 @@ function getImportedSourceKind(file, src) {
 }
 
 async function importAssetsFromFiles(files) {
-  const supportedFiles = Array.from(files ?? []).filter(isSupportedAssetFile)
+  const supportedFiles = getSupportedImageFiles(files)
 
   return Promise.all(supportedFiles.map(async (file) => {
     const src = await readFileAsDataUrl(file)
@@ -890,6 +916,7 @@ function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
 }
 
 function App() {
+  const appShellRef = useRef(null)
   const canvasRef = useRef(null)
   const canvasSurfaceRef = useRef(null)
   const overlayCanvasRef = useRef(null)
@@ -903,6 +930,7 @@ function App() {
   const copiedLayerRef = useRef(null)
   const lastPenEditableLayerIdRef = useRef(null)
   const textEditorRef = useRef(null)
+  const externalImageDragDepthRef = useRef(0)
   const toolPanelErrorFadeTimeoutRef = useRef(null)
   const toolPanelErrorClearTimeoutRef = useRef(null)
   const {
@@ -948,6 +976,7 @@ function App() {
   const [draggedAssetId, setDraggedAssetId] = useState(null)
   const [activeSvgToolLayerId, setActiveSvgToolLayerId] = useState(null)
   const [isCanvasAssetDropActive, setIsCanvasAssetDropActive] = useState(false)
+  const [isExternalImageDragActive, setIsExternalImageDragActive] = useState(false)
   const [isSnapEnabled] = useState(true)
   const [isExporting, setIsExporting] = useState(false)
   const [isOpeningFile, setIsOpeningFile] = useState(false)
@@ -958,6 +987,10 @@ function App() {
     offsetX: 0,
     offsetY: 0,
   })
+  const resetExternalImageDragState = useCallback(() => {
+    externalImageDragDepthRef.current = 0
+    setIsExternalImageDragActive(false)
+  }, [])
 
   const selectedLayerIds = useMemo(() => (
     documentState.selectedLayerIds ?? (
@@ -3067,6 +3100,7 @@ function App() {
     rasterSurfacesRef.current = new Map()
     copiedLayerRef.current = null
     lastPenEditableLayerIdRef.current = null
+    externalImageDragDepthRef.current = 0
     setEditingTextLayerId(null)
     setTextDraft('')
     setActiveTool('select')
@@ -3078,6 +3112,7 @@ function App() {
     setDraggedAssetId(null)
     setActiveSvgToolLayerId(null)
     setIsCanvasAssetDropActive(false)
+    setIsExternalImageDragActive(false)
     setActiveMoveGuides(createEmptySnapGuides())
     setViewport({
       zoom: 1,
@@ -3180,6 +3215,24 @@ function App() {
     }
   }, [hasUnsavedChanges])
 
+  useEffect(() => {
+    function handleWindowDrop() {
+      resetExternalImageDragState()
+    }
+
+    function handleWindowDragEnd() {
+      resetExternalImageDragState()
+    }
+
+    window.addEventListener('drop', handleWindowDrop)
+    window.addEventListener('dragend', handleWindowDragEnd)
+
+    return () => {
+      window.removeEventListener('drop', handleWindowDrop)
+      window.removeEventListener('dragend', handleWindowDragEnd)
+    }
+  }, [resetExternalImageDragState])
+
   function handleSaveFile() {
     setIsFileMenuOpen(false)
     downloadProjectFile(documentState, getDocumentFilenameBase(documentName, 'fukmall-project'))
@@ -3235,10 +3288,39 @@ function App() {
     }
   }
 
+  async function importImageFile(file) {
+    const imageDataUrl = await readFileAsDataUrl(file)
+    const sourceKind = getImportedSourceKind(file, imageDataUrl)
+    const { width, height } = await loadImageDimensionsFromSource(imageDataUrl)
+    const dimensions = getImportedImageDimensions(width, height)
+    const position = getDefaultImportedImagePosition(
+      dimensions.width,
+      dimensions.height,
+      documentWidth,
+      documentHeight,
+    )
+
+    addLayer(() =>
+      createImageLayer({
+        x: position.x,
+        y: position.y,
+        width: dimensions.width,
+        height: dimensions.height,
+        name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
+        src: imageDataUrl,
+        bitmap: imageDataUrl,
+        sourceKind,
+        fit: 'fill',
+      }),
+    )
+    setActiveTool('select')
+  }
+
   async function handleImageImport(event) {
-    const file = event.target.files?.[0]
+    const file = getSupportedImageFiles(event.target.files)[0]
 
     if (!file) {
+      event.target.value = ''
       return
     }
 
@@ -3247,31 +3329,7 @@ function App() {
     }
 
     try {
-      const imageDataUrl = await readFileAsDataUrl(file)
-      const sourceKind = getImportedSourceKind(file, imageDataUrl)
-      const { width, height } = await loadImageDimensionsFromSource(imageDataUrl)
-      const dimensions = getImportedImageDimensions(width, height)
-      const position = getDefaultImportedImagePosition(
-        dimensions.width,
-        dimensions.height,
-        documentWidth,
-        documentHeight,
-      )
-
-      addLayer(() =>
-        createImageLayer({
-          x: position.x,
-          y: position.y,
-          width: dimensions.width,
-          height: dimensions.height,
-          name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
-          src: imageDataUrl,
-          bitmap: imageDataUrl,
-          sourceKind,
-          fit: 'fill',
-        }),
-      )
-      setActiveTool('select')
+      await importImageFile(file)
     } catch {
       // Ignore failed imports for the MVP.
     }
@@ -3353,16 +3411,87 @@ function App() {
     }
   }
 
-  function handleCanvasAssetDragOver(event) {
-    if (!event.dataTransfer.types.includes(ASSET_DRAG_MIME_TYPE)) {
+  function handleExternalImageDragEnter(event) {
+    if (!hasSupportedExternalImageDrag(event.dataTransfer)) {
+      return
+    }
+
+    event.preventDefault()
+    externalImageDragDepthRef.current += 1
+
+    if (!isExternalImageDragActive) {
+      setIsExternalImageDragActive(true)
+    }
+  }
+
+  function handleExternalImageDragOver(event) {
+    if (!hasSupportedExternalImageDrag(event.dataTransfer)) {
       return
     }
 
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
 
-    if (!isCanvasAssetDropActive) {
-      setIsCanvasAssetDropActive(true)
+    if (!isExternalImageDragActive) {
+      setIsExternalImageDragActive(true)
+    }
+  }
+
+  function handleExternalImageDragLeave(event) {
+    if (!isExternalImageDragActive || isInternalAssetDrag(event.dataTransfer)) {
+      return
+    }
+
+    if (appShellRef.current?.contains(event.relatedTarget)) {
+      return
+    }
+
+    externalImageDragDepthRef.current = Math.max(0, externalImageDragDepthRef.current - 1)
+
+    if (externalImageDragDepthRef.current === 0) {
+      setIsExternalImageDragActive(false)
+    }
+  }
+
+  async function handleExternalImageDrop(event) {
+    if (!hasSupportedExternalImageDrag(event.dataTransfer)) {
+      return false
+    }
+
+    const file = getSupportedImageFiles(event.dataTransfer.files)[0]
+
+    event.preventDefault()
+    event.stopPropagation()
+    resetExternalImageDragState()
+
+    if (!file) {
+      return true
+    }
+
+    try {
+      await importImageFile(file)
+    } catch {
+      // Ignore failed imports for the MVP.
+    }
+
+    return true
+  }
+
+  function handleCanvasDragOver(event) {
+    if (event.dataTransfer.types.includes(ASSET_DRAG_MIME_TYPE)) {
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+
+      if (!isCanvasAssetDropActive) {
+        setIsCanvasAssetDropActive(true)
+      }
+
+      return
+    }
+
+    if (hasSupportedExternalImageDrag(event.dataTransfer)) {
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
     }
   }
 
@@ -3370,10 +3499,12 @@ function App() {
     const assetId = event.dataTransfer.getData(ASSET_DRAG_MIME_TYPE)
 
     if (!assetId) {
+      await handleExternalImageDrop(event)
       return
     }
 
     event.preventDefault()
+    event.stopPropagation()
     setIsCanvasAssetDropActive(false)
     setDraggedAssetId(null)
 
@@ -5017,7 +5148,16 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main
+      ref={appShellRef}
+      className="app-shell"
+      onDragEnter={handleExternalImageDragEnter}
+      onDragOver={handleExternalImageDragOver}
+      onDragLeave={handleExternalImageDragLeave}
+      onDrop={(event) => {
+        void handleExternalImageDrop(event)
+      }}
+    >
       <input
         ref={openFileInputRef}
         className="sr-only"
@@ -5110,9 +5250,13 @@ function App() {
             <section className="canvas-panel">
               <div
                 ref={canvasRef}
-                className={isCanvasAssetDropActive ? 'canvas-stage asset-drop-active' : 'canvas-stage'}
+                className={[
+                  'canvas-stage',
+                  isCanvasAssetDropActive ? 'asset-drop-active' : '',
+                  isExternalImageDragActive ? 'external-file-drop-active' : '',
+                ].filter(Boolean).join(' ')}
                 onPointerDown={handleCanvasPointerDown}
-                onDragOver={handleCanvasAssetDragOver}
+                onDragOver={handleCanvasDragOver}
                 onDragLeave={() => setIsCanvasAssetDropActive(false)}
                 onDrop={(event) => {
                   void handleCanvasAssetDrop(event)
@@ -5124,6 +5268,7 @@ function App() {
                 }}
                 role="presentation"
               >
+                <ExternalImageDropOverlay isVisible={isExternalImageDragActive} />
                 <div
                   className="canvas-viewport"
                   style={{
