@@ -8,7 +8,7 @@ This document describes what each tracked file in the repo currently does.
 
 - project metadata and npm scripts
 - declares React 19 and Vite runtime dependencies
-- exposes `dev`, `build`, `lint`, and `preview`
+- exposes `dev`, `build`, `lint`, `preview`, `test`, `test:watch`, and `test:run`
 
 ### `package-lock.json`
 

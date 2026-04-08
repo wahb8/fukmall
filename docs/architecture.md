@@ -15,6 +15,8 @@ The architecture is simple in packaging but dense in implementation:
 - Undo/redo is snapshot-based.
 - Raster and text surfaces are cached in memory using `canvas` elements stored in refs.
 - The app now supports flattened image export and simple file-based project save/open workflows.
+- The repo now also has a conservative Vitest-based unit/component test layer around pure helpers,
+  app-level editor helpers, and thin presentational components.
 
 ## Runtime Layers
 
@@ -167,6 +169,30 @@ The main data flow for most interactions is:
 - many behaviors are coupled through shared refs and local state
 - no formal domain boundary between product logic and UI composition
 - snapshot history may become expensive as documents/features grow
+
+## Testing Shape
+
+The current automated testing strategy is intentionally narrow and stability-first.
+
+Covered well:
+
+- snapshot history behavior
+- document/layer helper rules
+- project-file normalization
+- text helper logic
+- snapping and viewport math
+- app-level document helper behavior
+- thin presentational editor components
+
+Intentionally deferred for now:
+
+- deep `src/App.jsx` pointer lifecycle coverage
+- raster surface cache coordination
+- full canvas gesture integration
+- lasso/floating-selection orchestration inside the main app shell
+
+This matches the current architecture: test the pure seams first, and leave the most coupled
+interaction engine to manual regression testing until more of it is extracted cleanly.
 
 ## Current Extension Seams
 
