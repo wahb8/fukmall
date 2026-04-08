@@ -14,12 +14,33 @@ Other useful scripts:
 - `npm run build`
 - `npm run lint`
 - `npm run preview`
+- `npm run test`
+- `npm run test:run`
 
 ## Project Shape
 
 - `src/App.jsx` is the main app shell and currently owns most editor behavior.
 - `src/lib/` contains the main helper seams for document state, bitmap operations, text layout, export, and file serialization.
+- `src/editor/` contains app-specific editor helpers and constants that sit above the lower-level domain modules.
+- `src/components/editor/` contains thin presentational editor sections extracted from `App.jsx`.
 - `docs/` is the primary documentation set for architecture, features, state/history behavior, and editing constraints.
+
+## Tests
+
+The repo now includes a lightweight unit-test foundation using:
+
+- Vitest
+- jsdom
+- React Testing Library
+- `@testing-library/jest-dom`
+
+Current automated coverage is intentionally focused on the safest seams:
+
+- pure helper/domain modules in `src/lib/`
+- app-level helper logic in `src/editor/`
+- a few stable presentational components in `src/components/editor/`
+
+Current automated tests intentionally do not try to deeply cover the highest-risk interaction engine in `src/App.jsx`, including the full pointer lifecycle, raster surface cache coordination, and canvas gesture integration. Those areas still rely primarily on careful manual regression testing.
 
 ## Documentation
 

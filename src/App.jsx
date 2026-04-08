@@ -1,25 +1,45 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import addImageIcon from './assets/add image.svg'
-import addLayerIcon from './assets/add layer.svg'
-import addTextIcon from './assets/add text.svg'
-import bucketIcon from './assets/bucket.svg'
-import closeIcon from './assets/Close (X).svg'
-import duplicateIcon from './assets/duplicate.svg'
-import downIcon from './assets/down.svg'
-import eraserIcon from './assets/eraser.svg'
-import gradientIcon from './assets/gradient.svg'
-import heroImage from './assets/hero.png'
-import hiddenIcon from './assets/Hidden.svg'
-import lassoIcon from './assets/lasso.svg'
-import mergeDownIcon from './assets/merge down.svg'
-import penIcon from './assets/pen.svg'
-import pointerIcon from './assets/pointer.svg'
-import redoIcon from './assets/redo.svg'
-import undoIcon from './assets/undo.svg'
-import upIcon from './assets/up.svg'
-import visibleIcon from './assets/Visible.svg'
-import zoomIcon from './assets/zoom.svg'
+import { AssetLibraryPanel } from './components/editor/AssetLibraryPanel'
+import { EditorToolbar } from './components/editor/EditorToolbar'
+import { FileMenu } from './components/editor/FileMenu'
+import { LayerPanel } from './components/editor/LayerPanel'
+import { PromptShell } from './components/editor/PromptShell'
+import { NewFileModal } from './components/editor/modals/NewFileModal'
+import { UnsavedChangesModal } from './components/editor/modals/UnsavedChangesModal'
+import {
+  ASSET_DRAG_MIME_TYPE,
+  DEFAULT_BUCKET_TOLERANCE,
+  DEFAULT_ERASER_SIZE,
+  DEFAULT_PEN_SIZE,
+  DEFAULT_TEXT_SHADOW_OFFSET_X,
+  DEFAULT_TEXT_SHADOW_OFFSET_Y,
+  DEFAULT_TEXT_SHADOW_OPACITY,
+  DISPLAY_DOCUMENT_WIDTH,
+  HANDLE_DIRECTIONS,
+  MAX_LAYER_SIZE,
+  MAX_VIEWPORT_ZOOM,
+  MIN_DOCUMENT_DIMENSION,
+  MIN_LAYER_HEIGHT,
+  MIN_LAYER_WIDTH,
+  MIN_VIEWPORT_ZOOM,
+  NO_LAYERS_TOOL_ERROR_MESSAGE,
+  TOOL_PANEL_ERROR_DURATION_MS,
+  TOOL_PANEL_ERROR_FADE_DELAY_MS,
+  VIEWPORT_ZOOM_STEP,
+} from './editor/constants'
+import {
+  clampImportedImagePosition,
+  createBitmapEditableLayerPatch,
+  createImageLayerBitmapPatch,
+  createInitialDocument,
+  getDefaultImportedImagePosition,
+  getDocumentFilenameBase,
+  getImportedImageDimensions,
+  normalizeNewFileDimensionInput,
+  normalizeNewFileNameInput,
+} from './editor/documentHelpers'
 import { useHistory } from './hooks/useHistory'
 import { eraseDot, eraseStroke, paintMaskDot, paintMaskStroke } from './lib/eraserTool'
 import {
@@ -44,36 +64,31 @@ import {
   canMergeDown,
   clearSelection,
   cloneLayer,
-  createDocument,
   DEFAULT_DOCUMENT_NAME,
   DEFAULT_DOCUMENT_HEIGHT,
   DEFAULT_DOCUMENT_WIDTH,
   createImageLayer,
   createRasterLayer,
   createTextShadowLayer,
-  createShapeLayer,
   createTextLayer,
-  duplicateLayer,
   findLayer,
   getLayerBelow,
   getSelectedLayers,
   isAlphaLocked,
   isErasableLayer,
-  isLayerSelected,
   insertLayer,
   isSvgImageLayer,
   isRasterLayer,
   linkLayerPair,
   mergeLayerDown,
-  moveLayer,
   moveLayerToIndex,
-  removeLayer,
   removeLayers,
   selectSingleLayer,
   setLayerAlphaLock,
   toggleLayerInSelection,
   unlinkLayerPair,
   updateLayer,
+  isLayerSelected,
 } from './lib/layers'
 import {
   applyEraseMask,
@@ -126,33 +141,6 @@ import {
   parseProjectFile,
   serializeProjectFile,
 } from './lib/documentFiles'
-
-const HANDLE_DIRECTIONS = [
-  { key: 'nw', x: -1, y: -1 },
-  { key: 'n', x: 0, y: -1 },
-  { key: 'ne', x: 1, y: -1 },
-  { key: 'e', x: 1, y: 0 },
-  { key: 'se', x: 1, y: 1 },
-  { key: 's', x: 0, y: 1 },
-  { key: 'sw', x: -1, y: 1 },
-  { key: 'w', x: -1, y: 0 },
-]
-
-const MIN_LAYER_WIDTH = 72
-const MIN_LAYER_HEIGHT = 48
-const MAX_LAYER_SIZE = 5000
-const DEFAULT_ERASER_SIZE = 28
-const DEFAULT_PEN_SIZE = 16
-const DEFAULT_BUCKET_TOLERANCE = 200
-const MIN_DOCUMENT_DIMENSION = 1
-const DISPLAY_DOCUMENT_WIDTH = 428
-const TOOL_PANEL_ERROR_DURATION_MS = 4000
-const TOOL_PANEL_ERROR_FADE_DELAY_MS = 3200
-const MIN_VIEWPORT_ZOOM = 0.1
-const MAX_VIEWPORT_ZOOM = 8
-const VIEWPORT_ZOOM_STEP = 1.25
-const ASSET_DRAG_MIME_TYPE = 'application/x-fukmall-asset-id'
-const NO_LAYERS_TOOL_ERROR_MESSAGE = 'There are no layers to edit. Add a layer first.'
 
 function isSupportedAssetFile(file) {
   return Boolean(file) && /^image\/(png|jpeg|jpg|svg\+xml|webp)$/i.test(file.type)
@@ -384,155 +372,6 @@ function getFrameDimensions(layer) {
 
 function clampValue(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum)
-}
-
-function createInitialDocument(
-  width = DEFAULT_DOCUMENT_WIDTH,
-  height = DEFAULT_DOCUMENT_HEIGHT,
-  name = DEFAULT_DOCUMENT_NAME,
-) {
-  const scaleX = width / DEFAULT_DOCUMENT_WIDTH
-  const scaleY = height / DEFAULT_DOCUMENT_HEIGHT
-  const whiteBackground = createShapeLayer({
-    name: 'Background',
-    x: 0,
-    y: 0,
-    width,
-    height,
-    fill: '#ffffff',
-    radius: 0,
-  })
-  const background = createImageLayer({
-    name: 'Hero Image',
-    x: Math.round(76 * scaleX),
-    y: Math.round(62 * scaleY),
-    width: Math.max(MIN_LAYER_WIDTH, Math.round(360 * scaleX)),
-    height: Math.max(MIN_LAYER_HEIGHT, Math.round(260 * scaleY)),
-    src: heroImage,
-    bitmap: heroImage,
-  })
-  const card = createShapeLayer({
-    name: 'Color Block',
-    x: Math.round(340 * scaleX),
-    y: Math.round(120 * scaleY),
-    width: Math.max(MIN_LAYER_WIDTH, Math.round(220 * scaleX)),
-    height: Math.max(MIN_LAYER_HEIGHT, Math.round(220 * scaleY)),
-    fill: '#f97316',
-    radius: 34,
-  })
-  const title = createTextLayer({
-    name: 'Headline',
-    x: Math.round(126 * scaleX),
-    y: Math.round(114 * scaleY),
-    width: Math.max(MIN_LAYER_WIDTH, Math.round(300 * scaleX)),
-    height: Math.max(MIN_LAYER_HEIGHT, Math.round(120 * scaleY)),
-    text: 'A cleaner\nlayer stack',
-    fontSize: Math.max(8, Math.round(40 * Math.min(scaleX, scaleY))),
-  })
-
-  return createDocument(
-    [whiteBackground, background, card, title],
-    background.id,
-    width,
-    height,
-    name,
-  )
-}
-
-function normalizeNewFileDimensionInput(value, fallback) {
-  const numericValue = Number(value)
-
-  if (!Number.isFinite(numericValue)) {
-    return fallback
-  }
-
-  return Math.max(MIN_DOCUMENT_DIMENSION, Math.round(numericValue))
-}
-
-function normalizeNewFileNameInput(value, fallback = DEFAULT_DOCUMENT_NAME) {
-  if (typeof value !== 'string') {
-    return fallback
-  }
-
-  const trimmedValue = value.trim()
-
-  return trimmedValue || fallback
-}
-
-function getDocumentFilenameBase(name, fallback) {
-  const normalizedName = normalizeNewFileNameInput(name, fallback)
-  const sanitizedName = normalizedName
-    .replace(/[<>:"/\\|?*]/g, '-')
-    .split('')
-    .filter((character) => {
-      const codePoint = character.charCodeAt(0)
-
-      return codePoint >= 32
-    })
-    .join('')
-    .trim()
-
-  return sanitizedName || fallback
-}
-
-function getImportedImageDimensions(width, height) {
-  return {
-    width: Math.max(1, Math.round(width)),
-    height: Math.max(1, Math.round(height)),
-  }
-}
-
-function clampImportedImagePosition(x, y, width, height, documentWidth, documentHeight) {
-  const maxX = documentWidth - width
-  const maxY = documentHeight - height
-
-  return {
-    x: maxX >= 0 ? Math.min(Math.max(0, x), maxX) : 0,
-    y: maxY >= 0 ? Math.min(Math.max(0, y), maxY) : 0,
-  }
-}
-
-function getDefaultImportedImagePosition(width, height, documentWidth, documentHeight) {
-  return clampImportedImagePosition(
-    Math.round((documentWidth - width) / 2),
-    Math.round((documentHeight - height) / 2),
-    width,
-    height,
-    documentWidth,
-    documentHeight,
-  )
-}
-
-function createImageLayerBitmapPatch(layer, bitmap, overrides = {}) {
-  if (layer?.type !== 'image') {
-    return {
-      bitmap,
-      ...overrides,
-    }
-  }
-
-  return {
-    src: bitmap,
-    bitmap,
-    sourceKind: 'bitmap',
-    ...overrides,
-  }
-}
-
-function createBitmapEditableLayerPatch(layer, bitmap, overrides = {}) {
-  if (layer?.type === 'shape') {
-    return {
-      ...layer,
-      type: 'image',
-      src: bitmap,
-      bitmap,
-      sourceKind: 'bitmap',
-      fit: 'fill',
-      ...overrides,
-    }
-  }
-
-  return createImageLayerBitmapPatch(layer, bitmap, overrides)
 }
 
 function shouldLocalizeEmptyRasterLayerForPen(layer, documentWidth, documentHeight) {
@@ -1016,10 +855,6 @@ function createRasterizedLayerPatch(layer, bitmap, overrides = {}) {
     ...overrides,
   }
 }
-
-const DEFAULT_TEXT_SHADOW_OFFSET_X = 8
-const DEFAULT_TEXT_SHADOW_OFFSET_Y = 8
-const DEFAULT_TEXT_SHADOW_OPACITY = 0.4
 
 function layerLocalPointToDocumentPoint(layer, surfaceWidth, surfaceHeight, point) {
   if (!layer || !point || surfaceWidth <= 0 || surfaceHeight <= 0) {
@@ -5181,72 +5016,6 @@ function App() {
     )
   }
 
-  const leftToolButtons = (
-    <div className="toolbar-tools">
-      <div className="toolbar-tools-row">
-        <button
-          className={currentTool === 'select' ? 'action-button active' : 'action-button'}
-          type="button"
-          onClick={() => activateTool('select')}
-          aria-label="Select"
-        >
-          <img className="button-icon" src={pointerIcon} alt="" aria-hidden="true" />
-        </button>
-        <button
-          className={currentTool === 'pen' ? 'action-button active' : 'action-button'}
-          type="button"
-          onClick={() => activateTool('pen')}
-          aria-label="Pen"
-        >
-          <img className="button-icon" src={penIcon} alt="" aria-hidden="true" />
-        </button>
-        <button
-          className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
-          type="button"
-          onClick={() => activateTool('eraser')}
-          aria-label="Eraser"
-        >
-          <img className="button-icon" src={eraserIcon} alt="" aria-hidden="true" />
-        </button>
-        <button
-          className={currentTool === 'zoom' ? 'action-button active' : 'action-button'}
-          type="button"
-          onClick={() => activateTool('zoom')}
-          onDoubleClick={() => setViewport({ zoom: 1, offsetX: 0, offsetY: 0 })}
-          aria-label="Zoom"
-        >
-          <img className="button-icon" src={zoomIcon} alt="" aria-hidden="true" />
-        </button>
-      </div>
-      <div className="toolbar-tools-row">
-        <button
-          className={currentTool === 'bucket' ? 'action-button active' : 'action-button'}
-          type="button"
-          onClick={() => activateTool('bucket')}
-          aria-label="Bucket Fill"
-        >
-          <img className="button-icon" src={bucketIcon} alt="" aria-hidden="true" />
-        </button>
-        <button
-          className={currentTool === 'gradient' ? 'action-button active' : 'action-button'}
-          type="button"
-          onClick={() => activateTool('gradient')}
-          aria-label="Gradient"
-        >
-          <img className="button-icon" src={gradientIcon} alt="" aria-hidden="true" />
-        </button>
-        <button
-          className={currentTool === 'lasso' ? 'action-button active' : 'action-button'}
-          type="button"
-          onClick={() => activateTool('lasso')}
-          aria-label="Lasso"
-        >
-          <img className="button-icon" src={lassoIcon} alt="" aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  )
-
   return (
     <main className="app-shell">
       <input
@@ -5258,414 +5027,84 @@ function App() {
           void handleOpenFile(event)
         }}
       />
-      {isUnsavedChangesModalOpen && (
-        <div
-          className="modal-backdrop"
-          onPointerDown={handleCancelUnsavedChanges}
-          role="presentation"
-        >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Unsaved changes"
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <div>
-                <p className="eyebrow">Unsaved Changes</p>
-                <h2>Create New File?</h2>
-              </div>
-            </div>
-            <div className="modal-body single-column">
-              <p className="modal-copy">
-                You have unsaved changes. Are you sure you want to create a new file without
-                saving?
-              </p>
-            </div>
-            <div className="modal-actions">
-              <button
-                className="action-button"
-                type="button"
-                onClick={handleCancelUnsavedChanges}
-              >
-                Cancel
-              </button>
-              <button
-                className="action-button active"
-                type="button"
-                onClick={handleDiscardAndCreateNew}
-              >
-                Discard and Create New
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {isNewFileModalOpen && (
-        <div
-          className="modal-backdrop"
-          onPointerDown={handleCancelNewFile}
-          role="presentation"
-        >
-          <div
-            className="modal-card"
-            role="dialog"
-            aria-modal="true"
-            aria-label="New file dimensions"
-            onPointerDown={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <div>
-                <p className="eyebrow">New File</p>
-                <h2>Document Size</h2>
-              </div>
-            </div>
-            <div className="modal-body">
-              <label className="property-field full-width">
-                <span>Name</span>
-                <input
-                  type="text"
-                  value={newFileNameInput}
-                  onChange={(event) => setNewFileNameInput(event.target.value)}
-                />
-              </label>
-              <label className="property-field">
-                <span>Width</span>
-                <input
-                  type="number"
-                  min={MIN_DOCUMENT_DIMENSION}
-                  step="1"
-                  value={newFileWidthInput}
-                  onChange={(event) => setNewFileWidthInput(event.target.value)}
-                />
-              </label>
-              <label className="property-field">
-                <span>Height</span>
-                <input
-                  type="number"
-                  min={MIN_DOCUMENT_DIMENSION}
-                  step="1"
-                  value={newFileHeightInput}
-                  onChange={(event) => setNewFileHeightInput(event.target.value)}
-                />
-              </label>
-            </div>
-            <div className="modal-actions">
-              <button
-                className="action-button"
-                type="button"
-                onClick={handleCancelNewFile}
-              >
-                Cancel
-              </button>
-              <button
-                className="action-button active"
-                type="button"
-                onClick={handleCreateNewFile}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <div ref={fileMenuRef} className="app-file-menu">
-        <button
-          className={isFileMenuOpen ? 'action-button active' : 'action-button'}
-          type="button"
-          onClick={() => setIsFileMenuOpen((currentValue) => !currentValue)}
-          aria-expanded={isFileMenuOpen}
-          aria-haspopup="menu"
-        >
-          File
-        </button>
-        {isFileMenuOpen && (
-          <div className="topbar-menu-dropdown" role="menu" aria-label="File">
-            <button
-              className="topbar-menu-item"
-              type="button"
-              onClick={handleNewFile}
-              role="menuitem"
-            >
-              New File
-            </button>
-            <button
-              className="topbar-menu-item"
-              type="button"
-              onClick={handleOpenFileClick}
-              disabled={isOpeningFile}
-              role="menuitem"
-            >
-              Open File
-            </button>
-            <button
-              className="topbar-menu-item"
-              type="button"
-              onClick={handleSaveFile}
-              role="menuitem"
-            >
-              Save File
-            </button>
-            <button
-              className="topbar-menu-item"
-              type="button"
-              onClick={() => void handleExport('png')}
-              disabled={isExporting}
-              role="menuitem"
-            >
-              Export PNG
-            </button>
-            <button
-              className="topbar-menu-item"
-              type="button"
-              onClick={() => void handleExport('jpeg')}
-              disabled={isExporting}
-              role="menuitem"
-            >
-              Export JPEG
-            </button>
-          </div>
-        )}
-      </div>
+      <UnsavedChangesModal
+        isOpen={isUnsavedChangesModalOpen}
+        onClose={handleCancelUnsavedChanges}
+        onDiscardAndCreateNew={handleDiscardAndCreateNew}
+      />
+      <NewFileModal
+        isOpen={isNewFileModalOpen}
+        name={newFileNameInput}
+        width={newFileWidthInput}
+        height={newFileHeightInput}
+        minDimension={MIN_DOCUMENT_DIMENSION}
+        onClose={handleCancelNewFile}
+        onNameChange={(event) => setNewFileNameInput(event.target.value)}
+        onWidthChange={(event) => setNewFileWidthInput(event.target.value)}
+        onHeightChange={(event) => setNewFileHeightInput(event.target.value)}
+        onCreate={handleCreateNewFile}
+      />
+      <FileMenu
+        fileMenuRef={fileMenuRef}
+        isOpen={isFileMenuOpen}
+        isOpeningFile={isOpeningFile}
+        isExporting={isExporting}
+        onToggle={() => setIsFileMenuOpen((currentValue) => !currentValue)}
+        onNewFile={handleNewFile}
+        onOpenFile={handleOpenFileClick}
+        onSaveFile={handleSaveFile}
+        onExport={handleExport}
+      />
       <section className="editor-panel">
-        <header className="editor-topbar">
-          {leftToolButtons}
-          <div
-            className={`tool-panel-error${toolPanelError.isVisible ? ' visible' : ''}${toolPanelError.isFading ? ' fading' : ''}`}
-            role="status"
-            aria-live="polite"
-          >
-            {toolPanelError.message}
-          </div>
-          <div className="toolbar-actions">
-            {(currentTool === 'pen' || currentTool === 'eraser') && (
-              <>
-                <label className="toolbar-range">
-                  <span>{activeBrushTool === 'pen' ? 'Brush' : 'Eraser'}</span>
-                  <input
-                    type="range"
-                    min={activeBrushTool === 'pen' ? '2' : '8'}
-                    max={activeBrushTool === 'pen' ? '120' : '96'}
-                    step="1"
-                    value={activeBrushTool === 'pen' ? penSize : eraserSize}
-                    onChange={(event) => {
-                      const nextValue = Number(event.target.value)
-
-                      if (activeBrushTool === 'pen') {
-                        setPenSize(nextValue)
-                        return
-                      }
-
-                      setEraserSize(nextValue)
-                    }}
-                  />
-                  <strong>{activeBrushTool === 'pen' ? penSize : eraserSize}</strong>
-                </label>
-              </>
-            )}
-            {currentTool === 'bucket' && (
-              <label className="toolbar-range">
-                <span>Tolerance</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="255"
-                  step="1"
-                  value={bucketTolerance}
-                  onChange={(event) => setBucketTolerance(Number(event.target.value))}
-                />
-                <strong>{bucketTolerance}</strong>
-              </label>
-            )}
-            {currentTool === 'gradient' && (
-              <label className="toolbar-range">
-                <span>Mode</span>
-                <select
-                  className="toolbar-select"
-                  value={gradientMode}
-                  onChange={(event) => setGradientMode(event.target.value)}
-                >
-                  <option value="bg-to-fg">BG -&gt; FG</option>
-                  <option value="fg-to-transparent">FG -&gt; Transparent</option>
-                </select>
-              </label>
-            )}
-            {currentTool === 'lasso' && (
-              <button
-                className="action-button"
-                type="button"
-                disabled={!hasFloatingSelection && !hasActiveLassoSelection}
-                onClick={commitFloatingSelectionToNewLayer}
-              >
-                Sel to Layer
-              </button>
-            )}
-            <div className="history-widget" aria-label="History actions">
-              <button
-                className="icon-button history-widget-button"
-                type="button"
-                disabled={!canUndo}
-                onClick={undo}
-                aria-label="Undo"
-              >
-                <img className="button-icon" src={undoIcon} alt="" aria-hidden="true" />
-              </button>
-              <button
-                className="icon-button history-widget-button"
-                type="button"
-                disabled={!canRedo}
-                onClick={redo}
-                aria-label="Redo"
-              >
-                <img className="button-icon" src={redoIcon} alt="" aria-hidden="true" />
-              </button>
-            </div>
-            <button
-              className="action-button"
-              type="button"
-              onClick={() =>
-                addLayer(() =>
-                  createTextLayer({
-                    x: 120,
-                    y: 100,
-                    name: 'New Text',
-                  }),
-                )
-              }
-              aria-label="Add Text"
-            >
-              <img className="button-icon" src={addTextIcon} alt="" aria-hidden="true" />
-            </button>
-            <button
-              className="action-button"
-              type="button"
-              onClick={() => imageInputRef.current?.click()}
-              aria-label="Add Image"
-            >
-              <img className="button-icon" src={addImageIcon} alt="" aria-hidden="true" />
-            </button>
-            <div className="color-swatch-panel" aria-label="Global colors">
-              <div className="color-swatch-stack">
-                <label
-                  className="color-swatch color-swatch-background"
-                  aria-label={`Background color ${globalColors.background}`}
-                  style={{ backgroundColor: globalColors.background }}
-                >
-                  <input
-                    className="color-swatch-input"
-                    type="color"
-                    value={globalColors.background}
-                    onChange={(event) => setBackground(event.target.value)}
-                    aria-label="Set background color"
-                  />
-                </label>
-                <label
-                  className="color-swatch color-swatch-foreground"
-                  aria-label={`Foreground color ${globalColors.foreground}`}
-                  style={{ backgroundColor: globalColors.foreground }}
-                >
-                  <input
-                    className="color-swatch-input"
-                    type="color"
-                    value={globalColors.foreground}
-                    onChange={(event) => setForeground(event.target.value)}
-                    aria-label="Set foreground color"
-                  />
-                </label>
-              </div>
-              <div className="color-swatch-actions">
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={swapColors}
-                  aria-label="Swap foreground and background colors"
-                >
-                  Swap
-                </button>
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={resetColors}
-                  aria-label="Reset foreground and background colors"
-                >
-                  Reset
-                </button>
-              </div>
-            </div>
-          </div>
-        </header>
+        <EditorToolbar
+          currentTool={currentTool}
+          activeBrushTool={activeBrushTool}
+          penSize={penSize}
+          eraserSize={eraserSize}
+          bucketTolerance={bucketTolerance}
+          gradientMode={gradientMode}
+          hasFloatingSelection={hasFloatingSelection}
+          hasActiveLassoSelection={hasActiveLassoSelection}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          toolPanelError={toolPanelError}
+          globalColors={globalColors}
+          onActivateTool={activateTool}
+          onResetViewport={() => setViewport({ zoom: 1, offsetX: 0, offsetY: 0 })}
+          onPenSizeChange={setPenSize}
+          onEraserSizeChange={setEraserSize}
+          onBucketToleranceChange={(event) => setBucketTolerance(Number(event.target.value))}
+          onGradientModeChange={(event) => setGradientMode(event.target.value)}
+          onCommitFloatingSelectionToNewLayer={commitFloatingSelectionToNewLayer}
+          onUndo={undo}
+          onRedo={redo}
+          onAddText={() =>
+            addLayer(() =>
+              createTextLayer({
+                x: 120,
+                y: 100,
+                name: 'New Text',
+              }),
+            )
+          }
+          onAddImage={() => imageInputRef.current?.click()}
+          onBackgroundChange={(event) => setBackground(event.target.value)}
+          onForegroundChange={(event) => setForeground(event.target.value)}
+          onSwapColors={swapColors}
+          onResetColors={resetColors}
+        />
 
         <div className="workspace-grid">
-          <aside className="asset-sidebar">
-            <input
-              ref={assetLibraryInputRef}
-              className="sr-only"
-              type="file"
-              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-              multiple
-              onChange={handleAssetLibraryImport}
-            />
-            <section className="panel-card asset-panel">
-              <div className="asset-panel-header">
-                <div className="panel-header">
-                  <div>
-                    <p className="eyebrow">Assets</p>
-                    <h2>Library</h2>
-                  </div>
-                  <button
-                    className="action-button"
-                    type="button"
-                    onClick={() => assetLibraryInputRef.current?.click()}
-                  >
-                    Import Images
-                  </button>
-                </div>
-              </div>
-
-              <div className="asset-panel-body">
-                {assetLibrary.length === 0 ? (
-                  <p className="empty-state asset-empty-state">
-                    Import PNG, JPG, SVG, or WEBP assets and drag them onto the canvas.
-                  </p>
-                ) : (
-                  <div className="asset-grid">
-                    {assetLibrary.map((asset) => (
-                      <button
-                        key={asset.id}
-                        className={draggedAssetId === asset.id ? 'asset-card dragging' : 'asset-card'}
-                        type="button"
-                        draggable
-                        onDragStart={(event) => handleAssetDragStart(event, asset)}
-                        onDragEnd={handleAssetDragEnd}
-                      >
-                        <img className="asset-thumbnail" src={asset.src} alt="" aria-hidden="true" />
-                        <div className="asset-card-footer">
-                          <span className="asset-name">{asset.name}</span>
-                          <button
-                            className="asset-delete-button"
-                            type="button"
-                            onClick={(event) => {
-                              event.preventDefault()
-                              event.stopPropagation()
-                              removeAssetFromLibrary(asset.id)
-                            }}
-                            onPointerDown={(event) => {
-                              event.preventDefault()
-                              event.stopPropagation()
-                            }}
-                            aria-label={`Delete ${asset.name} from asset library`}
-                          >
-                            <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
-          </aside>
+          <AssetLibraryPanel
+            assetLibraryInputRef={assetLibraryInputRef}
+            assetLibrary={assetLibrary}
+            draggedAssetId={draggedAssetId}
+            onImport={() => assetLibraryInputRef.current?.click()}
+            onInputChange={handleAssetLibraryImport}
+            onAssetDragStart={handleAssetDragStart}
+            onAssetDragEnd={handleAssetDragEnd}
+            onDeleteAsset={removeAssetFromLibrary}
+          />
 
           <div className="workspace-main-column">
             <section className="canvas-panel">
@@ -5709,13 +5148,7 @@ function App() {
               </div>
             </section>
 
-            <div className="canvas-prompt-shell">
-              <input
-                className="canvas-prompt-input"
-                type="text"
-                placeholder="Describe what you want to create..."
-              />
-            </div>
+            <PromptShell />
           </div>
 
           <aside className="sidebar">
@@ -5726,194 +5159,23 @@ function App() {
               accept="image/*"
               onChange={handleImageImport}
             />
-            <section className="panel-card">
-              <div className="layer-list">
-                {[...documentState.layers].reverse().map((layer) => {
-                  const actualIndex = documentState.layers.findIndex(
-                    (candidate) => candidate.id === layer.id,
-                  )
-                  const isTop = actualIndex === documentState.layers.length - 1
-                  const isBottom = actualIndex === 0
-                  const isSelected = isLayerSelected(documentState, layer.id)
-                  const isDragging = layer.id === draggedLayerId
-                  const dropPlacement = layerDropTarget?.layerId === layer.id
-                    ? layerDropTarget.placement
-                    : null
-
-                  return (
-                    <div
-                      key={layer.id}
-                      className={[
-                        'layer-row',
-                        isSelected ? 'selected' : '',
-                        isDragging ? 'dragging' : '',
-                        dropPlacement === 'before' ? 'drop-before' : '',
-                        dropPlacement === 'after' ? 'drop-after' : '',
-                      ].filter(Boolean).join(' ')}
-                      draggable
-                      onClick={(event) => {
-                        if (event.shiftKey) {
-                          toggleDocumentLayerSelection(layer.id)
-                          return
-                        }
-
-                        selectDocumentLayer(layer.id)
-                      }}
-                      onDragStart={(event) => handleLayerDragStart(event, layer.id)}
-                      onDragOver={(event) => handleLayerDragOver(event, layer.id)}
-                      onDrop={(event) => handleLayerDrop(event, layer.id, actualIndex)}
-                      onDragEnd={handleLayerDragEnd}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          if (event.shiftKey) {
-                            toggleDocumentLayerSelection(layer.id)
-                            return
-                          }
-
-                          selectDocumentLayer(layer.id)
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                    >
-                      <button
-                        className={layer.visible ? 'icon-button' : 'icon-button muted'}
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          applyDocumentChange((currentDocument) =>
-                            updateLayer(currentDocument, layer.id, {
-                              visible: !layer.visible,
-                            }),
-                          )
-                        }}
-                        aria-label={layer.visible ? 'Hide layer' : 'Show layer'}
-                      >
-                        <img
-                          className="button-icon"
-                          src={layer.visible ? visibleIcon : hiddenIcon}
-                          alt=""
-                          aria-hidden="true"
-                        />
-                      </button>
-
-                      <div className="layer-meta">
-                        <input
-                          className="layer-name-input"
-                          type="text"
-                          value={layer.name}
-                          onChange={(event) =>
-                            applyDocumentChange((currentDocument) =>
-                              updateLayer(currentDocument, layer.id, {
-                                name: event.target.value,
-                              }),
-                            )
-                          }
-                          onClick={(event) => event.stopPropagation()}
-                          draggable={false}
-                        />
-                        <div className="layer-chip-row">
-                          {isAlphaLocked(layer) && (
-                            <span className="layer-flag-chip">alpha lock</span>
-                          )}
-                          {layer.linkedLayerId && (
-                            <span className="layer-flag-chip">linked</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="row-actions">
-                        <button
-                          className="icon-button"
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            applyDocumentChange((currentDocument) =>
-                              duplicateLayer(currentDocument, layer.id),
-                            )
-                          }}
-                          aria-label="Duplicate layer"
-                        >
-                          <img className="button-icon" src={duplicateIcon} alt="" aria-hidden="true" />
-                        </button>
-                        <button
-                          className="icon-button"
-                          type="button"
-                          disabled={isTop}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            applyDocumentChange((currentDocument) =>
-                              moveLayer(currentDocument, layer.id, 'up'),
-                            )
-                          }}
-                          aria-label="Move layer up"
-                        >
-                          <img className="button-icon" src={upIcon} alt="" aria-hidden="true" />
-                        </button>
-                        <button
-                          className="icon-button"
-                          type="button"
-                          disabled={isBottom}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            applyDocumentChange((currentDocument) =>
-                              moveLayer(currentDocument, layer.id, 'down'),
-                            )
-                          }}
-                          aria-label="Move layer down"
-                        >
-                          <img className="button-icon" src={downIcon} alt="" aria-hidden="true" />
-                        </button>
-                        <button
-                          className="icon-button"
-                          type="button"
-                          disabled={!canMergeDown(documentState, layer.id)}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            void handleMergeDown(layer.id)
-                          }}
-                          aria-label="Merge layer down"
-                        >
-                          <img className="button-icon" src={mergeDownIcon} alt="" aria-hidden="true" />
-                        </button>
-                        <button
-                          className="icon-button danger"
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            applyDocumentChange((currentDocument) =>
-                              removeLayer(currentDocument, layer.id),
-                            )
-                          }}
-                          aria-label="Delete layer"
-                        >
-                          <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="layer-panel-footer">
-                <button
-                  className="action-button layer-panel-add-button"
-                  type="button"
-                  onClick={() =>
-                    addLayer(() =>
-                      createRasterLayer({
-                        name: 'Drawing Layer',
-                        width: documentWidth,
-                        height: documentHeight,
-                      }),
-                    )
-                  }
-                  aria-label="Add Drawing"
-                >
-                  <img className="button-icon" src={addLayerIcon} alt="" aria-hidden="true" />
-                </button>
-              </div>
-            </section>
+            <LayerPanel
+              documentState={documentState}
+              documentWidth={documentWidth}
+              documentHeight={documentHeight}
+              draggedLayerId={draggedLayerId}
+              layerDropTarget={layerDropTarget}
+              addLayer={addLayer}
+              applyDocumentChange={applyDocumentChange}
+              createRasterLayer={createRasterLayer}
+              handleLayerDragEnd={handleLayerDragEnd}
+              handleLayerDragOver={handleLayerDragOver}
+              handleLayerDragStart={handleLayerDragStart}
+              handleLayerDrop={handleLayerDrop}
+              handleMergeDown={handleMergeDown}
+              onSelectLayer={selectDocumentLayer}
+              onToggleLayerSelection={toggleDocumentLayerSelection}
+            />
 
             <section className="panel-card inspector-panel">
                 <div className="inspector-panel-body">

@@ -18,6 +18,7 @@ This document describes what each tracked file in the repo currently does.
 
 - minimal Vite configuration
 - enables the React plugin only
+- now also hosts the shared Vitest test configuration and jsdom setup entry
 
 ### `eslint.config.js`
 
@@ -33,7 +34,15 @@ This document describes what each tracked file in the repo currently does.
 ### `README.md`
 
 - repo-level project README
-- explains what the current app is, how to run it, and where to start in the docs
+- explains what the current app is, how to run it, how to run tests, and where to start in the docs
+
+## Test Support
+
+### `src/test/setup.js`
+
+- shared Vitest setup file
+- registers `@testing-library/jest-dom` matchers
+- provides the minimal canvas/text measurement stubs needed by current helper and component tests
 
 ## Public Assets
 
@@ -63,7 +72,9 @@ This document describes what each tracked file in the repo currently does.
 ### `src/App.jsx`
 
 - main application component
-- owns editor UI, tool state, document state integration, layer rendering, keyboard shortcuts, drag/drop, viewport, and canvas interaction flow
+- main application orchestrator
+- still owns tool state, document state integration, layer rendering, keyboard shortcuts, drag/drop, viewport, and canvas interaction flow
+- now delegates several stable render sections into `src/components/editor/`
 - creates the default document, including the full-canvas white background layer used for new files
 - no longer exposes group layers in the seeded document or inspector UI
 - contains the image import sizing and placement logic for both direct imports and asset-library drops
@@ -86,6 +97,76 @@ This document describes what each tracked file in the repo currently does.
 - contains the raster pen surface-expansion logic, including the stable preview-offset behavior that prevents the layer from twitching while a stroke grows beyond the current working surface
 - contains the live document-state ref used by long-lived pointer handlers so paint/edit mapping follows the current layer transform after move operations
 - this is currently the most important file in the repo
+
+## Editor-Specific App Modules
+
+### `src/editor/constants.js`
+
+- shared app-level editor constants previously embedded in `App.jsx`
+- includes layer size limits, viewport limits, tool defaults, drag MIME type, and selection-handle directions
+
+### `src/editor/documentHelpers.js`
+
+- app-level document/file helpers used by `App.jsx`
+- creates the seeded initial document
+- normalizes new-file modal inputs
+- sanitizes save/export filename bases
+- contains imported-image placement helpers
+- contains bitmap-patch helpers used when converting editable layers into bitmap-backed variants
+
+## Editor Components
+
+### `src/components/editor/EditorToolbar.jsx`
+
+- presentational toolbar component for tool buttons, tool options, history controls, add-text/add-image actions, and global color controls
+- keeps toolbar UI out of `App.jsx` while leaving the actual behavior callbacks in `App`
+
+### `src/components/editor/FileMenu.jsx`
+
+- presentational file-menu dropdown
+- renders the existing new/open/save/export actions through props
+
+### `src/components/editor/AssetLibraryPanel.jsx`
+
+- presentational asset library sidebar
+- renders asset import UI, empty state, drag-start/drag-end wiring, and delete buttons
+
+### `src/components/editor/LayerPanel.jsx`
+
+- presentational layer stack panel
+- renders layer rows, selection interactions, reorder drag/drop wiring, visibility toggles, rename fields, row actions, and add-drawing action
+
+### `src/components/editor/PromptShell.jsx`
+
+- presentational wrapper around the currently unwired prompt-style input below the canvas
+
+### `src/components/editor/modals/NewFileModal.jsx`
+
+- presentational modal for document name, width, and height entry
+
+### `src/components/editor/modals/UnsavedChangesModal.jsx`
+
+- presentational confirmation modal shown before creating a new file with dirty state
+
+## Test Files
+
+### `src/lib/*.test.js`
+
+- unit tests for the pure helper/domain modules
+- current coverage includes history, layers, document-file normalization, text helpers, snapping, and viewport math
+
+### `src/hooks/useHistory.test.jsx`
+
+- focused hook test coverage for transient updates, transient commits, and reset behavior
+
+### `src/editor/documentHelpers.test.js`
+
+- unit tests for seeded document creation, new-file normalization, filename sanitization, import placement, and bitmap patch helpers
+
+### `src/components/editor/*.test.jsx`
+
+- light React Testing Library coverage for stable presentational editor components
+- current coverage includes the toolbar, file menu, prompt shell, and modal components
 
 ### `src/App.css`
 

@@ -7,8 +7,11 @@ This app is a client-side React + Vite editor prototype for building and editing
 The architecture is simple in packaging but dense in implementation:
 
 - React renders the full editor UI.
-- A single large component in `src/App.jsx` orchestrates nearly all product behavior.
+- `src/App.jsx` remains the main orchestrator, but now delegates stable UI sections into
+  focused editor components.
 - Small utility modules in `src/lib/` handle data transforms, canvas operations, tool math, and document helpers.
+- `src/editor/` now holds app-specific constants and document/file helper logic that does not belong in the lower-level domain modules.
+- `src/components/editor/` now holds presentational editor UI sections such as the toolbar, file menu, modals, asset library, prompt shell, and layer panel.
 - Undo/redo is snapshot-based.
 - Raster and text surfaces are cached in memory using `canvas` elements stored in refs.
 - The app now supports flattened image export and simple file-based project save/open workflows.
@@ -21,18 +24,28 @@ The architecture is simple in packaging but dense in implementation:
 
 `src/App.jsx` is the actual product shell. It owns:
 
-- top bar and sidebars
-- canvas viewport and stage
 - tool switching
 - selection and interaction flow
 - keyboard shortcuts
-- layer inspector
-- text-shadow orchestration for text layers
-- asset library import/drag-drop
-- project-file open/save/new actions
-- flattened export actions
 - document edits and history commits
 - synchronization between persistent document state and temporary canvas surfaces
+- wiring of extracted editor UI components
+
+Stable UI sections such as the toolbar, file menu, new-file modal, unsaved-changes modal,
+asset library, prompt shell, and layer panel now render through `src/components/editor/`.
+
+The highest-risk logic still stays in `App`:
+
+- canvas viewport and stage
+- pointer lifecycle and tool routing
+- raster surface cache coordination
+- text edit transitions
+- lasso/floating selection behavior
+- layer inspector behavior
+- text-shadow orchestration for text layers
+- asset-library-to-canvas wiring
+- project-file open/save/new actions
+- flattened export actions
 
 ### 2. Document Model
 
@@ -163,6 +176,8 @@ The safest places to add behavior are:
 - `src/lib/textLayer.js` for text-specific behavior
 - `src/lib/raster.js` for bitmap/canvas helpers
 - `src/lib/moveSnapping.js` for snapping logic
-- extracted subcomponents/hooks if `src/App.jsx` starts being broken apart
+- `src/editor/` for app-specific constants and non-domain editor helpers
+- `src/components/editor/` for presentational UI extraction that should stay thin
+- extracted subcomponents/hooks if `src/App.jsx` starts being broken apart further
 
 The riskiest place to edit directly is the middle of `src/App.jsx` pointer handling, because many tool behaviors share the same event lifecycle.

@@ -18,6 +18,8 @@ That means:
 
 - changes are often easy to wire in quickly
 - but regression risk is higher because many features share the same local state and event flow
+- some low-risk render sections have now been extracted into `src/components/editor/`, but the
+  pointer lifecycle and orchestration logic still live in `App`
 
 ### The Repo Is Mid-Evolution
 
@@ -36,7 +38,9 @@ Prefer this order when making changes:
 1. update or add pure helper logic in `src/lib/`
 2. keep document mutations in `src/lib/layers.js`
 3. keep rendering math in `src/lib/raster.js`, `src/lib/textLayer.js`, or `src/lib/viewport.js`
-4. only then wire the feature into `src/App.jsx`
+4. use `src/editor/` for app-specific constants and editor helpers that are above the domain layer but below UI composition
+5. use `src/components/editor/` for stable presentational sections
+6. only then wire the feature into `src/App.jsx`
 
 This keeps `App` from getting even more overloaded.
 
@@ -46,10 +50,18 @@ If the app continues growing, the best extractions are:
 
 - a `CanvasStage` component
 - a `LayerInspector` component
-- a `LayerList` component
 - a `useCanvasInteractions` hook
 - a `useRasterSurfaceCache` hook
 - a dedicated document context/store if multi-file coordination grows
+
+Some lower-risk extractions have already happened:
+
+- toolbar
+- file menu
+- new-file and unsaved-changes modals
+- asset library panel
+- layer panel
+- prompt shell
 
 ## Known Gaps or MVP Behavior
 
@@ -236,8 +248,17 @@ The repo currently relies on:
 
 - build validation
 - lint validation
-- manual behavior testing
+- a focused Vitest unit/component test suite around pure helpers and thin presentational components
+- manual behavior testing for the highest-risk editor interaction flows
 
-There are no automated unit, integration, or end-to-end tests in the current codebase.
+Current lint baseline remains:
+
+- `npm run lint` passes with the same React hook dependency warnings in `src/App.jsx`
+
+Current automated test scope is intentionally conservative:
+
+- strong coverage around `src/lib/history.js`, `src/hooks/useHistory.js`, `src/lib/layers.js`, `src/lib/documentFiles.js`, `src/lib/textLayer.js`, `src/lib/moveSnapping.js`, `src/lib/viewport.js`, and `src/editor/documentHelpers.js`
+- light component coverage around extracted presentational editor components
+- no deep tests yet for the pointer lifecycle, raster surface cache behavior, or full `App.jsx` interaction orchestration
 
 Future work on complex editing behavior should assume manual regression risk is real.

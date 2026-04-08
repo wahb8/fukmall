@@ -1,0 +1,80 @@
+import closeIcon from '../../assets/Close (X).svg'
+
+export function AssetLibraryPanel({
+  assetLibraryInputRef,
+  assetLibrary,
+  draggedAssetId,
+  onImport,
+  onInputChange,
+  onAssetDragStart,
+  onAssetDragEnd,
+  onDeleteAsset,
+}) {
+  return (
+    <aside className="asset-sidebar">
+      <input
+        ref={assetLibraryInputRef}
+        className="sr-only"
+        type="file"
+        accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+        multiple
+        onChange={onInputChange}
+      />
+      <section className="panel-card asset-panel">
+        <div className="asset-panel-header">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Assets</p>
+              <h2>Library</h2>
+            </div>
+            <button className="action-button" type="button" onClick={onImport}>
+              Import Images
+            </button>
+          </div>
+        </div>
+
+        <div className="asset-panel-body">
+          {assetLibrary.length === 0 ? (
+            <p className="empty-state asset-empty-state">
+              Import PNG, JPG, SVG, or WEBP assets and drag them onto the canvas.
+            </p>
+          ) : (
+            <div className="asset-grid">
+              {assetLibrary.map((asset) => (
+                <button
+                  key={asset.id}
+                  className={draggedAssetId === asset.id ? 'asset-card dragging' : 'asset-card'}
+                  type="button"
+                  draggable
+                  onDragStart={(event) => onAssetDragStart(event, asset)}
+                  onDragEnd={onAssetDragEnd}
+                >
+                  <img className="asset-thumbnail" src={asset.src} alt="" aria-hidden="true" />
+                  <div className="asset-card-footer">
+                    <span className="asset-name">{asset.name}</span>
+                    <button
+                      className="asset-delete-button"
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        onDeleteAsset(asset.id)
+                      }}
+                      onPointerDown={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                      }}
+                      aria-label={`Delete ${asset.name} from asset library`}
+                    >
+                      <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
+                    </button>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </aside>
+  )
+}
