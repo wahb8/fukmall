@@ -443,6 +443,33 @@ function getTextFontFromStyle(style) {
   return `${fontStyle}${fontWeight}${style.fontSize}px ${style.fontFamily}`
 }
 
+function getTextStyleMetrics(context, style, metricsCache) {
+  const cacheKey = getRunStyleKey(style)
+
+  if (metricsCache?.has(cacheKey)) {
+    return metricsCache.get(cacheKey)
+  }
+
+  context.font = getTextFontFromStyle(style)
+  const metrics = context.measureText('Mg')
+  const fallbackAscent = style.fontSize * 0.8
+  const fallbackDescent = style.fontSize * 0.2
+  const resolvedMetrics = {
+    ascent: Math.max(
+      Number(metrics.actualBoundingBoxAscent) || 0,
+      fallbackAscent,
+    ),
+    descent: Math.max(
+      Number(metrics.actualBoundingBoxDescent) || 0,
+      fallbackDescent,
+    ),
+  }
+
+  metricsCache?.set(cacheKey, resolvedMetrics)
+
+  return resolvedMetrics
+}
+
 export async function loadTextLayerFont(layer) {
   if (
     typeof document === 'undefined' ||
@@ -622,11 +649,28 @@ function createRunsFromCharacters(characters) {
   return runs
 }
 
-function finalizeLayoutLine(characters, fallbackStyle) {
+function finalizeLayoutLine(characters, fallbackStyle, context, metricsCache) {
   const lineCharacters = Array.isArray(characters) ? characters : []
-  const lineHeight = lineCharacters.reduce((largestHeight, character) => (
-    Math.max(largestHeight, character.style.fontSize * character.style.lineHeight)
-  ), fallbackStyle.fontSize * fallbackStyle.lineHeight)
+  const fallbackMetrics = getTextStyleMetrics(context, fallbackStyle, metricsCache)
+  const lineMetrics = lineCharacters.reduce((largestMetrics, character) => {
+    const characterMetrics = getTextStyleMetrics(context, character.style, metricsCache)
+
+    return {
+      ascent: Math.max(largestMetrics.ascent, characterMetrics.ascent),
+      descent: Math.max(largestMetrics.descent, characterMetrics.descent),
+      lineHeight: Math.max(
+        largestMetrics.lineHeight,
+        character.style.fontSize * character.style.lineHeight,
+      ),
+    }
+  }, {
+    ascent: fallbackMetrics.ascent,
+    descent: fallbackMetrics.descent,
+    lineHeight: fallbackStyle.fontSize * fallbackStyle.lineHeight,
+  })
+  const contentHeight = lineMetrics.ascent + lineMetrics.descent
+  const lineHeight = Math.max(lineMetrics.lineHeight, contentHeight)
+  const baselineOffset = ((lineHeight - contentHeight) / 2) + lineMetrics.ascent
 
   return {
     text: lineCharacters.map((character) => character.char).join(''),
@@ -634,6 +678,9 @@ function finalizeLayoutLine(characters, fallbackStyle) {
     runs: createRunsFromCharacters(lineCharacters),
     width: getCharacterSequenceWidth(lineCharacters),
     lineHeight,
+    ascent: lineMetrics.ascent,
+    descent: lineMetrics.descent,
+    baselineOffset,
   }
 }
 
@@ -661,20 +708,20 @@ function splitTokenToFitWidth(token, maxWidth) {
   return fragments
 }
 
-function layoutParagraphTokens(tokens, maxWidth, fallbackStyle) {
+function layoutParagraphTokens(tokens, maxWidth, fallbackStyle, context, metricsCache) {
   if (!Number.isFinite(maxWidth) || maxWidth <= 0) {
-    return [finalizeLayoutLine(tokens.flatMap((token) => token.characters), fallbackStyle)]
+    return [finalizeLayoutLine(tokens.flatMap((token) => token.characters), fallbackStyle, context, metricsCache)]
   }
 
   if (tokens.length === 0) {
-    return [finalizeLayoutLine([], fallbackStyle)]
+    return [finalizeLayoutLine([], fallbackStyle, context, metricsCache)]
   }
 
   const lines = []
   let currentCharacters = []
 
   function pushCurrentLine() {
-    lines.push(finalizeLayoutLine(currentCharacters, fallbackStyle))
+    lines.push(finalizeLayoutLine(currentCharacters, fallbackStyle, context, metricsCache))
     currentCharacters = []
   }
 
@@ -723,6 +770,7 @@ function layoutParagraphTokens(tokens, maxWidth, fallbackStyle) {
 
 function createTextLayout(layer) {
   const context = getMeasureContext()
+  const metricsCache = new Map()
   const fallbackStyle = getResolvedTextStyle(layer)
   const mode = layer.mode ?? DEFAULT_TEXT_MODE
   const maxWidth = mode === 'box' ? Math.max(layer.boxWidth ?? 0, 1) : null
@@ -744,9 +792,9 @@ function createTextLayout(layer) {
 
   const lines = mode === 'box'
     ? paragraphs.flatMap((paragraph) => (
-      layoutParagraphTokens(tokenizeParagraphCharacters(paragraph), maxWidth, fallbackStyle)
+      layoutParagraphTokens(tokenizeParagraphCharacters(paragraph), maxWidth, fallbackStyle, context, metricsCache)
     ))
-    : paragraphs.map((paragraph) => finalizeLayoutLine(paragraph, fallbackStyle))
+    : paragraphs.map((paragraph) => finalizeLayoutLine(paragraph, fallbackStyle, context, metricsCache))
   const measuredLineWidth = lines.reduce((largestWidth, line) => Math.max(largestWidth, line.width), 0)
   const measuredWidth = mode === 'box'
     ? Math.max(maxWidth ?? measuredLineWidth, 1)
@@ -1041,7 +1089,7 @@ export function renderTextLayer(context, layer) {
 
   context.save()
   context.clearRect(0, 0, layer.width, layer.height)
-  context.textBaseline = 'top'
+  context.textBaseline = 'alphabetic'
   context.textAlign = 'left'
 
   let currentY = TEXT_VERTICAL_PADDING_TOP
@@ -1053,9 +1101,10 @@ export function renderTextLayer(context, layer) {
         ? availableWidth - line.width
         : 0
     let currentX = drawX
+    const baselineY = currentY + line.baselineOffset
 
     for (const run of line.runs) {
-      drawStyledRun(context, run, currentX, currentY)
+      drawStyledRun(context, run, currentX, baselineY)
       currentX += run.advanceWidth
     }
 

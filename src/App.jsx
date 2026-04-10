@@ -960,6 +960,7 @@ function App() {
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
   const [textEditorSelection, setTextEditorSelection] = useState({ start: 0, end: 0 })
+  const [fontSizeInputDraft, setFontSizeInputDraft] = useState(null)
   const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false)
   const [isUnsavedChangesModalOpen, setIsUnsavedChangesModalOpen] = useState(false)
   const [newFileNameInput, setNewFileNameInput] = useState(DEFAULT_DOCUMENT_NAME)
@@ -1109,6 +1110,10 @@ function App() {
       window.removeEventListener('blur', stopFontSizeRepeat)
     }
   }, [clearFontSizeRepeatTimers])
+
+  useEffect(() => {
+    setFontSizeInputDraft(null)
+  }, [editingTextLayerId, selectedLayer?.id, textEditorSelection.end, textEditorSelection.start])
 
   const activateTool = useCallback((nextTool) => {
     setActiveTool(nextTool)
@@ -3738,7 +3743,39 @@ function App() {
     return getUniformTextStyleValueForRange(layer, selection.start, selection.end, key)
   }
 
+  function getDisplayedFontSizeValue(layer) {
+    if (fontSizeInputDraft !== null) {
+      return fontSizeInputDraft
+    }
+
+    return getEditingSelectionStyleValue(layer, 'fontSize') ?? ''
+  }
+
+  function commitFontSizeInputDraft(layerId) {
+    if (fontSizeInputDraft === null) {
+      return
+    }
+
+    const trimmedDraft = String(fontSizeInputDraft).trim()
+
+    if (trimmedDraft.length === 0) {
+      setFontSizeInputDraft(null)
+      return
+    }
+
+    const nextValue = Number(trimmedDraft)
+
+    if (Number.isFinite(nextValue)) {
+      applyTextStyleChange(layerId, {
+        fontSize: Math.max(8, Math.round(nextValue)),
+      })
+    }
+
+    setFontSizeInputDraft(null)
+  }
+
   function stepTextFontSize(layerId, delta) {
+    setFontSizeInputDraft(null)
     applyTextStyleChange(layerId, (layer) => {
       const selection = getEditingTextSelectionRange(layer.id)
       const currentFontSize = selection
@@ -5176,6 +5213,7 @@ function App() {
     setEditingTextLayerId(null)
     setTextDraft('')
     setTextEditorSelection({ start: 0, end: 0 })
+    setFontSizeInputDraft(null)
     textSelectionRestoreRef.current = null
     preserveTextEditingBlurRef.current = false
   }
@@ -5184,6 +5222,7 @@ function App() {
     setEditingTextLayerId(null)
     setTextDraft('')
     setTextEditorSelection({ start: 0, end: 0 })
+    setFontSizeInputDraft(null)
     textSelectionRestoreRef.current = null
     preserveTextEditingBlurRef.current = false
   }
@@ -5679,14 +5718,40 @@ function App() {
                             <input
                               type="number"
                               min="8"
-                              value={getEditingSelectionStyleValue(selectedLayer, 'fontSize') ?? ''}
+                              value={getDisplayedFontSizeValue(selectedLayer)}
                               data-text-style-control="true"
                               onPointerDown={markTextStyleControlInteraction}
-                              onChange={(event) =>
-                                applyTextStyleChange(selectedLayer.id, {
-                                  fontSize: Math.max(8, Number(event.target.value) || 8),
-                                })
-                              }
+                              onFocus={(event) => {
+                                event.stopPropagation()
+                                markTextStyleControlInteraction()
+                                setFontSizeInputDraft(String(
+                                  getEditingSelectionStyleValue(selectedLayer, 'fontSize') ?? '',
+                                ))
+                              }}
+                              onChange={(event) => {
+                                event.stopPropagation()
+                                setFontSizeInputDraft(event.target.value)
+                              }}
+                              onBlur={(event) => {
+                                event.stopPropagation()
+                                commitFontSizeInputDraft(selectedLayer.id)
+                              }}
+                              onKeyDown={(event) => {
+                                event.stopPropagation()
+
+                                if (event.key === 'Enter') {
+                                  event.preventDefault()
+                                  commitFontSizeInputDraft(selectedLayer.id)
+                                  event.currentTarget.blur()
+                                  return
+                                }
+
+                                if (event.key === 'Escape') {
+                                  event.preventDefault()
+                                  setFontSizeInputDraft(null)
+                                  event.currentTarget.blur()
+                                }
+                              }}
                             />
                             <button
                               className="number-stepper-button"

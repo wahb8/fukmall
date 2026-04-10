@@ -16,6 +16,8 @@ class MockCanvasRenderingContext2D {
 
     return {
       width: String(text ?? '').length * Math.max(fontSize * 0.6, 1),
+      actualBoundingBoxAscent: fontSize * 0.8,
+      actualBoundingBoxDescent: fontSize * 0.2,
     }
   }
 

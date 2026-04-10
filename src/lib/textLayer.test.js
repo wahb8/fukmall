@@ -195,6 +195,8 @@ describe('text layer helpers', () => {
 
         return {
           width: String(text ?? '').length * Math.max(fontSize * 0.6, 1),
+          actualBoundingBoxAscent: fontSize * 0.8,
+          actualBoundingBoxDescent: fontSize * 0.2,
         }
       },
       clearRect() {},
@@ -242,5 +244,45 @@ describe('text layer helpers', () => {
 
     expect(measurement.lines.length).toBeGreaterThan(1)
     expect(measurement.height).toBeGreaterThan(layer.fontSize)
+  })
+
+  it('renders mixed-style runs on a shared line baseline', () => {
+    const fillCalls = []
+    const context = {
+      font: '16px sans-serif',
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+      fillStyle: '#000000',
+      strokeStyle: '#000000',
+      lineWidth: 1,
+      measureText(text) {
+        const fontSizeMatch = String(this.font).match(/(\d+(?:\.\d+)?)px/)
+        const fontSize = fontSizeMatch ? Number(fontSizeMatch[1]) : 16
+
+        return {
+          width: String(text ?? '').length * Math.max(fontSize * 0.6, 1),
+          actualBoundingBoxAscent: fontSize * 0.8,
+          actualBoundingBoxDescent: fontSize * 0.2,
+        }
+      },
+      clearRect() {},
+      save() {},
+      restore() {},
+      fillText(text, x, y) {
+        fillCalls.push({ text, x, y, font: this.font })
+      },
+      strokeText() {},
+    }
+    const layer = createTextLayer({
+      text: 'Hello world',
+      mode: 'point',
+      styleRanges: [{ start: 6, end: 11, styles: { fontWeight: 700, fontSize: 32 } }],
+    })
+
+    renderTextLayer(context, layer)
+
+    expect(fillCalls).toHaveLength(3)
+    expect(fillCalls[0].y).toBe(fillCalls[1].y)
+    expect(fillCalls[1].y).toBe(fillCalls[2].y)
   })
 })
