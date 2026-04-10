@@ -122,6 +122,21 @@ Current behavior:
 
 If future work changes text editing again, preserve the shared renderer path so editor view, inline editing, and export do not drift apart.
 
+### Partial Text Styling
+
+Text layers now also carry normalized `styleRanges` data for selected-range styling.
+
+Current behavior:
+
+- supported style changes can target only the highlighted text range while inline editing is active
+- when there is no highlighted range, those controls still use the existing whole-layer style path
+- range data is part of the document model, so it survives undo/redo and project-file save/load
+- the shared text renderer now resolves `styleRanges` into styled runs so wrapping, alignment, bounds, editor rendering, and export stay aligned
+- text-layer surface cache invalidation must include `styleRanges`, otherwise partial-style edits can appear stale until some unrelated geometry change forces a redraw
+- edit mode now relies on the same styled canvas preview as normal rendering, with the textarea acting as the input/caret layer rather than replacing the styled visual output
+
+If future work expands this area, keep the data-model and normalization path stable while replacing the renderer separately.
+
 ### History Scaling
 
 History stores full state snapshots, not patches.

@@ -69,12 +69,17 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - support point text and box text modes
 - new text layers default to box mode
 - support font family, size, weight, color, wrapping, letter spacing, line height, and text alignment
+- text layers now also store normalized partial-style ranges through `styleRanges`
+- when text is actively being edited and a non-empty text selection exists, supported style changes apply only to that selected range
+- when no text range is selected, text styling still uses the existing whole-layer behavior
+- mixed-style text now renders visually per styled run instead of collapsing back to one uniform style
 - support `left`, `center`, and `right` alignment as a real text-layer property
 - for box text, alignment positions each wrapped line inside the text box
 - for point text, alignment changes the horizontal anchor behavior:
   left extends rightward from the anchor, center stays centered on the anchor, and right extends leftward from the anchor
 - erasing is stored as a mask bitmap
 - painting is stored in a separate overlay bitmap so text content can still be edited later
+- export uses the same run-based text rendering path, so mixed styles now match between the editor canvas and flattened export
 
 ### Text Shadows
 
@@ -215,9 +220,12 @@ Text layers support:
 - font selection from a fixed list
 - bold toggle
 - color editing
+- selected-range styling for supported text style controls while inline editing is active
 - left/center/right alignment in the inspector
 - double-click editing even when the text layer is already selected
 - inline editing now places the caret at the end of the text when edit mode opens
+- mixed font/color styling now affects wrapping, alignment, and bounds through the shared text-layout path
+- inline edit mode now keeps the styled canvas preview visible underneath the text input layer so partial styling remains visible immediately while editing
 
 Important current limitation:
 

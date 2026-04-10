@@ -225,6 +225,7 @@ This document describes what each tracked file in the repo currently does.
 - contains the linear gradient bitmap helper used by the gradient tool
 - contains the contiguous flood-fill helper used by the bucket tool
 - contains text-canvas composition helpers for editable text, erase masks, and paint overlays
+- now uses the shared mixed-style text measurement/render path when rasterizing text layers to canvas
 - converts DOM pointer positions into canvas-local coordinates
 
 ### `src/lib/exportDocument.js`
@@ -247,8 +248,10 @@ This document describes what each tracked file in the repo currently does.
 ### `src/lib/textLayer.js`
 
 - current text system
-- measures text, wraps box text, syncs text layout into layer bounds, updates text style/content, and renders text to canvas
+- measures text, wraps box text, syncs text layout into layer bounds, updates text style/content, normalizes partial-style ranges, and renders text to canvas
 - defaults new text layers to box mode with left alignment, `1.15` line height, and `0` letter spacing
+- now owns the `styleRanges` normalization and text-change remapping helpers used by partial text styling
+- now resolves partial-style text into styled runs so measurement, wrapping, alignment, and canvas rendering stay in sync
 - preserves point-text horizontal anchors across content/alignment updates
 - applies left/center/right alignment in both normal line rendering and letter-spaced glyph rendering
 

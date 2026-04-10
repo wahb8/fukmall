@@ -5,6 +5,7 @@ import {
   findLayer,
   normalizeLinkedLayerReferences,
 } from './layers'
+import { normalizeTextStyleRanges } from './textLayer'
 
 const PROJECT_APP_NAME = 'Fukmall'
 const PROJECT_FORMAT_VERSION = 1
@@ -23,6 +24,17 @@ function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
 
 function isSupportedDocumentLayer(layer) {
   return layer?.type !== 'group'
+}
+
+function normalizeDocumentLayer(layer) {
+  if (layer?.type !== 'text') {
+    return layer
+  }
+
+  return {
+    ...layer,
+    styleRanges: normalizeTextStyleRanges(layer.styleRanges, String(layer.text ?? '').length),
+  }
 }
 
 function normalizeDocumentDimension(value, fallback) {
@@ -47,7 +59,9 @@ function normalizeDocumentName(value) {
 
 export function normalizeDocumentState(documentState) {
   const layers = normalizeLinkedLayerReferences(Array.isArray(documentState?.layers)
-    ? documentState.layers.filter(isSupportedDocumentLayer)
+    ? documentState.layers
+      .filter(isSupportedDocumentLayer)
+      .map(normalizeDocumentLayer)
     : [])
   const name = normalizeDocumentName(documentState?.name)
   const width = normalizeDocumentDimension(documentState?.width, DEFAULT_DOCUMENT_WIDTH)

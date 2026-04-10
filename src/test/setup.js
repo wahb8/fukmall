@@ -6,16 +6,22 @@ class MockCanvasRenderingContext2D {
     this.textAlign = 'left'
     this.textBaseline = 'alphabetic'
     this.fillStyle = '#000000'
+    this.strokeStyle = '#000000'
+    this.lineWidth = 1
   }
 
   measureText(text) {
+    const fontSizeMatch = String(this.font).match(/(\d+(?:\.\d+)?)px/)
+    const fontSize = fontSizeMatch ? Number(fontSizeMatch[1]) : 16
+
     return {
-      width: String(text ?? '').length * 10,
+      width: String(text ?? '').length * Math.max(fontSize * 0.6, 1),
     }
   }
 
   clearRect() {}
   fillText() {}
+  strokeText() {}
   save() {}
   restore() {}
   drawImage() {}

@@ -3,6 +3,7 @@ import {
   createDocument,
   createGroupLayer,
   createShapeLayer,
+  createTextLayer,
 } from './layers'
 import { normalizeDocumentState, parseProjectFile, serializeProjectFile } from './documentFiles'
 
@@ -48,6 +49,23 @@ describe('document file helpers', () => {
     expect(parsedFile.version).toBe(1)
     expect(parsedDocument.selectedLayerId).toBe('shape')
     expect(parsedDocument.layers).toHaveLength(1)
+  })
+
+  it('preserves normalized text style ranges through save and load', () => {
+    const textLayer = createTextLayer({
+      id: 'text',
+      text: 'Hello world',
+      styleRanges: [
+        { start: 0, end: 5, styles: { color: '#ff0000' } },
+        { start: 5, end: 11, styles: { color: '#ff0000' } },
+      ],
+    })
+    const documentState = createDocument([textLayer], 'text')
+    const parsedDocument = parseProjectFile(serializeProjectFile(documentState))
+
+    expect(parsedDocument.layers[0].styleRanges).toEqual([
+      { start: 0, end: 11, styles: { color: '#ff0000' } },
+    ])
   })
 
   it('rejects unsupported project metadata', () => {

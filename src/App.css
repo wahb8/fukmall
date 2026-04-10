@@ -588,19 +588,59 @@
   line-height: 0.95;
 }
 
+.text-layer-edit-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .text-layer-canvas {
   display: block;
 }
 
+.text-layer-edit-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.text-layer-edit-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.text-layer-selection-rect {
+  position: absolute;
+  background: rgba(15, 118, 110, 0.22);
+  border-radius: 2px;
+}
+
+.text-layer-caret {
+  position: absolute;
+  width: 1.5px;
+  background: var(--selection);
+}
+
 .text-layer-editor {
+  position: absolute;
+  inset: 0;
   border: 1px dashed rgba(15, 118, 110, 0.45);
   padding: 0;
   resize: none;
   outline: none;
-  background: rgba(255, 254, 249, 0.96);
+  background: transparent;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
   cursor: text;
   user-select: text;
   -webkit-user-select: text;
+  overflow: hidden;
+}
+
+.text-layer-editor::selection {
+  background: transparent;
 }
 
 .shape-layer-body,
@@ -1046,6 +1086,23 @@
 .property-field textarea {
   min-height: 110px;
   resize: vertical;
+}
+
+.number-stepper {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: stretch;
+}
+
+.number-stepper-button {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffef9;
+  color: var(--ink);
+  font: inherit;
+  min-width: 2.4rem;
+  padding: 0.72rem 0.8rem;
 }
 
 .segmented-control {

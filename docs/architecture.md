@@ -78,6 +78,12 @@ Each layer is an object with common transform/display fields such as:
 
 Layer-specific fields are currently active for `shape`, `image`, `raster`, and `text`.
 
+Text layers also now support normalized `styleRanges` entries:
+
+- each range stores `start`, `end`, and partial `styles` overrides
+- base text-layer style fields remain the fallback/default style
+- text measurement and rendering now resolve these ranges into styled runs for both editor canvas rendering and export
+
 Linked layers are a lightweight relationship in the document model. A valid link is reciprocal:
 
 - each layer points at the other layer's ID through `linkedLayerId`

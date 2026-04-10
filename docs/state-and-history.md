@@ -164,6 +164,7 @@ Text layers are more complex than other layer types.
 They combine:
 
 - structured text properties
+- normalized `styleRanges` data for partial text styling overrides
 - an optional erase mask bitmap
 - an optional paint overlay bitmap
 - measured layout fields such as `measuredWidth` and `measuredHeight`
@@ -176,6 +177,13 @@ Point text also now preserves its horizontal anchor when content or alignment ch
 - `left` keeps the anchor at the left edge
 - `center` keeps the anchor at the visual midpoint
 - `right` keeps the anchor at the right edge
+
+Current partial-style behavior is intentionally data-first:
+
+- selected-range font/color/weight-style changes can now write normalized `styleRanges`
+- style ranges are normalized to avoid redundant overlap and to merge adjacent identical spans
+- undo/redo and project-file save/load include these ranges because they live in the document snapshot
+- measurement, wrapping, bounds, editor rendering, and export now all consume the same run-based text layout derived from these ranges
 
 ## Selection State
 

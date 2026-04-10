@@ -70,6 +70,7 @@ export function createTextLayer(overrides = {}) {
     boxHeight: null,
     measuredWidth: 0,
     measuredHeight: 0,
+    styleRanges: [],
     eraseMask: '',
     paintOverlayBitmap: '',
     ...overrides,

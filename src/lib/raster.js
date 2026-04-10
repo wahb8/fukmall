@@ -888,28 +888,11 @@ export function renderTextLayerToCanvas(layer) {
 }
 
 export function measureTextLayerBounds(layer) {
-  const canvas = createSizedCanvas(1, 1)
-  const context = canvas.getContext('2d')
-
-  if (!context) {
-    return {
-      width: layer.width ?? 0,
-      height: layer.height ?? 0,
-    }
-  }
-
-  context.font = `${layer.fontSize}px ${layer.fontFamily}`
-
-  const lines = String(layer.text ?? '').split('\n')
-  const lineHeight = layer.fontSize * 0.95
-  const maxLineWidth = lines.reduce((largestWidth, line) => {
-    const metrics = context.measureText(line || ' ')
-    return Math.max(largestWidth, metrics.width)
-  }, 0)
+  const measurement = measureTextLayer(layer)
 
   return {
-    width: Math.ceil(maxLineWidth + 8),
-    height: Math.ceil((lines.length * lineHeight) + 8),
+    width: measurement.width,
+    height: measurement.height,
   }
 }
 

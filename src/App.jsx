@@ -123,11 +123,14 @@ import {
 } from './lib/penTool'
 import { FONT_FAMILY_OPTIONS } from './lib/fontOptions'
 import {
+  applyTextStyleToRange,
+  getTextEditorOverlayGeometry,
+  getUniformTextStyleValueForRange,
+  isTextRangeFullyBold,
   loadTextLayerFont,
   resizeBoxText,
   resizePointTextTransform,
   updateTextContent,
-  updateTextLayerFont,
   updateTextStyle,
 } from './lib/textLayer'
 import {
@@ -930,9 +933,14 @@ function App() {
   const copiedLayerRef = useRef(null)
   const lastPenEditableLayerIdRef = useRef(null)
   const textEditorRef = useRef(null)
+  const textSelectionRef = useRef({ start: 0, end: 0 })
+  const textSelectionRestoreRef = useRef(null)
+  const preserveTextEditingBlurRef = useRef(false)
   const externalImageDragDepthRef = useRef(0)
   const toolPanelErrorFadeTimeoutRef = useRef(null)
   const toolPanelErrorClearTimeoutRef = useRef(null)
+  const fontSizeRepeatTimeoutRef = useRef(null)
+  const fontSizeRepeatIntervalRef = useRef(null)
   const {
     present: documentState,
     commit,
@@ -951,6 +959,7 @@ function App() {
   ))
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
+  const [textEditorSelection, setTextEditorSelection] = useState({ start: 0, end: 0 })
   const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false)
   const [isUnsavedChangesModalOpen, setIsUnsavedChangesModalOpen] = useState(false)
   const [newFileNameInput, setNewFileNameInput] = useState(DEFAULT_DOCUMENT_NAME)
@@ -987,6 +996,8 @@ function App() {
     offsetX: 0,
     offsetY: 0,
   })
+  const FONT_SIZE_REPEAT_DELAY_MS = 320
+  const FONT_SIZE_REPEAT_INTERVAL_MS = 70
   const resetExternalImageDragState = useCallback(() => {
     externalImageDragDepthRef.current = 0
     setIsExternalImageDragActive(false)
@@ -1064,11 +1075,40 @@ function App() {
     }, TOOL_PANEL_ERROR_DURATION_MS)
   }, [clearToolPanelErrorTimers])
 
+  const clearFontSizeRepeatTimers = useCallback(() => {
+    if (fontSizeRepeatTimeoutRef.current) {
+      window.clearTimeout(fontSizeRepeatTimeoutRef.current)
+      fontSizeRepeatTimeoutRef.current = null
+    }
+
+    if (fontSizeRepeatIntervalRef.current) {
+      window.clearInterval(fontSizeRepeatIntervalRef.current)
+      fontSizeRepeatIntervalRef.current = null
+    }
+  }, [])
+
   useEffect(() => (
     () => {
       clearToolPanelErrorTimers()
+      clearFontSizeRepeatTimers()
     }
-  ), [clearToolPanelErrorTimers])
+  ), [clearFontSizeRepeatTimers, clearToolPanelErrorTimers])
+
+  useEffect(() => {
+    function stopFontSizeRepeat() {
+      clearFontSizeRepeatTimers()
+    }
+
+    window.addEventListener('pointerup', stopFontSizeRepeat)
+    window.addEventListener('pointercancel', stopFontSizeRepeat)
+    window.addEventListener('blur', stopFontSizeRepeat)
+
+    return () => {
+      window.removeEventListener('pointerup', stopFontSizeRepeat)
+      window.removeEventListener('pointercancel', stopFontSizeRepeat)
+      window.removeEventListener('blur', stopFontSizeRepeat)
+    }
+  }, [clearFontSizeRepeatTimers])
 
   const activateTool = useCallback((nextTool) => {
     setActiveTool(nextTool)
@@ -1103,6 +1143,51 @@ function App() {
     setGlobalColors(createDefaultColors())
   }, [])
 
+  const syncTextEditorSelection = useCallback((textarea) => {
+    if (!textarea) {
+      return
+    }
+
+    const start = Number.isFinite(textarea.selectionStart) ? textarea.selectionStart : textarea.value.length
+    const end = Number.isFinite(textarea.selectionEnd) ? textarea.selectionEnd : start
+
+    textSelectionRef.current = {
+      start: Math.max(0, Math.min(start, textarea.value.length)),
+      end: Math.max(0, Math.min(end, textarea.value.length)),
+    }
+    setTextEditorSelection((currentSelection) => (
+      currentSelection.start === textSelectionRef.current.start &&
+      currentSelection.end === textSelectionRef.current.end
+        ? currentSelection
+        : { ...textSelectionRef.current }
+    ))
+  }, [])
+
+  const restoreTextEditorSelection = useCallback((fallbackSelection = null) => {
+    window.requestAnimationFrame(() => {
+      const textarea = textEditorRef.current
+
+      if (!textarea || editingTextLayerId === null) {
+        return
+      }
+
+      const nextSelection = fallbackSelection ??
+        textSelectionRestoreRef.current ??
+        textSelectionRef.current ?? {
+          start: textarea.value.length,
+          end: textarea.value.length,
+        }
+      const start = Math.max(0, Math.min(nextSelection.start ?? textarea.value.length, textarea.value.length))
+      const end = Math.max(0, Math.min(nextSelection.end ?? start, textarea.value.length))
+
+      textarea.focus()
+      textarea.setSelectionRange(start, end)
+      syncTextEditorSelection(textarea)
+      textSelectionRestoreRef.current = null
+      preserveTextEditingBlurRef.current = false
+    })
+  }, [editingTextLayerId, syncTextEditorSelection])
+
   useEffect(() => {
     if (!editingTextLayerId || !textEditorRef.current) {
       return
@@ -1111,6 +1196,14 @@ function App() {
     const textarea = textEditorRef.current
     const selectionIndex = textarea.value.length
 
+    textSelectionRef.current = {
+      start: selectionIndex,
+      end: selectionIndex,
+    }
+    setTextEditorSelection({
+      start: selectionIndex,
+      end: selectionIndex,
+    })
     textarea.focus()
     textarea.setSelectionRange(selectionIndex, selectionIndex)
   }, [editingTextLayerId])
@@ -1182,6 +1275,9 @@ function App() {
         mode: layer.mode,
         boxWidth: layer.boxWidth,
         boxHeight: layer.boxHeight,
+        styleRanges: layer.styleRanges ?? [],
+        textStrokeColor: layer.textStrokeColor ?? layer.strokeColor ?? '',
+        textStrokeWidth: layer.textStrokeWidth ?? layer.strokeWidth ?? 0,
         eraseMask: layer.eraseMask ?? '',
         paintOverlayBitmap: layer.paintOverlayBitmap ?? '',
       })
@@ -2889,6 +2985,7 @@ function App() {
       letterSpacing: sourceLayer.letterSpacing,
       textAlign: sourceLayer.textAlign,
       mode: sourceLayer.mode,
+      styleRanges: sourceLayer.styleRanges,
       boxWidth: sourceLayer.boxWidth,
       boxHeight: sourceLayer.boxHeight,
       measuredWidth: sourceLayer.measuredWidth,
@@ -3550,6 +3647,128 @@ function App() {
 
       return nextDocument
     })
+  }
+
+  function getEditingTextSelectionRange(layerId) {
+    if (editingTextLayerId !== layerId) {
+      return null
+    }
+
+    const selection = textSelectionRestoreRef.current ?? textSelectionRef.current
+    const start = Math.max(0, Math.floor(Number(selection?.start) || 0))
+    const end = Math.max(0, Math.floor(Number(selection?.end) || 0))
+
+    if (end <= start) {
+      return null
+    }
+
+    return { start, end }
+  }
+
+  function markTextStyleControlInteraction() {
+    if (!editingTextLayerId) {
+      return
+    }
+
+    preserveTextEditingBlurRef.current = true
+    textSelectionRestoreRef.current = {
+      ...textSelectionRef.current,
+    }
+  }
+
+  function applyTextStyleChange(layerId, stylesOrUpdater) {
+    const selection = getEditingTextSelectionRange(layerId)
+
+    if (selection) {
+      applyTextLayerUpdate(
+        layerId,
+        (layer) => applyTextStyleToRange(layer, selection.start, selection.end, stylesOrUpdater),
+      )
+      restoreTextEditorSelection(selection)
+      return
+    }
+
+    applyTextLayerUpdate(
+      layerId,
+      (layer) => (
+        typeof stylesOrUpdater === 'function'
+          ? stylesOrUpdater(layer)
+          : updateTextStyle(layer, stylesOrUpdater)
+      ),
+    )
+
+    if (editingTextLayerId === layerId) {
+      restoreTextEditorSelection()
+    }
+  }
+
+  function isEditingSelectionFullyBold(layer) {
+    if (!layer || layer.type !== 'text') {
+      return false
+    }
+
+    const selection = getEditingTextSelectionRange(layer.id)
+
+    if (!selection) {
+      return Number(layer.fontWeight) >= 700
+    }
+
+    return isTextRangeFullyBold(layer, selection.start, selection.end)
+  }
+
+  function getEditingSelectionStyleValue(layer, key) {
+    if (!layer || layer.type !== 'text') {
+      return null
+    }
+
+    const selection = getEditingTextSelectionRange(layer.id)
+
+    if (!selection) {
+      if (key === 'strokeColor') {
+        return layer.textStrokeColor ?? layer.strokeColor ?? ''
+      }
+
+      if (key === 'strokeWidth') {
+        return layer.textStrokeWidth ?? layer.strokeWidth ?? 0
+      }
+
+      return layer[key]
+    }
+
+    return getUniformTextStyleValueForRange(layer, selection.start, selection.end, key)
+  }
+
+  function stepTextFontSize(layerId, delta) {
+    applyTextStyleChange(layerId, (layer) => {
+      const selection = getEditingTextSelectionRange(layer.id)
+      const currentFontSize = selection
+        ? (getUniformTextStyleValueForRange(layer, selection.start, selection.end, 'fontSize') ?? layer.fontSize)
+        : layer.fontSize
+      const nextFontSize = Math.max(8, Number(currentFontSize) + delta)
+
+      if (selection) {
+        return applyTextStyleToRange(layer, selection.start, selection.end, {
+          fontSize: nextFontSize,
+        })
+      }
+
+      return updateTextStyle(layer, {
+        fontSize: nextFontSize,
+      })
+    })
+  }
+
+  function startTextFontSizeRepeat(layerId, delta) {
+    stepTextFontSize(layerId, delta)
+    clearFontSizeRepeatTimers()
+
+    fontSizeRepeatTimeoutRef.current = window.setTimeout(() => {
+      stepTextFontSize(layerId, delta)
+      fontSizeRepeatIntervalRef.current = window.setInterval(() => {
+        stepTextFontSize(layerId, delta)
+      }, FONT_SIZE_REPEAT_INTERVAL_MS)
+      fontSizeRepeatTimeoutRef.current = null
+    }, FONT_SIZE_REPEAT_DELAY_MS)
   }
 
   function getActiveLassoLayer() {
@@ -4868,6 +5087,16 @@ function App() {
     selectDocumentLayer(layer.id)
     setEditingTextLayerId(layer.id)
     setTextDraft(layer.text)
+    textSelectionRef.current = {
+      start: String(layer.text ?? '').length,
+      end: String(layer.text ?? '').length,
+    }
+    setTextEditorSelection({
+      start: String(layer.text ?? '').length,
+      end: String(layer.text ?? '').length,
+    })
+    textSelectionRestoreRef.current = null
+    preserveTextEditingBlurRef.current = false
     interactionRef.current = null
   }
 
@@ -4946,11 +5175,17 @@ function App() {
     updateTextLayerContent(layerId, nextText)
     setEditingTextLayerId(null)
     setTextDraft('')
+    setTextEditorSelection({ start: 0, end: 0 })
+    textSelectionRestoreRef.current = null
+    preserveTextEditingBlurRef.current = false
   }
 
   function cancelTextEditing() {
     setEditingTextLayerId(null)
     setTextDraft('')
+    setTextEditorSelection({ start: 0, end: 0 })
+    textSelectionRestoreRef.current = null
+    preserveTextEditingBlurRef.current = false
   }
 
   function registerLayerElement(layerId, node) {
@@ -4976,6 +5211,9 @@ function App() {
     const showGradientCursor = currentTool === 'gradient' && canApplyGradientToLayer(layer)
     const showPenCursor = currentTool === 'pen' && canPaintWithPenOnLayer(layer)
     const showLassoCursor = currentTool === 'lasso' && canLassoLayer(layer)
+    const textEditorOverlay = isEditingText
+      ? getTextEditorOverlayGeometry(layer, textEditorSelection.start, textEditorSelection.end)
+      : null
 
     return (
       <div
@@ -5005,38 +5243,89 @@ function App() {
       >
         {layer.type === 'text' && (
           isEditingText ? (
-            <textarea
-              ref={textEditorRef}
-              className="layer-body text-layer-body text-layer-editor"
-              value={textDraft}
-              style={{
-                fontFamily: layer.fontFamily,
-                fontSize: `${layer.fontSize}px`,
-                fontStyle: layer.fontStyle,
-                fontWeight: layer.fontWeight,
-                lineHeight: layer.lineHeight,
-                color: layer.color,
-                textAlign: layer.textAlign ?? 'left',
-              }}
-              onChange={(event) => {
-                setTextDraft(event.target.value)
-                updateTextLayerContent(layer.id, event.target.value, true)
-              }}
-              onBlur={() => commitTextEditing(layer.id)}
-              onPointerDown={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  event.preventDefault()
-                  cancelTextEditing()
-                }
+            <div className="layer-body text-layer-edit-shell">
+              <canvas
+                ref={(node) => registerVisibleCanvas(layer.id, node)}
+                className="layer-body text-layer-canvas text-layer-edit-preview"
+                aria-hidden="true"
+              />
+              <div className="text-layer-edit-overlay" aria-hidden="true">
+                {textEditorOverlay?.selectionRects.map((rect, rectIndex) => (
+                  <div
+                    key={`${layer.id}-selection-${rectIndex}`}
+                    className="text-layer-selection-rect"
+                    style={{
+                      left: `${rect.x}px`,
+                      top: `${rect.y}px`,
+                      width: `${rect.width}px`,
+                      height: `${rect.height}px`,
+                    }}
+                  />
+                ))}
+                {textEditorOverlay?.caretRect && textEditorSelection.start === textEditorSelection.end && (
+                  <div
+                    className="text-layer-caret"
+                    style={{
+                      left: `${textEditorOverlay.caretRect.x}px`,
+                      top: `${textEditorOverlay.caretRect.y}px`,
+                      height: `${textEditorOverlay.caretRect.height}px`,
+                    }}
+                  />
+                )}
+              </div>
+              <textarea
+                ref={textEditorRef}
+                className="layer-body text-layer-body text-layer-editor"
+                value={textDraft}
+                style={{
+                  fontFamily: layer.fontFamily,
+                  fontSize: `${layer.fontSize}px`,
+                  fontStyle: layer.fontStyle,
+                  fontWeight: layer.fontWeight,
+                  lineHeight: layer.lineHeight,
+                  color: layer.color,
+                  textAlign: layer.textAlign ?? 'left',
+                }}
+                onChange={(event) => {
+                  setTextDraft(event.target.value)
+                  updateTextLayerContent(layer.id, event.target.value, true)
+                  syncTextEditorSelection(event.target)
+                }}
+                onSelect={(event) => syncTextEditorSelection(event.target)}
+                onKeyUp={(event) => syncTextEditorSelection(event.target)}
+                onPointerUp={(event) => syncTextEditorSelection(event.target)}
+                onBlur={(event) => {
+                  const relatedTarget = event.relatedTarget instanceof HTMLElement
+                    ? event.relatedTarget
+                    : null
 
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault()
+                  if (
+                    preserveTextEditingBlurRef.current ||
+                    relatedTarget?.closest('[data-text-style-control="true"]')
+                  ) {
+                    textSelectionRestoreRef.current = {
+                      ...textSelectionRef.current,
+                    }
+                    return
+                  }
+
                   commitTextEditing(layer.id)
-                }
-              }}
-              autoFocus
-            />
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancelTextEditing()
+                  }
+
+                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault()
+                    commitTextEditing(layer.id)
+                  }
+                }}
+                autoFocus
+              />
+            </div>
           ) : (
             <canvas
               ref={(node) => registerVisibleCanvas(layer.id, node)}
@@ -5372,29 +5661,83 @@ function App() {
                       <>
                         <label className="property-field">
                           <span>Font Size</span>
-                          <input
-                            type="number"
-                            min="8"
-                            value={selectedLayer.fontSize}
-                            onChange={(event) =>
-                              handleNumericChange('fontSize', event.target.value, 8)
-                            }
-                          />
+                          <div className="number-stepper" data-text-style-control="true">
+                            <button
+                              className="number-stepper-button"
+                              type="button"
+                              data-text-style-control="true"
+                              onPointerDown={(event) => {
+                                event.preventDefault()
+                                markTextStyleControlInteraction()
+                                startTextFontSizeRepeat(selectedLayer.id, -1)
+                              }}
+                              onPointerUp={clearFontSizeRepeatTimers}
+                              onPointerLeave={clearFontSizeRepeatTimers}
+                            >
+                              -
+                            </button>
+                            <input
+                              type="number"
+                              min="8"
+                              value={getEditingSelectionStyleValue(selectedLayer, 'fontSize') ?? ''}
+                              data-text-style-control="true"
+                              onPointerDown={markTextStyleControlInteraction}
+                              onChange={(event) =>
+                                applyTextStyleChange(selectedLayer.id, {
+                                  fontSize: Math.max(8, Number(event.target.value) || 8),
+                                })
+                              }
+                            />
+                            <button
+                              className="number-stepper-button"
+                              type="button"
+                              data-text-style-control="true"
+                              onPointerDown={(event) => {
+                                event.preventDefault()
+                                markTextStyleControlInteraction()
+                                startTextFontSizeRepeat(selectedLayer.id, 1)
+                              }}
+                              onPointerUp={clearFontSizeRepeatTimers}
+                              onPointerLeave={clearFontSizeRepeatTimers}
+                            >
+                              +
+                            </button>
+                          </div>
                         </label>
                         <label className="property-field">
                           <span>Weight</span>
                           <button
-                            className={selectedLayer.fontWeight >= 700
+                            className={isEditingSelectionFullyBold(selectedLayer)
                               ? 'action-button active'
                               : 'action-button'}
                             type="button"
+                            data-text-style-control="true"
+                            onPointerDown={markTextStyleControlInteraction}
                             onClick={() =>
-                              applyTextLayerUpdate(selectedLayer.id, (layer) => updateTextStyle(
-                                layer,
-                                {
-                                  fontWeight: layer.fontWeight >= 700 ? 400 : 700,
+                              applyTextStyleChange(
+                                selectedLayer.id,
+                                (layer) => {
+                                  const selection = getEditingTextSelectionRange(layer.id)
+
+                                  if (selection) {
+                                    const nextWeight = isTextRangeFullyBold(
+                                      layer,
+                                      selection.start,
+                                      selection.end,
+                                    )
+                                      ? 400
+                                      : 700
+
+                                    return applyTextStyleToRange(layer, selection.start, selection.end, {
+                                      fontWeight: nextWeight,
+                                    })
+                                  }
+
+                                  return updateTextStyle(layer, {
+                                    fontWeight: Number(layer.fontWeight) >= 700 ? 400 : 700,
+                                  })
                                 },
-                              ))
+                              )
                             }
                           >
                             Bold
@@ -5403,12 +5746,13 @@ function App() {
                         <label className="property-field">
                           <span>Font</span>
                           <select
-                            value={selectedLayer.fontFamily}
+                            value={getEditingSelectionStyleValue(selectedLayer, 'fontFamily') ?? selectedLayer.fontFamily}
+                            data-text-style-control="true"
+                            onPointerDown={markTextStyleControlInteraction}
                             onChange={(event) =>
-                              applyTextLayerUpdate(
-                                selectedLayer.id,
-                                (layer) => updateTextLayerFont(layer, event.target.value),
-                              )
+                              applyTextStyleChange(selectedLayer.id, {
+                                fontFamily: event.target.value,
+                              })
                             }
                           >
                             {FONT_FAMILY_OPTIONS.map((option) => (
@@ -5452,13 +5796,12 @@ function App() {
                             type="number"
                             step="0.5"
                             value={selectedLayer.letterSpacing ?? 0}
+                            data-text-style-control="true"
+                            onPointerDown={markTextStyleControlInteraction}
                             onChange={(event) =>
-                              applyTextLayerUpdate(
-                                selectedLayer.id,
-                                (layer) => updateTextStyle(layer, {
-                                  letterSpacing: Number(event.target.value) || 0,
-                                }),
-                              )
+                              applyTextStyleChange(selectedLayer.id, {
+                                letterSpacing: Number(event.target.value) || 0,
+                              })
                             }
                           />
                         </label>
@@ -5469,13 +5812,12 @@ function App() {
                             min="0.5"
                             step="0.05"
                             value={selectedLayer.lineHeight ?? 1.15}
+                            data-text-style-control="true"
+                            onPointerDown={markTextStyleControlInteraction}
                             onChange={(event) =>
-                              applyTextLayerUpdate(
-                                selectedLayer.id,
-                                (layer) => updateTextStyle(layer, {
-                                  lineHeight: Math.max(0.5, Number(event.target.value) || 1.15),
-                                }),
-                              )
+                              applyTextStyleChange(selectedLayer.id, {
+                                lineHeight: Math.max(0.5, Number(event.target.value) || 1.15),
+                              })
                             }
                           />
                         </label>
@@ -5483,8 +5825,14 @@ function App() {
                           <span>Color</span>
                           <input
                             type="color"
-                            value={selectedLayer.color}
-                            onChange={(event) => updateSelectedLayer({ color: event.target.value })}
+                            value={getEditingSelectionStyleValue(selectedLayer, 'color') ?? selectedLayer.color}
+                            data-text-style-control="true"
+                            onPointerDown={markTextStyleControlInteraction}
+                            onChange={(event) =>
+                              applyTextStyleChange(selectedLayer.id, {
+                                color: event.target.value,
+                              })
+                            }
                           />
                         </label>
                         {!selectedLayer.isTextShadow && selectedLayerShadow && (
