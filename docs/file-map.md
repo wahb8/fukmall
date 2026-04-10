@@ -308,9 +308,31 @@ This document describes what each tracked file in the repo currently does.
 
 - demo image used in the initial document
 
+### `src/assets/BadeenDisplay-Regular.ttf`
+
+- standalone bundled font file registered from `src/index.css`
+
 ### `src/assets/fonts/Fixture-Black.ttf`
 
 - local display font used by the UI font-face definition
+
+### `src/assets/fonts/*.ttf`
+
+- bundled local font catalog used by the UI font registration in `src/index.css`
+- also provides most of the font-family options exposed to text layers through `src/lib/fontOptions.js`
+
+### `src/assets/illustration styles/**/*`
+
+- reference/demo image catalog grouped by illustration style
+- used as source assets available to the current workspace rather than runtime code modules
+
+### `src/assets/add layer.svg`
+
+- layer-panel add-drawing icon
+
+### `src/assets/gradient.svg`
+
+- toolbar/icon asset for the gradient tool
 
 ### `src/assets/add image.svg`
 

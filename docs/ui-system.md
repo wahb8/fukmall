@@ -55,39 +55,59 @@ Primary custom properties are defined in `src/App.css`.
 The app locally registers bundled font families from `src/index.css`, including:
 
 - `AbrilFatface`
+- `Alyamama`
 - `AlfaSlabOne`
+- `Amiri`
 - `AtkinsonHyperlegibleMono`
+- `BadeenDisplay`
+- `Cairo`
 - `Caprasimo`
+- `Changa`
+- `ElMessiri`
 - `Fixture`
 - `Gelasio`
+- `Lalezar`
 - `MerriweatherSans`
 - `MPLUS1Code`
 - `Oi`
 - `Ramaraja`
+- `ReemKufi`
 - `REM`
+- `Rubik`
 - `Ubuntu`
 - `Ultra`
+- `Zain`
 
 ### Text Layer Fonts
 
 Available text layer font options currently include:
 
 - AbrilFatface
+- Alyamama
 - AlfaSlabOne
+- Amiri
 - Arial
 - AtkinsonHyperlegibleMono
+- BadeenDisplay
+- Cairo
 - Caprasimo
+- Changa
+- ElMessiri
 - Fixture
 - Gelasio
 - Inter
+- Lalezar
 - MerriweatherSans
 - MPLUS1Code
 - Oi
 - Ramaraja
+- ReemKufi
 - REM
 - Roboto
+- Rubik
 - Ubuntu
 - Ultra
+- Zain
 - Georgia
 - Times New Roman
 - Courier New
@@ -161,6 +181,8 @@ The top toolbar also includes:
 - a `File` dropdown anchored near the top-left of the app shell
 - contextual range/select controls for brush size, eraser size, bucket tolerance, and gradient mode
 - a compact history control cluster for undo/redo
+- swap/reset buttons for the global foreground/background color pair
+- a transient inline error/status pill when a tool action is unavailable
 
 The file workflow also uses centered modal cards for:
 
@@ -208,11 +230,15 @@ Layer rows can also show compact chips for:
 - `alpha lock`
 - `linked`
 
+The layer panel footer includes a single icon action for creating a new drawing layer.
+
 Inline text editing swaps the rendered text canvas for a textarea with a dashed teal border.
 
 There is currently no active group-layer-specific UI because the group feature is disabled.
 
 Below the canvas there is a styled prompt shell with a single input, but it is currently visual-only and not connected to editing logic.
+
+During supported external desktop image-file drags, the stage also shows a centered import overlay card.
 
 ## Responsive Notes
 
