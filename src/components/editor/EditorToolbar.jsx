@@ -4,6 +4,7 @@ import bucketIcon from '../../assets/bucket.svg'
 import eraserIcon from '../../assets/eraser.svg'
 import gradientIcon from '../../assets/gradient.svg'
 import lassoIcon from '../../assets/lasso.svg'
+import marqueeIcon from '../../assets/marquee.svg'
 import penIcon from '../../assets/pen.svg'
 import pointerIcon from '../../assets/pointer.svg'
 import redoIcon from '../../assets/redo.svg'
@@ -72,6 +73,14 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           aria-label="Lasso"
         >
           <img className="button-icon" src={lassoIcon} alt="" aria-hidden="true" />
+        </button>
+        <button
+          className={currentTool === 'rectSelect' ? 'action-button active' : 'action-button'}
+          type="button"
+          onClick={() => onActivateTool('rectSelect')}
+          aria-label="Rectangle Selection"
+        >
+          <img className="button-icon" src={marqueeIcon} alt="" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -172,6 +181,7 @@ export function EditorToolbar({
   gradientMode,
   hasFloatingSelection,
   hasActiveLassoSelection,
+  hasActiveRectSelection,
   canUndo,
   canRedo,
   toolPanelError,
@@ -239,11 +249,11 @@ export function EditorToolbar({
             </select>
           </label>
         )}
-        {currentTool === 'lasso' && (
+        {(currentTool === 'lasso' || currentTool === 'rectSelect') && (
           <button
             className="action-button"
             type="button"
-            disabled={!hasFloatingSelection && !hasActiveLassoSelection}
+            disabled={!hasFloatingSelection && !hasActiveLassoSelection && !hasActiveRectSelection}
             onClick={onCommitFloatingSelectionToNewLayer}
           >
             Sel to Layer

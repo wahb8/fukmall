@@ -12,6 +12,7 @@ function createToolbarProps(overrides = {}) {
     gradientMode: 'bg-to-fg',
     hasFloatingSelection: false,
     hasActiveLassoSelection: false,
+    hasActiveRectSelection: false,
     canUndo: true,
     canRedo: false,
     toolPanelError: { message: '', isVisible: false, isFading: false },
@@ -71,5 +72,19 @@ describe('EditorToolbar', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Sel to Layer' })).toBeDisabled()
+  })
+
+  it('renders the rectangle selection tool and enables selection actions there too', () => {
+    const props = createToolbarProps({
+      currentTool: 'rectSelect',
+      hasActiveRectSelection: true,
+    })
+
+    render(<EditorToolbar {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rectangle Selection' }))
+
+    expect(props.onActivateTool).toHaveBeenCalledWith('rectSelect')
+    expect(screen.getByRole('button', { name: 'Sel to Layer' })).toBeEnabled()
   })
 })

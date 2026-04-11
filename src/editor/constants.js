@@ -27,3 +27,14 @@ export const NO_LAYERS_TOOL_ERROR_MESSAGE = 'There are no layers to edit. Add a 
 export const DEFAULT_TEXT_SHADOW_OFFSET_X = 8
 export const DEFAULT_TEXT_SHADOW_OFFSET_Y = 8
 export const DEFAULT_TEXT_SHADOW_OPACITY = 0.4
+
+export const TOOLS = {
+  SELECT: 'select',
+  PEN: 'pen',
+  ERASER: 'eraser',
+  ZOOM: 'zoom',
+  BUCKET: 'bucket',
+  GRADIENT: 'gradient',
+  LASSO: 'lasso',
+  RECT_SELECT: 'rectSelect',
+}

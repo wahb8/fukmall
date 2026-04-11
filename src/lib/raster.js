@@ -981,3 +981,29 @@ export function toLayerCoordinates(pointerEvent, layerElement, rasterCanvas) {
     y: Math.min(Math.max(normalizedY, 0), 1) * rasterCanvas.height,
   }
 }
+
+export function getCanvasAlphaAtPoint(canvas, point) {
+  if (!canvas || !point) {
+    return null
+  }
+
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+
+  if (!context) {
+    return null
+  }
+
+  const normalizedX = Math.floor(point.x)
+  const normalizedY = Math.floor(point.y)
+
+  if (
+    normalizedX < 0 ||
+    normalizedY < 0 ||
+    normalizedX >= canvas.width ||
+    normalizedY >= canvas.height
+  ) {
+    return 0
+  }
+
+  return context.getImageData(normalizedX, normalizedY, 1, 1).data[3]
+}
