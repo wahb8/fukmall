@@ -31,6 +31,20 @@ function createBaseLayer(overrides) {
   }
 }
 
+export function clampLayerCornerRadius(width, height, radius) {
+  const numericRadius = Number(radius)
+
+  if (!Number.isFinite(numericRadius)) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(
+    numericRadius,
+    Math.max(0, Number(width) || 0) / 2,
+    Math.max(0, Number(height) || 0) / 2,
+  ))
+}
+
 export function createDocument(
   layers = [],
   selectedLayerId = null,
@@ -124,10 +138,15 @@ export function createImageLayer(overrides = {}) {
     width: 300,
     height: 220,
     src: '',
-    bitmap: overrides.bitmap ?? overrides.src ?? '',
-    sourceKind: 'bitmap',
-    fit: 'fill',
     ...overrides,
+    bitmap: overrides.bitmap ?? overrides.src ?? '',
+    sourceKind: overrides.sourceKind ?? 'bitmap',
+    cornerRadius: clampLayerCornerRadius(
+      overrides.width ?? 300,
+      overrides.height ?? 220,
+      overrides.cornerRadius ?? 0,
+    ),
+    fit: overrides.fit ?? 'fill',
   })
 }
 

@@ -1,4 +1,5 @@
 import {
+  clampLayerCornerRadius,
   DEFAULT_DOCUMENT_HEIGHT,
   DEFAULT_DOCUMENT_NAME,
   DEFAULT_DOCUMENT_WIDTH,
@@ -27,6 +28,13 @@ function isSupportedDocumentLayer(layer) {
 }
 
 function normalizeDocumentLayer(layer) {
+  if (layer?.type === 'image') {
+    return {
+      ...layer,
+      cornerRadius: clampLayerCornerRadius(layer.width, layer.height, layer.cornerRadius ?? 0),
+    }
+  }
+
   if (layer?.type !== 'text') {
     return layer
   }

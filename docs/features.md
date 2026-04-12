@@ -240,6 +240,8 @@ Text layers support:
 - selected-range styling for supported text style controls while inline editing is active
 - left/center/right alignment in the inspector
 - double-click editing even when the text layer is already selected
+- if a text layer is already selected, double-clicking inside that selected layer's transformed frame/edit area now edits that selected text layer first, even when another layer sits above it in the stack
+- only when that selected-text-layer priority check fails does the app fall back to the normal topmost text-layer double-click resolution
 - inline editing now places the caret at the end of the text when edit mode opens
 - mixed font/color styling now affects wrapping, alignment, and bounds through the shared text-layout path
 - inline edit mode now keeps the styled canvas preview visible underneath the text input layer so partial styling remains visible immediately while editing

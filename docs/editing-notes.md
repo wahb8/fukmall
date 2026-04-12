@@ -118,6 +118,7 @@ Current behavior:
 - box text alignment affects per-line placement inside the box while preserving wrapping/reflow
 - point text alignment preserves the layer's intended horizontal anchor when content or alignment changes
 - the selected-layer selection frame now forwards double-click into text editing for text layers
+- text double-click edit entry is now resolved at the canvas-stage level, so an already-selected text layer can still enter edit mode from its own transformed frame even when a higher layer overlaps it
 - when inline editing opens, the textarea caret is moved to the end of the current text
 
 If future work changes text editing again, preserve the shared renderer path so editor view, inline editing, and export do not drift apart.

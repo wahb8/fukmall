@@ -81,6 +81,7 @@ This document describes what each tracked file in the repo currently does.
 - contains text-shadow creation and shadow-property editing for text layers
 - contains generic linked-layer creation/unlinking behavior and the coupled move/resize handling for linked pairs
 - contains the text inspector alignment control and the double-click-to-edit wiring for selected text layers
+- now resolves text double-click edit entry at the canvas-stage level so an already-selected text layer can enter edit mode from its own transformed frame even when a higher layer overlaps it
 - contains the simple SVG-backed image import/render flow, including the behavior that pen strokes on SVG layers create a new raster layer above the SVG
 - contains the project file workflow for new/open/save, the new-file and unsaved-changes modal flows, and the runtime reset path used when loading a file
 - contains the export controls for flattened PNG/JPEG downloads
@@ -92,7 +93,7 @@ This document describes what each tracked file in the repo currently does.
 - contains a currently unwired prompt-style input below the canvas
 - contains move interaction behavior such as snapping and temporary Shift axis locking
 - contains the selected-frame move behavior so already-selected layers can be dragged from their transformed selection frame without another opaque-pixel hit
-- contains the shared topmost-layer resolver used by single-click selection and text double-click edit entry
+- contains the shared topmost-layer resolver used by single-click selection and as the fallback path for text double-click edit entry after selected-text priority checks
 - contains pixel-aware layer picking for raster, image, and text layers, including the current click-through and hit-padding behavior
 - contains the outside-canvas deselect behavior that allows an explicit empty selection on pointer down outside the stage
 - contains the inline text-editor caret placement behavior so edit mode opens with the cursor at the end of the text

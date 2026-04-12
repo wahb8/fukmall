@@ -26,6 +26,8 @@ import {
   MIN_LAYER_WIDTH,
   MIN_VIEWPORT_ZOOM,
   NO_LAYERS_TOOL_ERROR_MESSAGE,
+  RESIZE_HANDLE_HIT_PADDING_PX,
+  RESIZE_HANDLE_VISIBLE_SIZE_PX,
   TOOL_PANEL_ERROR_DURATION_MS,
   TOOL_PANEL_ERROR_FADE_DELAY_MS,
   VIEWPORT_ZOOM_STEP,
@@ -89,6 +91,7 @@ import {
   insertLayer,
   isSvgImageLayer,
   isRasterLayer,
+  clampLayerCornerRadius,
   linkLayerPair,
   mergeLayerDown,
   moveLayerToIndex,
@@ -799,6 +802,16 @@ function getSelectedLayerCount(documentState) {
   return selectedLayerIds.length
 }
 
+function isPointInsideTextEditRegion(layer, documentPoint) {
+  if (!documentPoint || layer?.type !== 'text' || !layer.visible) {
+    return false
+  }
+
+  const localPoint = toLayerLocalPoint(layer, documentPoint)
+
+  return isPointInsideLayerFrame(layer, localPoint)
+}
+
 function createTransparentColorFromHex(color) {
   if (typeof color !== 'string' || !/^#[\da-f]{6}$/i.test(color)) {
     return null
@@ -1044,6 +1057,10 @@ function App() {
   const hasActiveLassoSelection = Boolean(lassoSelection?.isClosed)
   const hasActiveRectSelection = Boolean(rectSelection?.rect && !rectSelection?.isDragging)
   const hasFloatingSelection = Boolean(floatingSelection)
+  const resizeHandleStyleVars = {
+    '--resize-handle-visible-size': `${RESIZE_HANDLE_VISIBLE_SIZE_PX}px`,
+    '--resize-handle-hit-padding': `${RESIZE_HANDLE_HIT_PADDING_PX}px`,
+  }
 
   const clearToolPanelErrorTimers = useCallback(() => {
     if (toolPanelErrorFadeTimeoutRef.current) {
@@ -1433,6 +1450,15 @@ function App() {
     const surfaceCanvas = await ensureRasterLayerSurface(layer)
 
     if (surfaceCanvas) {
+      if (layer.type === 'image') {
+        const cornerRadius = clampLayerCornerRadius(layer.width, layer.height, layer.cornerRadius ?? 0)
+
+        if (cornerRadius > 0) {
+          drawRoundedRect(context, layer.width, layer.height, cornerRadius)
+          context.clip()
+        }
+      }
+
       context.drawImage(
         surfaceCanvas,
         0,
@@ -5633,6 +5659,17 @@ function App() {
 
     const resolvedValue = minimum === null ? numericValue : Math.max(minimum, numericValue)
 
+    if (selectedLayer.type === 'image' && key === 'cornerRadius') {
+      updateSelectedLayer({
+        cornerRadius: clampLayerCornerRadius(
+          selectedLayer.width,
+          selectedLayer.height,
+          resolvedValue,
+        ),
+      })
+      return
+    }
+
     if (selectedLayer.type === 'text') {
       if (key === 'fontSize') {
         applyTextLayerUpdate(selectedLayer.id, (layer) => updateTextStyle(layer, {
@@ -5710,6 +5747,50 @@ function App() {
         offsetY: nextViewport.offsetY,
       }
     })
+  }
+
+  function resolveTextLayerForDoubleClickEdit(documentPoint) {
+    const selectedDocumentLayer = getSingleSelectedLayer(documentState)
+
+    if (
+      selectedDocumentLayer?.type === 'text' &&
+      isPointInsideTextEditRegion(selectedDocumentLayer, documentPoint)
+    ) {
+      return selectedDocumentLayer
+    }
+
+    const topLayer = documentPoint
+      ? resolveTopLayerAtPoint(documentPoint)
+      : null
+
+    return topLayer?.type === 'text' ? topLayer : null
+  }
+
+  function handleCanvasDoubleClick(event) {
+    if (currentTool !== 'select' || editingTextLayerId) {
+      return
+    }
+
+    const target = event.target instanceof HTMLElement ? event.target : null
+
+    if (target?.closest('.resize-handle')) {
+      return
+    }
+
+    const documentPoint = toDocumentCoordinates(
+      event,
+      canvasRef.current,
+      viewport,
+      documentScale,
+    )
+    const targetLayer = resolveTextLayerForDoubleClickEdit(documentPoint)
+
+    if (!targetLayer) {
+      return
+    }
+
+    event.stopPropagation()
+    beginTextEditing(targetLayer)
   }
 
   function beginTextEditing(layer) {
@@ -5966,22 +6047,6 @@ function App() {
             <canvas
               ref={(node) => registerVisibleCanvas(layer.id, node)}
               className="layer-body text-layer-canvas"
-              onDoubleClick={(event) => {
-                event.stopPropagation()
-                const documentPoint = toDocumentCoordinates(
-                  event,
-                  canvasRef.current,
-                  viewport,
-                  documentScale,
-                )
-                const targetLayer = documentPoint
-                  ? resolveTopLayerAtPoint(documentPoint, layer)
-                  : layer
-
-                if (targetLayer?.type === 'text') {
-                  beginTextEditing(targetLayer)
-                }
-              }}
             />
           )
         )}
@@ -5997,7 +6062,16 @@ function App() {
         {layer.type === 'image' &&
         layer.sourceKind === 'svg' &&
         activeSvgToolLayerId !== layer.id ? (
-          <div className="layer-body image-layer-body">
+          <div
+            className="layer-body image-layer-body"
+            style={{
+              borderRadius: `${clampLayerCornerRadius(
+                layer.width,
+                layer.height,
+                layer.cornerRadius ?? 0,
+              )}px`,
+            }}
+          >
             <img
               className="layer-image"
               src={layer.src}
@@ -6007,7 +6081,18 @@ function App() {
             />
           </div>
         ) : isRasterLayer(layer) && (
-          <div className="layer-body image-layer-body">
+          <div
+            className="layer-body image-layer-body"
+            style={layer.type === 'image'
+              ? {
+                borderRadius: `${clampLayerCornerRadius(
+                  layer.width,
+                  layer.height,
+                  layer.cornerRadius ?? 0,
+                )}px`,
+              }
+              : undefined}
+          >
             <canvas
               ref={(node) => registerVisibleCanvas(layer.id, node)}
               className="layer-image raster-layer-canvas"
@@ -6017,6 +6102,7 @@ function App() {
         {isSelected && currentTool === 'select' && !hasMultiSelection && !isEditingText && (
           <div
             className="selection-frame interactive"
+            style={resizeHandleStyleVars}
             onPointerDown={(event) => {
               const documentPoint = toDocumentCoordinates(
                 event,
@@ -6032,24 +6118,6 @@ function App() {
                 : layer
 
               startMove(event, targetLayer ?? layer)
-            }}
-            onDoubleClick={(event) => {
-              const documentPoint = toDocumentCoordinates(
-                event,
-                canvasRef.current,
-                viewport,
-                documentScale,
-              )
-              const targetLayer = documentPoint
-                ? resolveTopLayerAtPoint(documentPoint, layer)
-                : layer
-
-              if (targetLayer?.type !== 'text') {
-                return
-              }
-
-              event.stopPropagation()
-              beginTextEditing(targetLayer)
             }}
             aria-hidden="true"
           >
@@ -6089,6 +6157,7 @@ function App() {
       <div
         className="shared-selection-frame"
         style={{
+          ...resizeHandleStyleVars,
           left: `${selectionBounds.x}px`,
           top: `${selectionBounds.y}px`,
           width: `${selectionBounds.width}px`,
@@ -6219,6 +6288,7 @@ function App() {
                   isExternalImageDragActive ? 'external-file-drop-active' : '',
                 ].filter(Boolean).join(' ')}
                 onPointerDown={handleCanvasPointerDown}
+                onDoubleClick={handleCanvasDoubleClick}
                 onDragOver={handleCanvasDragOver}
                 onDragLeave={() => setIsCanvasAssetDropActive(false)}
                 onDrop={(event) => {
@@ -6774,6 +6844,36 @@ function App() {
 
                     {selectedLayer.type === 'image' && (
                       <>
+                        <label className="property-field full-width">
+                          <span>Rounded Corners</span>
+                          <button
+                            className={(selectedLayer.cornerRadius ?? 0) > 0
+                              ? 'action-button active'
+                              : 'action-button'}
+                            type="button"
+                            onClick={() => updateSelectedLayer({
+                              cornerRadius: (selectedLayer.cornerRadius ?? 0) > 0
+                                ? 0
+                                : clampLayerCornerRadius(
+                                  selectedLayer.width,
+                                  selectedLayer.height,
+                                  24,
+                                ),
+                            })}
+                          >
+                            {(selectedLayer.cornerRadius ?? 0) > 0 ? 'Rounded On' : 'Rounded Off'}
+                          </button>
+                        </label>
+                        <label className="property-field">
+                          <span>Corner Radius</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={Math.floor(Math.min(selectedLayer.width, selectedLayer.height) / 2)}
+                            value={selectedLayer.cornerRadius ?? 0}
+                            onChange={(event) => handleNumericChange('cornerRadius', event.target.value, 0)}
+                          />
+                        </label>
                       </>
                     )}
 

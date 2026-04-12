@@ -1,3 +1,4 @@
+import { clampLayerCornerRadius } from './layers'
 import {
   composeTextLayerCanvases,
   createCanvasFromRenderedSvgBox,
@@ -75,11 +76,17 @@ async function drawLayerToContext(context, layer) {
   }
 
   if (layer.type === 'image' && layer.sourceKind === 'svg') {
+    const cornerRadius = clampLayerCornerRadius(layer.width, layer.height, layer.cornerRadius ?? 0)
     const svgCanvasResult = await createCanvasFromRenderedSvgBox(
       source,
       layer.width,
       layer.height,
     )
+
+    if (cornerRadius > 0) {
+      drawRoundedRect(context, layer.width, layer.height, cornerRadius)
+      context.clip()
+    }
 
     context.drawImage(svgCanvasResult.canvas, 0, 0, layer.width, layer.height)
     context.restore()
@@ -87,6 +94,15 @@ async function drawLayerToContext(context, layer) {
   }
 
   const image = await loadImageElement(source)
+  if (layer.type === 'image') {
+    const cornerRadius = clampLayerCornerRadius(layer.width, layer.height, layer.cornerRadius ?? 0)
+
+    if (cornerRadius > 0) {
+      drawRoundedRect(context, layer.width, layer.height, cornerRadius)
+      context.clip()
+    }
+  }
+
   context.drawImage(image, 0, 0, layer.width, layer.height)
   context.restore()
 }

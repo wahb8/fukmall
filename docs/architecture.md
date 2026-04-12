@@ -170,6 +170,7 @@ Layer picking also has a shared topmost-layer resolver in `App`:
 - raster, image, and text layers then use pixel-aware hit testing against their visible canvas surfaces
 - the hit test uses a small nearby-pixel padding radius so selection is less brittle around thin strokes and anti-aliased edges
 - transparent pixels can fall through to lower layers, but selected-frame drag behavior still keeps its explicit move affordance once a layer is already selected
+- text double-click edit entry now has a stage-level selected-text override: if a single selected text layer contains the double-click inside its transformed frame, edit mode opens for that selected text layer before any normal topmost fallback runs
 
 ## Architectural Characteristics
 
