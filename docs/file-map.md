@@ -92,9 +92,13 @@ This document describes what each tracked file in the repo currently does.
 - contains a currently unwired prompt-style input below the canvas
 - contains move interaction behavior such as snapping and temporary Shift axis locking
 - contains the selected-frame move behavior so already-selected layers can be dragged from their transformed selection frame without another opaque-pixel hit
+- contains the shared topmost-layer resolver used by single-click selection and text double-click edit entry
+- contains pixel-aware layer picking for raster, image, and text layers, including the current click-through and hit-padding behavior
+- contains the outside-canvas deselect behavior that allows an explicit empty selection on pointer down outside the stage
 - contains the inline text-editor caret placement behavior so edit mode opens with the cursor at the end of the text
 - contains the current resize-session snapshot logic and the `5000 x 5000` absolute resize cap
-- contains the raster pen surface-expansion logic, including the stable preview-offset behavior that prevents the layer from twitching while a stroke grows beyond the current working surface
+- contains both lasso and rectangular marquee transient-selection orchestration, including floating selection extraction and `Sel to Layer`
+- contains the fixed-surface raster pen behavior; normal pen drawing no longer expands the raster layer bounds during the stroke
 - contains the live document-state ref used by long-lived pointer handlers so paint/edit mapping follows the current layer transform after move operations
 - contains the external desktop image-file drag/drop entry path, including supported-file detection, overlay state wiring, and reuse of the direct import flow
 - this is currently the most important file in the repo
@@ -120,6 +124,7 @@ This document describes what each tracked file in the repo currently does.
 ### `src/components/editor/EditorToolbar.jsx`
 
 - presentational toolbar component for tool buttons, tool options, history controls, add-text/add-image actions, and global color controls
+- includes the marquee tool button using `src/assets/marquee.svg`
 - keeps toolbar UI out of `App.jsx` while leaving the actual behavior callbacks in `App`
 
 ### `src/components/editor/FileMenu.jsx`
@@ -227,6 +232,7 @@ This document describes what each tracked file in the repo currently does.
 - contains text-canvas composition helpers for editable text, erase masks, and paint overlays
 - now uses the shared mixed-style text measurement/render path when rasterizing text layers to canvas
 - converts DOM pointer positions into canvas-local coordinates
+- includes canvas alpha-sampling helpers used by pixel-aware selection hit testing, including nearby-pixel hit padding
 
 ### `src/lib/exportDocument.js`
 
@@ -273,6 +279,13 @@ This document describes what each tracked file in the repo currently does.
 - polygon/lasso selection helpers
 - computes bounds, extracts selected pixels to a floating canvas, clears selected regions, and renders selection outlines
 - can convert lassoed content into a movable floating-selection object
+
+### `src/lib/rectSelectTool.js`
+
+- rectangular marquee selection helpers
+- normalizes dragged rectangle geometry
+- extracts and clears rectangular pixel regions
+- renders the marquee overlay and shared rectangular clip behavior
 
 ### `src/lib/moveSnapping.js`
 
@@ -372,6 +385,10 @@ This document describes what each tracked file in the repo currently does.
 ### `src/assets/lasso.svg`
 
 - lasso tool icon
+
+### `src/assets/marquee.svg`
+
+- rectangular marquee tool icon
 
 ### `src/assets/merge down.svg`
 

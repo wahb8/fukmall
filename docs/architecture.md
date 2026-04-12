@@ -2,7 +2,7 @@
 
 ## Summary
 
-This app is a client-side React + Vite editor prototype for building and editing a layered mobile-sized composition. It behaves like a lightweight design tool with a document model, layer stack, editable text, raster painting, gradient application, bucket fill, erasing, lasso selection, snapping, zooming, and an asset library.
+This app is a client-side React + Vite editor prototype for building and editing a layered mobile-sized composition. It behaves like a lightweight design tool with a document model, layer stack, editable text, raster painting, gradient application, bucket fill, erasing, lasso selection, rectangular marquee selection, snapping, zooming, and an asset library.
 
 The architecture is simple in packaging but dense in implementation:
 
@@ -43,6 +43,7 @@ The highest-risk logic still stays in `App`:
 - raster surface cache coordination
 - text edit transitions
 - lasso/floating selection behavior
+- rectangular marquee and floating-rect selection behavior
 - layer inspector behavior
 - text-shadow orchestration for text layers
 - asset-library-to-canvas wiring
@@ -132,6 +133,8 @@ The app uses normal React DOM for UI chrome and individual layer wrappers, but a
 
 That cache allows the UI to repaint quickly without rewriting the persisted document object on every pointer move.
 
+The current pen model uses those cached canvases as fixed-size working surfaces for normal drawing. The app no longer grows raster layer bounds dynamically during pen strokes. Some non-pen bitmap operations can still allocate larger temporary working surfaces when the operation itself needs more editable area.
+
 ### 5. Tool Modules
 
 Feature logic is split into focused helper modules:
@@ -140,6 +143,7 @@ Feature logic is split into focused helper modules:
 - `eraserTool.js`: erase/mask drawing ops
 - `raster.js`: also hosts the gradient and bucket-fill bitmap implementations used for bitmap layers
 - `lassoTool.js`: polygon selection and floating selection extraction
+- `rectSelectTool.js`: rectangular marquee extraction, clipping, and overlay helpers
 - `moveSnapping.js`: snapping to frame center and edges
 - `viewport.js`: screen/world coordinate transforms
 - `textLayer.js`: text measurement, wrapping, layout sync, and canvas rendering
@@ -156,9 +160,16 @@ The main data flow for most interactions is:
 4. Pointer move events update either:
    - transient document state via `setTransient`, or
    - in-memory canvases via `rasterSurfacesRef`, or
-   - transient overlay state such as the gradient preview line, snap guides, or lasso overlays
+   - transient overlay state such as the gradient preview line, snap guides, lasso overlays, or marquee overlays
 5. Pointer up finalizes the result.
 6. The result is committed into document history with `commit` or `commitTransientChange`.
+
+Layer picking also has a shared topmost-layer resolver in `App`:
+
+- cheap transformed-bounds rejection happens first
+- raster, image, and text layers then use pixel-aware hit testing against their visible canvas surfaces
+- the hit test uses a small nearby-pixel padding radius so selection is less brittle around thin strokes and anti-aliased edges
+- transparent pixels can fall through to lower layers, but selected-frame drag behavior still keeps its explicit move affordance once a layer is already selected
 
 ## Architectural Characteristics
 

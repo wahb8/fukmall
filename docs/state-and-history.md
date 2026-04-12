@@ -21,6 +21,7 @@ Stored in normal React state and not part of undo history:
 - active tool
 - pen and eraser size
 - lasso/floating selection objects
+- rectangular marquee/floating-rect selection objects
 - asset library
 - drag UI state
 - viewport
@@ -129,7 +130,6 @@ Each erasable layer may have a cache entry with:
 - `paintOverlayCanvas`
 - `visibleCanvas`
 - `layerElement`
-- temporary preview layout offsets/sizing for raster stroke expansion
 - `bitmapKey`
 - `syncToken`
 
@@ -143,11 +143,11 @@ Without this cache, every pointer move would require:
 
 The cache lets the app draw immediately and only persist the final result when the gesture ends.
 
-For raster pen drawing, the cache also now carries the temporary preview-expansion state used when a stroke reaches beyond the current working surface:
+For raster pen drawing, the cache now assumes a stable surface model:
 
-- the offscreen working canvas can expand during the gesture
-- the visible preview canvas is offset inside the existing layer wrapper so the layer does not visually jump during the stroke
-- the final expanded layer geometry is committed on pointer-up so the saved result matches what the user saw while drawing
+- the working canvas matches the layer's current bitmap size
+- pen drawing is clipped to that fixed surface instead of expanding it during the gesture
+- layer geometry stays stable unless some explicit non-pen workflow changes it
 
 For SVG-backed image layers, the cache is also the bridge into bitmap-only tools:
 
@@ -205,11 +205,17 @@ There are several related selection concepts:
 
 - polygon points and bounds for a selected region within a source layer
 
+### Rectangular Marquee Selection
+
+- a transient rectangle tied to a source layer
+- can become a floating pixel selection before being committed or cleared
+- is not stored in the persistent document snapshot
+
 ### Floating Selection
 
 - extracted canvas content that can be moved independently before being committed/deleted
 
-These are separate because lasso/floating selection is pixel-region state, not just layer selection state.
+These are separate because lasso/floating selection and rectangular marquee state are pixel-region state, not just layer selection state.
 
 ## Important Consequences
 
@@ -224,7 +230,8 @@ These are separate because lasso/floating selection is pixel-region state, not j
 - a lot of logic depends on synchronization between React state and mutable refs
 - async surface generation can race if multiple updates happen quickly
 - the boundary between document truth and render cache truth is subtle
-- raster pen drawing now has a clearer split between transient preview surface growth and final committed layer geometry
+- selection is now split across several layers of behavior: document selection IDs, transient lasso/marquee pixel-region state, and pixel-aware topmost-visible-layer hit testing
+- raster pen drawing now follows a simpler fixed-surface model, but bitmap tools such as bucket fill and gradient can still allocate larger temporary working surfaces when the operation requires it
 - SVG-backed image layers now have a mixed render model: normal display can stay vector-backed, while some bitmap workflows use temporary raster surfaces and pen drawing creates separate raster layers above the SVG
 - SVG-backed layers now also have tool-mode switching behavior: normal tool selection alone should not swap them into the temporary raster path, only active editing should
 

@@ -145,17 +145,18 @@ This is acceptable for an MVP but may become expensive for larger documents or p
 
 ### Raster Pen Surface Model
 
-Recent behavior changes made raster pen editing less brittle, but also more subtle internally:
+Raster pen drawing now uses a simpler fixed-surface model:
 
-- raster pen commits should not auto-crop the layer down to the first painted alpha bounds
+- raster pen commits should not auto-crop the layer down to painted alpha bounds
 - after moving a raster layer, later paint interactions must resolve coordinates from the layer's current transform, not stale geometry captured by older pointer handlers
-- when a raster stroke grows beyond the current working surface, the transient preview should expand inside the cache layer without making the layer appear to pan or re-center during the gesture
+- raster drawing should stay clipped to the existing layer surface instead of dynamically expanding during the stroke
+- layer `x/y/width/height` should remain stable during normal pen drawing
 
-If future work touches raster painting again, preserve the split between:
+If future work touches raster painting again, preserve the simpler rule set:
 
 - stable on-screen layer placement during the live stroke
-- transient preview-only surface expansion in the raster cache
-- final committed layer geometry written on pointer-up
+- fixed bitmap surface for pen/erase drawing
+- explicit geometry changes only when some non-pen workflow intentionally resizes or expands a bitmap
 
 ### Import Behavior
 
@@ -201,6 +202,7 @@ Current bucket fill behavior is intentionally narrow:
 - each click becomes one committed history step
 - non-alpha-locked fills can now expand beyond the old bitmap edge when the contiguous region reaches that edge
 - that expansion is still finite and currently stops at the document bounds
+- an active rectangular marquee constrains the fill and also acts as a minimum editable working area for the operation
 - text, shapes, groups, and SVG-backed image layers are out of scope for v1
 
 If future work expands this feature, it should continue to reuse the existing raster surface cache and avoid introducing a second bitmap-editing pipeline.
@@ -214,6 +216,7 @@ Current gradient behavior is also intentionally narrow:
 - available modes are `BG -> FG` and `FG -> Transparent`
 - the gradient is applied directly onto the clicked target layer
 - non-alpha-locked gradients can now expand the target bitmap when the dragged gradient line extends beyond the old bitmap bounds
+- an active rectangular marquee constrains the gradient and also acts as a minimum editable working area for the operation
 - a live overlay preview line appears during the drag, but it is transient UI only and not part of document/export state
 - text, shapes, groups, and SVG-backed image layers are out of scope for v1
 
@@ -232,6 +235,24 @@ That means:
 - invalid saved selection IDs should be treated as recoverable and normalized to a valid fallback layer when possible
 
 One important consequence is that the current `Enter` shortcut does not produce an empty selection when layers exist; selection normalization keeps a valid layer selected.
+
+There are now two important exceptions/overrides:
+
+- clicking outside the canvas is treated as explicit user intent to deselect, so the app allows an empty selection in that case
+- canvas layer picking for raster, image, and text now prefers topmost visible pixels rather than pure layer bounds, and the hit test includes a small padding radius so near-pixel clicks still feel selectable
+
+### Rectangular Marquee Tool
+
+The editor now has a second transient pixel-region selection tool alongside lasso.
+
+Current behavior:
+
+- `rectSelect` creates a temporary rectangle on the active source layer instead of a new layer
+- it reuses the same general floating-selection and `Sel to Layer` workflow as lasso once pixels are extracted
+- pen, eraser, bucket fill, and gradient all honor the active marquee as a clip region
+- for bucket fill and gradient, the marquee is also treated as a minimum working-surface extent so those tools do not collapse back to a smaller recent paint region
+
+If future work expands selection tooling again, keep lasso and rectangular marquee as transient runtime state rather than moving them into the persistent document model.
 
 ### Linked Layers
 

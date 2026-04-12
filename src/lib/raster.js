@@ -1007,3 +1007,53 @@ export function getCanvasAlphaAtPoint(canvas, point) {
 
   return context.getImageData(normalizedX, normalizedY, 1, 1).data[3]
 }
+
+export function hasVisibleCanvasPixelNearby(
+  canvas,
+  point,
+  padding = 4,
+  alphaThreshold = 8,
+) {
+  if (!canvas || !point) {
+    return null
+  }
+
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+
+  if (!context) {
+    return null
+  }
+
+  const centerX = Math.round(point.x)
+  const centerY = Math.round(point.y)
+
+  if (
+    centerX + padding < 0 ||
+    centerY + padding < 0 ||
+    centerX - padding >= canvas.width ||
+    centerY - padding >= canvas.height
+  ) {
+    return false
+  }
+
+  const minimumX = Math.max(0, centerX - padding)
+  const maximumX = Math.min(canvas.width - 1, centerX + padding)
+  const minimumY = Math.max(0, centerY - padding)
+  const maximumY = Math.min(canvas.height - 1, centerY + padding)
+  const sampleWidth = maximumX - minimumX + 1
+  const sampleHeight = maximumY - minimumY + 1
+
+  if (sampleWidth <= 0 || sampleHeight <= 0) {
+    return false
+  }
+
+  const alphaData = context.getImageData(minimumX, minimumY, sampleWidth, sampleHeight).data
+
+  for (let index = 3; index < alphaData.length; index += 4) {
+    if (alphaData[index] > alphaThreshold) {
+      return true
+    }
+  }
+
+  return false
+}

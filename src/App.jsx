@@ -115,7 +115,7 @@ import {
   createEmptyMaskCanvas,
   floodFillCanvas,
   inferImageSourceKindFromSrc,
-  getCanvasAlphaAtPoint,
+  hasVisibleCanvasPixelNearby,
   loadImageDimensionsFromSource,
   paintCanvas,
   readFileAsDataUrl,
@@ -159,6 +159,9 @@ import {
 function isSupportedAssetFile(file) {
   return Boolean(file) && /^image\/(png|jpeg|jpg|svg\+xml|webp)$/i.test(file.type)
 }
+
+const PIXEL_HIT_PADDING = 4
+const VISIBLE_PIXEL_ALPHA_THRESHOLD = 8
 
 function getSupportedImageFiles(files) {
   return Array.from(files ?? []).filter(isSupportedAssetFile)
@@ -4085,7 +4088,7 @@ function App() {
     }
   }
 
-  function getLayerSurfaceAlpha(layer, localPoint) {
+  function getLayerSurfacePixelHit(layer, localPoint) {
     const surfaceEntry = rasterSurfacesRef.current.get(layer.id)
     const surfaceCanvas = surfaceEntry?.offscreenCanvas ?? surfaceEntry?.visibleCanvas
 
@@ -4096,7 +4099,7 @@ function App() {
     const normalizedX = localPoint.x / Math.max(layer.width, 1)
     const normalizedY = localPoint.y / Math.max(layer.height, 1)
 
-    return getCanvasAlphaAtPoint(surfaceCanvas, {
+    return hasVisibleCanvasPixelNearby(surfaceCanvas, {
       x: Math.min(
         surfaceCanvas.width - 1,
         Math.max(0, normalizedX * surfaceCanvas.width),
@@ -4105,14 +4108,13 @@ function App() {
         surfaceCanvas.height - 1,
         Math.max(0, normalizedY * surfaceCanvas.height),
       ),
-    })
+    }, PIXEL_HIT_PADDING, VISIBLE_PIXEL_ALPHA_THRESHOLD)
   }
 
   function getLayerPixelHitResult(layer, localPoint) {
-    const alpha = getLayerSurfaceAlpha(layer, localPoint)
-    const visibleAlphaThreshold = 8
+    const hasVisiblePixelNearby = getLayerSurfacePixelHit(layer, localPoint)
 
-    if (alpha === null) {
+    if (hasVisiblePixelNearby === null) {
       if (layer?.type === 'text' || layer?.type === 'image') {
         return null
       }
@@ -4120,7 +4122,7 @@ function App() {
       return false
     }
 
-    return alpha > visibleAlphaThreshold
+    return hasVisiblePixelNearby
   }
 
   function isLayerHitAtDocumentPoint(layer, documentPoint) {

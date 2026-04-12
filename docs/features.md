@@ -59,9 +59,9 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - can be auto-created when the pen tool needs a drawable target
 - persisted as PNG data URLs
 - support alpha lock
-- raster pen editing no longer auto-crops the layer to the first painted alpha bounds on commit
-- raster pen strokes can expand the working surface when the user paints past the current edge
-- during that expansion, the on-canvas preview stays visually anchored instead of making the layer jump or chase the brush
+- raster pen editing uses a stable drawable surface that matches the layer's current `width` and `height`
+- pen drawing no longer auto-expands the bitmap surface when the brush reaches the edge
+- pen commits no longer grow or shrink layer geometry from painted-content bounds alone
 
 ### Text Layers
 
@@ -116,6 +116,10 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - once a layer is already selected, dragging from anywhere inside its transformed selection frame starts move immediately, even over transparent pixels
 - moving a layer while holding `Shift` now constrains movement to either horizontal or vertical after drag direction is detected
 - as long as the document has layers, the editor now keeps at least one layer selected
+- clicking outside the canvas/stage explicitly clears selection, even though normal in-canvas selection behavior still prefers keeping a valid selection during editing
+- canvas picking for raster, image, and text layers is now pixel-aware instead of purely box-based
+- transparent pixels in those layer types can fall through to lower visible layers
+- pixel-aware selection also uses a small hit padding radius, so clicks slightly near visible text, image edges, or raster strokes can still select the top visible layer
 
 ### Multi-Selection
 
@@ -137,6 +141,16 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 
 The lasso workflow is one of the more advanced features in the app and relies on canvas extraction rather than vector selection metadata.
 
+### Rectangular Marquee Selection
+
+- available as a separate `rectSelect` tool
+- lets the user click-drag a temporary rectangular pixel selection on raster/image/text-editable bitmap surfaces
+- does not create a new layer by itself; it remains transient editor state like the lasso selection
+- renders a dashed teal rectangle overlay with a translucent fill during and after creation
+- can be converted into a floating selection and then committed through the same `Sel to Layer` workflow used by lasso extraction
+- constrains pen, eraser, bucket fill, and gradient edits to the marquee rectangle while it is active on the source layer
+- bucket fill and gradient treat the marquee as both a clip region and a minimum editable working area, so they still operate across the full marquee even after small pen edits inside it
+
 ## Drawing and Erasing
 
 ### Pen Tool
@@ -148,15 +162,16 @@ The lasso workflow is one of the more advanced features in the app and relies on
 - for raster/image layers, paint is applied directly to the offscreen bitmap
 - if the user starts a pen stroke on an SVG image layer, the app first creates a new raster layer above it and paints onto that new layer
 - if the document has no layers, starting to draw with the pen creates a new raster layer automatically
-- raster pen drawing is no longer limited by the first visible painted bounds or by a stale pre-move box
 - after moving a raster layer, later pen strokes map against the layer's current transform rather than its old position
-- when a raster stroke grows beyond the current working surface, the preview surface expands without shifting the layer visually during the active gesture
+- raster/image drawing uses the current fixed layer surface and clips naturally at the layer bounds instead of dynamically expanding during the stroke
+- when a rectangular marquee is active on the source layer, pen output is clipped to that marquee without rebasing the stroke origin
 
 ### Eraser Tool
 
 - erases directly from raster/image surfaces
 - for text layers, it writes into an erase mask instead of destroying the original text definition
 - exposes a toolbar eraser-size slider with a current default value of `28`
+- when a rectangular marquee is active on the source layer, erase output is clipped to that marquee
 
 ### Gradient Tool
 
@@ -168,6 +183,7 @@ The lasso workflow is one of the more advanced features in the app and relies on
 - applies the final gradient directly onto the clicked target layer rather than creating a separate layer
 - for non-alpha-locked raster and bitmap image layers, the editable bitmap can expand when the dragged gradient line extends beyond the current bitmap bounds
 - when that expansion happens, old pixels stay visually anchored and the committed layer geometry grows to match the expanded bitmap
+- when a rectangular marquee is active on the source layer, the gradient is constrained to the marquee and uses that marquee as a minimum working area for the operation
 - commits each gradient application as a single undoable history step
 - shows a live overlay preview line while dragging so the user can see direction and spread before release
 - the preview line is transient UI only and is not exported or saved into the document
@@ -184,6 +200,7 @@ The lasso workflow is one of the more advanced features in the app and relies on
 - stays on the target layer rather than creating a new layer
 - for non-alpha-locked raster and bitmap image layers, fills that reach the current bitmap edge can expand the editable bitmap instead of treating the old bitmap boundary as a hard wall
 - bucket-fill expansion is finite and currently bounded by the document extents rather than becoming unbounded infinite fill
+- when a rectangular marquee is active on the source layer, the fill is constrained to that marquee and uses the marquee as a minimum working area for the operation
 - does not support text layers, shape layers, group layers, or SVG-backed image layers in v1
 - respects alpha lock on raster/image layers by preserving existing pixel alpha and avoiding fills that start in fully transparent regions when alpha lock is enabled
 
