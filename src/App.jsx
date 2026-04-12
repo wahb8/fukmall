@@ -62,9 +62,7 @@ import {
   renderLassoSelection,
 } from './lib/lassoTool'
 import {
-  clearRectSelection,
   createRectFromPoints,
-  extractRectSelection,
   isPointInsideRect,
   rectToBounds,
   renderRectSelection,
@@ -849,6 +847,19 @@ function constrainRectSelectionToSquare(startPoint, endPoint) {
   }
 }
 
+function createDocumentSelectionFromRect(rect, sourceLayerId = null) {
+  const finalizedSelection = finalizeLassoSelection(getRectSelectionPoints(rect))
+
+  if (!finalizedSelection) {
+    return null
+  }
+
+  return {
+    ...finalizedSelection,
+    ...(sourceLayerId ? { sourceLayerId } : {}),
+  }
+}
+
 function applyRectSelectionToCanvas(nextCanvas, originalCanvas, rect) {
   const bounds = rectToBounds(rect)
 
@@ -1060,7 +1071,16 @@ function App() {
   const resizeHandleStyleVars = {
     '--resize-handle-visible-size': `${RESIZE_HANDLE_VISIBLE_SIZE_PX}px`,
     '--resize-handle-hit-padding': `${RESIZE_HANDLE_HIT_PADDING_PX}px`,
+    '--resize-handle-scale-x': '1',
+    '--resize-handle-scale-y': '1',
   }
+  const selectedResizeHandleStyleVars = selectedLayer
+    ? {
+      ...resizeHandleStyleVars,
+      '--resize-handle-scale-x': String(Math.max(Math.abs(selectedLayer.scaleX ?? 1), 0.0001)),
+      '--resize-handle-scale-y': String(Math.max(Math.abs(selectedLayer.scaleY ?? 1), 0.0001)),
+    }
+    : resizeHandleStyleVars
 
   const clearToolPanelErrorTimers = useCallback(() => {
     if (toolPanelErrorFadeTimeoutRef.current) {
@@ -4939,36 +4959,31 @@ function App() {
       return null
     }
 
-    const sourceRect = createSourceRectSelectionFromDocumentRect(
-      sourceLayer,
-      surfaceEntry.offscreenCanvas,
+    const documentSelection = createDocumentSelectionFromRect(
       selectionOverride.rect,
+      selectionOverride.sourceLayerId,
     )
-    const extractedCanvas = extractRectSelection(surfaceEntry.offscreenCanvas, sourceRect)
+    const restoreCanvas = cloneCanvas(surfaceEntry.offscreenCanvas)
+    const nextFloatingSelection = documentSelection
+      ? createFloatingSelectionFromDocumentSelection(
+        sourceLayer,
+        restoreCanvas,
+        documentSelection,
+        mode,
+        restoreCanvas,
+      )
+      : null
 
-    if (!sourceRect || !extractedCanvas) {
+    if (!nextFloatingSelection) {
       return null
     }
 
-    const scaleX = sourceLayer.width / Math.max(surfaceEntry.offscreenCanvas.width, 1)
-    const scaleY = sourceLayer.height / Math.max(surfaceEntry.offscreenCanvas.height, 1)
-    const nextFloatingSelection = {
-      sourceLayerId: sourceLayer.id,
-      canvas: extractedCanvas,
-      x: sourceLayer.x + (sourceRect.x * scaleX),
-      y: sourceLayer.y + (sourceRect.y * scaleY),
-      width: extractedCanvas.width * scaleX,
-      height: extractedCanvas.height * scaleY,
-      mode,
-      scaleX,
-      scaleY,
-      restoreCanvas: cloneCanvas(surfaceEntry.offscreenCanvas),
-      sourceRect,
+    Object.assign(nextFloatingSelection, {
       selectionKind: 'rect',
-    }
+    })
 
     if (mode === 'move') {
-      clearRectSelection(surfaceEntry.offscreenCanvas, sourceRect)
+      clearSelectionFromCanvas(surfaceEntry.offscreenCanvas, nextFloatingSelection.sourceSelection)
       drawRasterLayer(sourceLayer.id)
     }
 
@@ -5235,53 +5250,29 @@ function App() {
         return
       }
 
-      const sourceRect = createSourceRectSelectionFromDocumentRect(
+      const extractedSelection = createFloatingSelectionFromDocumentSelection(
         sourceLayer,
         sourceEntry.offscreenCanvas,
-        rectSelection.rect,
+        createDocumentSelectionFromRect(rectSelection.rect, rectSelection.sourceLayerId),
+        'duplicate',
       )
-      const extractedCanvas = extractRectSelection(sourceEntry.offscreenCanvas, sourceRect)
 
-      if (!sourceRect || !extractedCanvas) {
+      if (!extractedSelection) {
         return
       }
 
-      const workingCanvas = cloneCanvas(sourceEntry.offscreenCanvas)
-      clearRectSelection(workingCanvas, sourceRect)
-
       const newLayer = createRasterLayer({
         name: `${sourceLayer.name} Selection`,
-        x: rectSelection.rect.x,
-        y: rectSelection.rect.y,
-        width: Math.max(1, Math.round(rectSelection.rect.width)),
-        height: Math.max(1, Math.round(rectSelection.rect.height)),
-        bitmap: canvasToBitmap(extractedCanvas),
+        x: extractedSelection.x,
+        y: extractedSelection.y,
+        width: Math.max(1, Math.round(extractedSelection.width)),
+        height: Math.max(1, Math.round(extractedSelection.height)),
+        bitmap: canvasToBitmap(extractedSelection.canvas),
       })
 
-      commit((currentDocument) => {
-        const nextDocument = applyRasterizedLayerUpdate(
-          currentDocument,
-          sourceLayer.id,
-          canvasToBitmap(workingCanvas),
-        )
+      commit((currentDocument) => insertLayer(currentDocument, newLayer, sourceLayer.id))
 
-        return insertLayer(nextDocument, newLayer, sourceLayer.id)
-      })
-
-      setRectSelection({
-        rect: {
-          x: newLayer.x,
-          y: newLayer.y,
-          width: newLayer.width,
-          height: newLayer.height,
-        },
-        sourceLayerId: newLayer.id,
-        isDragging: false,
-        isFloating: false,
-        floatingCanvas: null,
-        offsetX: 0,
-        offsetY: 0,
-      })
+      setRectSelection(createRectSelectionFromFloating(extractedSelection, newLayer.id))
       setLassoSelection(null)
       setFloatingSelection(null)
       return
@@ -5423,18 +5414,18 @@ function App() {
       return
     }
 
-    const sourceRect = createSourceRectSelectionFromDocumentRect(
+    const sourceSelection = createSourceSelectionFromDocumentSelection(
       sourceLayer,
-      surfaceEntry.offscreenCanvas,
-      rectSelection.rect,
+      surfaceCanvas,
+      createDocumentSelectionFromRect(rectSelection.rect, rectSelection.sourceLayerId),
     )
 
-    if (!sourceRect) {
+    if (!sourceSelection) {
       return
     }
 
     const workingCanvas = cloneCanvas(surfaceEntry.offscreenCanvas)
-    clearRectSelection(workingCanvas, sourceRect)
+    clearSelectionFromCanvas(workingCanvas, sourceSelection)
 
     commit((currentDocument) =>
       applyRasterizedLayerUpdate(
@@ -5519,6 +5510,11 @@ function App() {
 
       void beginRectSelectionDrag(event).then((didStartDrag) => {
         if (didStartDrag) {
+          return
+        }
+
+        if (floatingSelection) {
+          void commitFloatingSelectionToLayer(false)
           return
         }
 
@@ -5608,6 +5604,11 @@ function App() {
 
         if (!(event.target instanceof HTMLElement) || !event.target.closest('.canvas-layer')) {
           const rectLayer = getActiveRectSelectionLayer()
+
+          if (floatingSelection) {
+            void commitFloatingSelectionToLayer(false)
+            return
+          }
 
           if (rectSelection) {
             const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
@@ -6102,7 +6103,7 @@ function App() {
         {isSelected && currentTool === 'select' && !hasMultiSelection && !isEditingText && (
           <div
             className="selection-frame interactive"
-            style={resizeHandleStyleVars}
+            style={selectedResizeHandleStyleVars}
             onPointerDown={(event) => {
               const documentPoint = toDocumentCoordinates(
                 event,

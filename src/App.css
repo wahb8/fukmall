@@ -707,8 +707,14 @@
 
 .resize-handle {
   position: absolute;
-  width: calc(var(--resize-handle-visible-size, 13px) + (var(--resize-handle-hit-padding, 10px) * 2));
-  height: calc(var(--resize-handle-visible-size, 13px) + (var(--resize-handle-hit-padding, 10px) * 2));
+  width: calc(
+    (var(--resize-handle-visible-size, 13px) + (var(--resize-handle-hit-padding, 10px) * 2)) /
+    var(--resize-handle-scale-x, 1)
+  );
+  height: calc(
+    (var(--resize-handle-visible-size, 13px) + (var(--resize-handle-hit-padding, 10px) * 2)) /
+    var(--resize-handle-scale-y, 1)
+  );
   padding: 0;
   border: 0;
   background: transparent;
@@ -722,9 +728,11 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: var(--resize-handle-visible-size, 13px);
-  height: var(--resize-handle-visible-size, 13px);
-  border: 2px solid var(--selection);
+  width: calc(var(--resize-handle-visible-size, 13px) / var(--resize-handle-scale-x, 1));
+  height: calc(var(--resize-handle-visible-size, 13px) / var(--resize-handle-scale-y, 1));
+  border-style: solid;
+  border-color: var(--selection);
+  border-width: calc(2px / min(var(--resize-handle-scale-x, 1), var(--resize-handle-scale-y, 1)));
   background: #fffdf8;
   border-radius: 999px;
   transform: translate(-50%, -50%);
@@ -740,56 +748,96 @@
 .handle-nw {
   top: 0;
   left: 0;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    scale(
+      calc(1 / var(--resize-handle-scale-x, 1)),
+      calc(1 / var(--resize-handle-scale-y, 1))
+    );
   cursor: nwse-resize;
 }
 
 .handle-n {
   top: 0;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    scale(
+      calc(1 / var(--resize-handle-scale-x, 1)),
+      calc(1 / var(--resize-handle-scale-y, 1))
+    );
   cursor: ns-resize;
 }
 
 .handle-ne {
   top: 0;
   left: 100%;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    scale(
+      calc(1 / var(--resize-handle-scale-x, 1)),
+      calc(1 / var(--resize-handle-scale-y, 1))
+    );
   cursor: nesw-resize;
 }
 
 .handle-e {
   top: 50%;
   left: 100%;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    scale(
+      calc(1 / var(--resize-handle-scale-x, 1)),
+      calc(1 / var(--resize-handle-scale-y, 1))
+    );
   cursor: ew-resize;
 }
 
 .handle-se {
   top: 100%;
   left: 100%;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    scale(
+      calc(1 / var(--resize-handle-scale-x, 1)),
+      calc(1 / var(--resize-handle-scale-y, 1))
+    );
   cursor: nwse-resize;
 }
 
 .handle-s {
   top: 100%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    scale(
+      calc(1 / var(--resize-handle-scale-x, 1)),
+      calc(1 / var(--resize-handle-scale-y, 1))
+    );
   cursor: ns-resize;
 }
 
 .handle-sw {
   top: 100%;
   left: 0;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    scale(
+      calc(1 / var(--resize-handle-scale-x, 1)),
+      calc(1 / var(--resize-handle-scale-y, 1))
+    );
   cursor: nesw-resize;
 }
 
 .handle-w {
   top: 50%;
   left: 0;
-  transform: translate(-50%, -50%);
+  transform:
+    translate(-50%, -50%)
+    scale(
+      calc(1 / var(--resize-handle-scale-x, 1)),
+      calc(1 / var(--resize-handle-scale-y, 1))
+    );
   cursor: ew-resize;
 }
 
