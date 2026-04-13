@@ -1,3 +1,5 @@
+import { centerToTopLeft, topLeftToCenter } from './layerGeometry'
+
 const TEXT_MEASURE_CANVAS = document.createElement('canvas')
 const TEXT_MEASURE_CONTEXT = TEXT_MEASURE_CANVAS.getContext('2d')
 
@@ -970,18 +972,19 @@ export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd
 }
 
 function getPointTextAnchorX(layer) {
+  const layerTopLeft = centerToTopLeft(layer.x, layer.y, layer.width, layer.height)
   const contentWidth = Math.max((layer.width ?? 0) - POINT_TEXT_HORIZONTAL_PADDING, 0)
   const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
 
   if (textAlign === 'center') {
-    return layer.x + (contentWidth / 2)
+    return layerTopLeft.x + (contentWidth / 2)
   }
 
   if (textAlign === 'right') {
-    return layer.x + contentWidth
+    return layerTopLeft.x + contentWidth
   }
 
-  return layer.x
+  return layerTopLeft.x
 }
 
 function getPointTextXFromAnchor(anchorX, width, textAlign) {
@@ -1007,7 +1010,12 @@ function preservePointTextAnchor(previousLayer, nextLayer) {
 
   return {
     ...nextLayer,
-    x: getPointTextXFromAnchor(anchorX, nextLayer.width, nextLayer.textAlign ?? DEFAULT_TEXT_ALIGN),
+    ...topLeftToCenter(
+      getPointTextXFromAnchor(anchorX, nextLayer.width, nextLayer.textAlign ?? DEFAULT_TEXT_ALIGN),
+      centerToTopLeft(nextLayer.x, nextLayer.y, nextLayer.width, nextLayer.height).y,
+      nextLayer.width,
+      nextLayer.height,
+    ),
   }
 }
 
@@ -1072,9 +1080,11 @@ export function resizeBoxText(layer, newBoxWidth, newBoxHeight = null) {
 }
 
 export function getTextBounds(layer) {
+  const topLeft = centerToTopLeft(layer.x, layer.y, layer.width, layer.height)
+
   return {
-    x: layer.x,
-    y: layer.y,
+    x: topLeft.x,
+    y: topLeft.y,
     width: layer.width,
     height: layer.height,
   }

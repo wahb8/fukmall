@@ -6,10 +6,11 @@ import {
   findLayer,
   normalizeLinkedLayerReferences,
 } from './layers'
+import { normalizeLayerCenterPosition } from './layerGeometry'
 import { normalizeTextStyleRanges } from './textLayer'
 
 const PROJECT_APP_NAME = 'Fukmall'
-const PROJECT_FORMAT_VERSION = 1
+const PROJECT_FORMAT_VERSION = 2
 
 function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
   if (!documentState.layers.length) {
@@ -27,21 +28,32 @@ function isSupportedDocumentLayer(layer) {
   return layer?.type !== 'group'
 }
 
-function normalizeDocumentLayer(layer) {
-  if (layer?.type === 'image') {
+function normalizeDocumentLayer(layer, options = {}) {
+  const positionNormalizedLayer = options.positionsAreTopLeft
+    ? normalizeLayerCenterPosition(layer)
+    : layer
+
+  if (positionNormalizedLayer?.type === 'image') {
     return {
-      ...layer,
-      cornerRadius: clampLayerCornerRadius(layer.width, layer.height, layer.cornerRadius ?? 0),
+      ...positionNormalizedLayer,
+      cornerRadius: clampLayerCornerRadius(
+        positionNormalizedLayer.width,
+        positionNormalizedLayer.height,
+        positionNormalizedLayer.cornerRadius ?? 0,
+      ),
     }
   }
 
-  if (layer?.type !== 'text') {
-    return layer
+  if (positionNormalizedLayer?.type !== 'text') {
+    return positionNormalizedLayer
   }
 
   return {
-    ...layer,
-    styleRanges: normalizeTextStyleRanges(layer.styleRanges, String(layer.text ?? '').length),
+    ...positionNormalizedLayer,
+    styleRanges: normalizeTextStyleRanges(
+      positionNormalizedLayer.styleRanges,
+      String(positionNormalizedLayer.text ?? '').length,
+    ),
   }
 }
 
@@ -65,11 +77,11 @@ function normalizeDocumentName(value) {
   return trimmedValue || DEFAULT_DOCUMENT_NAME
 }
 
-export function normalizeDocumentState(documentState) {
+export function normalizeDocumentState(documentState, options = {}) {
   const layers = normalizeLinkedLayerReferences(Array.isArray(documentState?.layers)
     ? documentState.layers
       .filter(isSupportedDocumentLayer)
-      .map(normalizeDocumentLayer)
+      .map((layer) => normalizeDocumentLayer(layer, options))
     : [])
   const name = normalizeDocumentName(documentState?.name)
   const width = normalizeDocumentDimension(documentState?.width, DEFAULT_DOCUMENT_WIDTH)
@@ -113,7 +125,7 @@ export function parseProjectFile(fileText) {
     throw new Error('This file is not a Fukmall project file.')
   }
 
-  if (parsedFile?.version !== PROJECT_FORMAT_VERSION) {
+  if (parsedFile?.version !== 1 && parsedFile?.version !== PROJECT_FORMAT_VERSION) {
     throw new Error('This Fukmall project version is not supported.')
   }
 
@@ -121,7 +133,9 @@ export function parseProjectFile(fileText) {
     throw new Error('This Fukmall project file is missing its document data.')
   }
 
-  return normalizeDocumentState(parsedFile.document)
+  return normalizeDocumentState(parsedFile.document, {
+    positionsAreTopLeft: parsedFile.version === 1,
+  })
 }
 
 export function downloadProjectFile(documentState, filenameBase = 'fukmall-project') {

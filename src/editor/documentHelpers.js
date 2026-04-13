@@ -8,6 +8,7 @@ import {
   DEFAULT_DOCUMENT_NAME,
   DEFAULT_DOCUMENT_WIDTH,
 } from '../lib/layers'
+import { topLeftToCenter } from '../lib/layerGeometry'
 import { MIN_DOCUMENT_DIMENSION, MIN_LAYER_HEIGHT, MIN_LAYER_WIDTH } from './constants'
 
 export function createInitialDocument(
@@ -19,8 +20,7 @@ export function createInitialDocument(
   const scaleY = height / DEFAULT_DOCUMENT_HEIGHT
   const whiteBackground = createShapeLayer({
     name: 'Background',
-    x: 0,
-    y: 0,
+    ...topLeftToCenter(0, 0, width, height),
     width,
     height,
     fill: '#ffffff',
@@ -28,8 +28,12 @@ export function createInitialDocument(
   })
   const background = createImageLayer({
     name: 'Hero Image',
-    x: Math.round(76 * scaleX),
-    y: Math.round(62 * scaleY),
+    ...topLeftToCenter(
+      Math.round(76 * scaleX),
+      Math.round(62 * scaleY),
+      Math.max(MIN_LAYER_WIDTH, Math.round(360 * scaleX)),
+      Math.max(MIN_LAYER_HEIGHT, Math.round(260 * scaleY)),
+    ),
     width: Math.max(MIN_LAYER_WIDTH, Math.round(360 * scaleX)),
     height: Math.max(MIN_LAYER_HEIGHT, Math.round(260 * scaleY)),
     src: heroImage,
@@ -37,8 +41,12 @@ export function createInitialDocument(
   })
   const card = createShapeLayer({
     name: 'Color Block',
-    x: Math.round(340 * scaleX),
-    y: Math.round(120 * scaleY),
+    ...topLeftToCenter(
+      Math.round(340 * scaleX),
+      Math.round(120 * scaleY),
+      Math.max(MIN_LAYER_WIDTH, Math.round(220 * scaleX)),
+      Math.max(MIN_LAYER_HEIGHT, Math.round(220 * scaleY)),
+    ),
     width: Math.max(MIN_LAYER_WIDTH, Math.round(220 * scaleX)),
     height: Math.max(MIN_LAYER_HEIGHT, Math.round(220 * scaleY)),
     fill: '#f97316',
@@ -46,8 +54,12 @@ export function createInitialDocument(
   })
   const title = createTextLayer({
     name: 'Headline',
-    x: Math.round(126 * scaleX),
-    y: Math.round(114 * scaleY),
+    ...topLeftToCenter(
+      Math.round(126 * scaleX),
+      Math.round(114 * scaleY),
+      Math.max(MIN_LAYER_WIDTH, Math.round(300 * scaleX)),
+      Math.max(MIN_LAYER_HEIGHT, Math.round(120 * scaleY)),
+    ),
     width: Math.max(MIN_LAYER_WIDTH, Math.round(300 * scaleX)),
     height: Math.max(MIN_LAYER_HEIGHT, Math.round(120 * scaleY)),
     text: 'A cleaner\nlayer stack',

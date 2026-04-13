@@ -12,12 +12,12 @@ export function createEmptySnapGuides() {
 }
 
 export function applyMoveSnapping(
-  nextX,
-  nextY,
-  layerWidth,
-  layerHeight,
-  frameWidth,
-  frameHeight,
+  centerX,
+  centerY,
+  movingWidth,
+  movingHeight,
+  containerWidth,
+  containerHeight,
   settings,
 ) {
   const guides = createEmptySnapGuides()
@@ -26,41 +26,41 @@ export function applyMoveSnapping(
 
   if (!settings.enabled) {
     return {
-      x: nextX,
-      y: nextY,
+      x: centerX,
+      y: centerY,
       guides,
     }
   }
 
-  const frameCenterX = frameWidth / 2
-  const frameCenterY = frameHeight / 2
-  const layerCenterX = nextX + (layerWidth / 2)
-  const layerCenterY = nextY + (layerHeight / 2)
-  const layerRight = nextX + layerWidth
-  const layerBottom = nextY + layerHeight
+  const frameCenterX = containerWidth / 2
+  const frameCenterY = containerHeight / 2
+  const left = centerX - (movingWidth / 2)
+  const top = centerY - (movingHeight / 2)
+  const right = centerX + (movingWidth / 2)
+  const bottom = centerY + (movingHeight / 2)
 
-  let snappedX = nextX
-  let snappedY = nextY
+  let snappedX = centerX
+  let snappedY = centerY
 
-  if (enabledX && Math.abs(layerCenterX - frameCenterX) <= settings.threshold) {
-    snappedX = frameCenterX - (layerWidth / 2)
+  if (enabledX && Math.abs(centerX - frameCenterX) <= settings.threshold) {
+    snappedX = frameCenterX
     guides.showVerticalCenter = true
-  } else if (enabledX && Math.abs(nextX) <= settings.threshold) {
-    snappedX = 0
+  } else if (enabledX && Math.abs(left) <= settings.threshold) {
+    snappedX = movingWidth / 2
     guides.showLeftEdge = true
-  } else if (enabledX && Math.abs(layerRight - frameWidth) <= settings.threshold) {
-    snappedX = frameWidth - layerWidth
+  } else if (enabledX && Math.abs(right - containerWidth) <= settings.threshold) {
+    snappedX = containerWidth - (movingWidth / 2)
     guides.showRightEdge = true
   }
 
-  if (enabledY && Math.abs(layerCenterY - frameCenterY) <= settings.threshold) {
-    snappedY = frameCenterY - (layerHeight / 2)
+  if (enabledY && Math.abs(centerY - frameCenterY) <= settings.threshold) {
+    snappedY = frameCenterY
     guides.showHorizontalCenter = true
-  } else if (enabledY && Math.abs(nextY) <= settings.threshold) {
-    snappedY = 0
+  } else if (enabledY && Math.abs(top) <= settings.threshold) {
+    snappedY = movingHeight / 2
     guides.showTopEdge = true
-  } else if (enabledY && Math.abs(layerBottom - frameHeight) <= settings.threshold) {
-    snappedY = frameHeight - layerHeight
+  } else if (enabledY && Math.abs(bottom - containerHeight) <= settings.threshold) {
+    snappedY = containerHeight - (movingHeight / 2)
     guides.showBottomEdge = true
   }
 

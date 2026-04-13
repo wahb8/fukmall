@@ -46,7 +46,7 @@ describe('document file helpers', () => {
     const parsedDocument = parseProjectFile(serialized)
 
     expect(parsedFile.app).toBe('Fukmall')
-    expect(parsedFile.version).toBe(1)
+    expect(parsedFile.version).toBe(2)
     expect(parsedDocument.selectedLayerId).toBe('shape')
     expect(parsedDocument.layers).toHaveLength(1)
   })
@@ -75,5 +75,42 @@ describe('document file helpers', () => {
     expect(() => parseProjectFile('{"app":"Fukmall","version":99,"document":{}}')).toThrow(
       'This Fukmall project version is not supported.',
     )
+  })
+
+  it('migrates version 1 top-left layer positions to center-based positions', () => {
+    const parsedDocument = parseProjectFile(JSON.stringify({
+      app: 'Fukmall',
+      version: 1,
+      document: {
+        name: 'Legacy',
+        width: 100,
+        height: 100,
+        layers: [{
+          id: 'shape',
+          type: 'shape',
+          name: 'Shape',
+          visible: true,
+          opacity: 1,
+          x: 10,
+          y: 20,
+          width: 30,
+          height: 40,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+          linkedLayerId: null,
+          lockTransparentPixels: false,
+          fill: '#ff7a59',
+          radius: 0,
+        }],
+        selectedLayerId: 'shape',
+        selectedLayerIds: ['shape'],
+      },
+    }))
+
+    expect(parsedDocument.layers[0]).toMatchObject({
+      x: 25,
+      y: 40,
+    })
   })
 })

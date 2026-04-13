@@ -5,6 +5,7 @@ import {
   DEFAULT_TEXT_MODE,
   syncTextLayerLayout,
 } from './textLayer'
+import { topLeftToCenter } from './layerGeometry'
 
 const DEFAULT_LAYER_OPACITY = 1
 export const DEFAULT_DOCUMENT_WIDTH = 1080
@@ -12,16 +13,20 @@ export const DEFAULT_DOCUMENT_HEIGHT = 1440
 export const DEFAULT_DOCUMENT_NAME = 'Untitled'
 
 function createBaseLayer(overrides) {
+  const width = overrides?.width ?? 220
+  const height = overrides?.height ?? 140
+  const defaultPosition = topLeftToCenter(80, 80, width, height)
+
   return {
     id: crypto.randomUUID(),
     name: 'Layer',
     type: 'shape',
     visible: true,
     opacity: DEFAULT_LAYER_OPACITY,
-    x: 80,
-    y: 80,
-    width: 220,
-    height: 140,
+    x: defaultPosition.x,
+    y: defaultPosition.y,
+    width,
+    height,
     rotation: 0,
     scaleX: 1,
     scaleY: 1,
@@ -151,13 +156,17 @@ export function createImageLayer(overrides = {}) {
 }
 
 export function createRasterLayer(overrides = {}) {
+  const width = overrides.width ?? DEFAULT_DOCUMENT_WIDTH
+  const height = overrides.height ?? DEFAULT_DOCUMENT_HEIGHT
+  const defaultPosition = topLeftToCenter(0, 0, width, height)
+
   return createBaseLayer({
     name: 'Drawing',
     type: 'raster',
-    x: 0,
-    y: 0,
-    width: DEFAULT_DOCUMENT_WIDTH,
-    height: DEFAULT_DOCUMENT_HEIGHT,
+    x: defaultPosition.x,
+    y: defaultPosition.y,
+    width,
+    height,
     bitmap: '',
     ...overrides,
   })

@@ -102,6 +102,14 @@ import {
   isLayerSelected,
 } from './lib/layers'
 import {
+  centerToTopLeft,
+  getLayerTopLeft,
+  getLayerTransformBounds,
+  layerLocalPointToDocumentPoint,
+  toLayerLocalPoint,
+  topLeftToCenter,
+} from './lib/layerGeometry'
+import {
   applyEraseMask,
   applyLinearGradientToCanvas,
   canvasToBitmap,
@@ -243,70 +251,6 @@ async function importAssetsFromFiles(files) {
   }))
 }
 
-function getLayerTransformBounds(layer) {
-  const centerX = layer.x + (layer.width / 2)
-  const centerY = layer.y + (layer.height / 2)
-  const angle = (layer.rotation * Math.PI) / 180
-  const cosine = Math.cos(angle)
-  const sine = Math.sin(angle)
-  const halfWidth = layer.width / 2
-  const halfHeight = layer.height / 2
-  const corners = [
-    { x: -halfWidth, y: -halfHeight },
-    { x: halfWidth, y: -halfHeight },
-    { x: halfWidth, y: halfHeight },
-    { x: -halfWidth, y: halfHeight },
-  ].map((point) => {
-    const scaledX = point.x * layer.scaleX
-    const scaledY = point.y * layer.scaleY
-
-    return {
-      x: centerX + (scaledX * cosine) - (scaledY * sine),
-      y: centerY + (scaledX * sine) + (scaledY * cosine),
-    }
-  })
-
-  return {
-    minX: Math.min(...corners.map((point) => point.x)),
-    minY: Math.min(...corners.map((point) => point.y)),
-    maxX: Math.max(...corners.map((point) => point.x)),
-    maxY: Math.max(...corners.map((point) => point.y)),
-  }
-}
-
-function toLayerLocalPoint(layer, documentPoint) {
-  if (!layer || !documentPoint) {
-    return null
-  }
-
-  const scaleX = layer.scaleX
-  const scaleY = layer.scaleY
-
-  if (
-    !Number.isFinite(scaleX) ||
-    !Number.isFinite(scaleY) ||
-    Math.abs(scaleX) < 0.0001 ||
-    Math.abs(scaleY) < 0.0001
-  ) {
-    return null
-  }
-
-  const angle = (layer.rotation * Math.PI) / 180
-  const cosine = Math.cos(angle)
-  const sine = Math.sin(angle)
-  const centerX = layer.x + (layer.width / 2)
-  const centerY = layer.y + (layer.height / 2)
-  const deltaX = documentPoint.x - centerX
-  const deltaY = documentPoint.y - centerY
-  const scaledX = (deltaX * cosine) + (deltaY * sine)
-  const scaledY = (-deltaX * sine) + (deltaY * cosine)
-
-  return {
-    x: (scaledX / scaleX) + (layer.width / 2),
-    y: (scaledY / scaleY) + (layer.height / 2),
-  }
-}
-
 function isPointInsideLayerFrame(layer, localPoint) {
   if (!layer || !localPoint) {
     return false
@@ -384,6 +328,8 @@ function getSelectionBoundsFromLayers(layers) {
     y: minY,
     width: Math.max(1, maxX - minX),
     height: Math.max(1, maxY - minY),
+    centerX: minX + (Math.max(1, maxX - minX) / 2),
+    centerY: minY + (Math.max(1, maxY - minY) / 2),
     minX,
     minY,
     maxX,
@@ -426,14 +372,12 @@ function scaleLayerAroundOwnCenter(layer, ratioX, ratioY) {
     if (layer.mode === 'box') {
       const nextWidth = clampValue(layer.width * ratioX, MIN_LAYER_WIDTH, MAX_LAYER_SIZE)
       const nextHeight = clampValue(layer.height * ratioY, MIN_LAYER_HEIGHT, MAX_LAYER_SIZE)
-      const centerX = layer.x + (layer.width / 2)
-      const centerY = layer.y + (layer.height / 2)
 
       return resizeBoxText(
         {
           ...layer,
-          x: centerX - (nextWidth / 2),
-          y: centerY - (nextHeight / 2),
+          x: layer.x,
+          y: layer.y,
         },
         nextWidth,
         nextHeight,
@@ -456,13 +400,11 @@ function scaleLayerAroundOwnCenter(layer, ratioX, ratioY) {
 
   const nextWidth = clampValue(layer.width * ratioX, MIN_LAYER_WIDTH, MAX_LAYER_SIZE)
   const nextHeight = clampValue(layer.height * ratioY, MIN_LAYER_HEIGHT, MAX_LAYER_SIZE)
-  const centerX = layer.x + (layer.width / 2)
-  const centerY = layer.y + (layer.height / 2)
 
   return {
     ...layer,
-    x: centerX - (nextWidth / 2),
-    y: centerY - (nextHeight / 2),
+    x: layer.x,
+    y: layer.y,
     width: nextWidth,
     height: nextHeight,
   }
@@ -729,17 +671,18 @@ function getBucketFillExpansionCoverageBounds(
 
   const surfaceScaleX = surfaceCanvas.width / Math.max(layer.width, 1)
   const surfaceScaleY = surfaceCanvas.height / Math.max(layer.height, 1)
+  const layerTopLeft = getLayerTopLeft(layer)
   const expandLeft = reachedBoundary.left
-    ? Math.max(0, layer.x) * surfaceScaleX
+    ? Math.max(0, layerTopLeft.x) * surfaceScaleX
     : 0
   const expandTop = reachedBoundary.top
-    ? Math.max(0, layer.y) * surfaceScaleY
+    ? Math.max(0, layerTopLeft.y) * surfaceScaleY
     : 0
   const expandRight = reachedBoundary.right
-    ? Math.max(0, documentWidth - (layer.x + layer.width)) * surfaceScaleX
+    ? Math.max(0, documentWidth - (layerTopLeft.x + layer.width)) * surfaceScaleX
     : 0
   const expandBottom = reachedBoundary.bottom
-    ? Math.max(0, documentHeight - (layer.y + layer.height)) * surfaceScaleY
+    ? Math.max(0, documentHeight - (layerTopLeft.y + layer.height)) * surfaceScaleY
     : 0
 
   if (expandLeft <= 0 && expandTop <= 0 && expandRight <= 0 && expandBottom <= 0) {
@@ -912,27 +855,6 @@ function createRasterizedLayerPatch(layer, bitmap, overrides = {}) {
     shadowSourceLayerId: null,
     isTextShadow: false,
     ...overrides,
-  }
-}
-
-function layerLocalPointToDocumentPoint(layer, surfaceWidth, surfaceHeight, point) {
-  if (!layer || !point || surfaceWidth <= 0 || surfaceHeight <= 0) {
-    return null
-  }
-
-  const normalizedX = (point.x / surfaceWidth) * layer.width
-  const normalizedY = (point.y / surfaceHeight) * layer.height
-  const angle = (layer.rotation * Math.PI) / 180
-  const cosine = Math.cos(angle)
-  const sine = Math.sin(angle)
-  const centerX = layer.x + (layer.width / 2)
-  const centerY = layer.y + (layer.height / 2)
-  const centeredX = (normalizedX - (layer.width / 2)) * layer.scaleX
-  const centeredY = (normalizedY - (layer.height / 2)) * layer.scaleY
-
-  return {
-    x: centerX + (centeredX * cosine) - (centeredY * sine),
-    y: centerY + (centeredX * sine) + (centeredY * cosine),
   }
 }
 
@@ -1452,8 +1374,8 @@ function App() {
     context.save()
     context.globalAlpha = layer.opacity
     context.translate(
-      (layer.x + (layer.width / 2)) - offsetX,
-      (layer.y + (layer.height / 2)) - offsetY,
+      layer.x - offsetX,
+      layer.y - offsetY,
     )
     context.rotate((layer.rotation * Math.PI) / 180)
     context.scale(layer.scaleX, layer.scaleY)
@@ -1527,8 +1449,7 @@ function App() {
 
     const mergedLayer = createRasterLayer({
       name: 'Merged Layer',
-      x: bounds.minX,
-      y: bounds.minY,
+      ...topLeftToCenter(bounds.minX, bounds.minY, mergedWidth, mergedHeight),
       width: mergedWidth,
       height: mergedHeight,
       bitmap: canvasToBitmap(mergeCanvas),
@@ -1918,12 +1839,8 @@ function App() {
             threshold: DEFAULT_SNAP_THRESHOLD,
           },
         )
-        const deltaX = snapResult.x - interaction.originDocument.layers
-          .filter((layer) => interaction.selectedLayerIds.includes(layer.id))
-          .reduce((minimumX, layer) => Math.min(minimumX, getLayerTransformBounds(layer).minX), Number.POSITIVE_INFINITY)
-        const deltaY = snapResult.y - interaction.originDocument.layers
-          .filter((layer) => interaction.selectedLayerIds.includes(layer.id))
-          .reduce((minimumY, layer) => Math.min(minimumY, getLayerTransformBounds(layer).minY), Number.POSITIVE_INFINITY)
+        const deltaX = snapResult.x - interaction.startCenterX
+        const deltaY = snapResult.y - interaction.startCenterY
 
         interactionRef.current = {
           ...nextPosition.interaction,
@@ -2051,8 +1968,8 @@ function App() {
           return
         }
 
-        const nextX = nextCenter.x - (nextWidth / 2)
-        const nextY = nextCenter.y - (nextHeight / 2)
+        const nextX = nextCenter.x
+        const nextY = nextCenter.y
         const nextFrameWidth = Math.min(
           MAX_LAYER_SIZE,
           nextWidth * Math.abs(interaction.startScaleX),
@@ -2239,21 +2156,36 @@ function App() {
               return layer
             }
 
-            const relativeX = (originalState.x - startBounds.x) / Math.max(startBounds.width, 1)
-            const relativeY = (originalState.y - startBounds.y) / Math.max(startBounds.height, 1)
+            const originalTopLeft = centerToTopLeft(
+              originalState.x,
+              originalState.y,
+              originalState.width,
+              originalState.height,
+            )
+            const relativeX = (originalTopLeft.x - startBounds.x) / Math.max(startBounds.width, 1)
+            const relativeY = (originalTopLeft.y - startBounds.y) / Math.max(startBounds.height, 1)
             const scaledX = nextX + (relativeX * nextWidth)
             const scaledY = nextY + (relativeY * nextHeight)
 
             if (layer.type === 'text') {
               if (layer.mode === 'box') {
+                const resizedWidth = clampValue(
+                  originalState.width * ratioX,
+                  MIN_LAYER_WIDTH,
+                  MAX_LAYER_SIZE,
+                )
+                const resizedHeight = clampValue(
+                  originalState.height * ratioY,
+                  MIN_LAYER_HEIGHT,
+                  MAX_LAYER_SIZE,
+                )
                 const resizedLayer = resizeBoxText(
                   {
                     ...layer,
-                    x: scaledX,
-                    y: scaledY,
+                    ...topLeftToCenter(scaledX, scaledY, resizedWidth, resizedHeight),
                   },
-                  clampValue(originalState.width * ratioX, MIN_LAYER_WIDTH, MAX_LAYER_SIZE),
-                  clampValue(originalState.height * ratioY, MIN_LAYER_HEIGHT, MAX_LAYER_SIZE),
+                  resizedWidth,
+                  resizedHeight,
                 )
 
                 return resizedLayer
@@ -2266,8 +2198,12 @@ function App() {
                 ...resizePointTextTransform(
                   {
                     ...layer,
-                    x: scaledX,
-                    y: scaledY,
+                    ...topLeftToCenter(
+                      scaledX,
+                      scaledY,
+                      originalState.width,
+                      originalState.height,
+                    ),
                   },
                   clampValue(originalState.scaleX * ratioX, 0.1, maximumScaleX),
                   clampValue(originalState.scaleY * ratioY, 0.1, maximumScaleY),
@@ -2277,12 +2213,22 @@ function App() {
               }
             }
 
+            const resizedWidth = clampValue(
+              originalState.width * ratioX,
+              MIN_LAYER_WIDTH,
+              MAX_LAYER_SIZE,
+            )
+            const resizedHeight = clampValue(
+              originalState.height * ratioY,
+              MIN_LAYER_HEIGHT,
+              MAX_LAYER_SIZE,
+            )
+
             return {
               ...layer,
-              x: scaledX,
-              y: scaledY,
-              width: clampValue(originalState.width * ratioX, MIN_LAYER_WIDTH, MAX_LAYER_SIZE),
-              height: clampValue(originalState.height * ratioY, MIN_LAYER_HEIGHT, MAX_LAYER_SIZE),
+              ...topLeftToCenter(scaledX, scaledY, resizedWidth, resizedHeight),
+              width: resizedWidth,
+              height: resizedHeight,
             }
           }),
         }))
@@ -3560,8 +3506,7 @@ function App() {
 
     addLayer(() =>
       createImageLayer({
-        x: position.x,
-        y: position.y,
+        ...topLeftToCenter(position.x, position.y, dimensions.width, dimensions.height),
         width: dimensions.width,
         height: dimensions.height,
         name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
@@ -3638,8 +3583,7 @@ function App() {
     )
 
     return createImageLayer({
-      x: position.x,
-      y: position.y,
+      ...topLeftToCenter(position.x, position.y, width, height),
       width,
       height,
       name: asset.name,
@@ -4035,12 +3979,13 @@ function App() {
 
     const scaleX = layer.width / Math.max(sourceCanvas.width, 1)
     const scaleY = layer.height / Math.max(sourceCanvas.height, 1)
+    const layerTopLeft = getLayerTopLeft(layer)
 
     return {
       sourceLayerId: layer.id,
       canvas: extractedCanvas,
-      x: layer.x + (sourceSelection.bounds.minX * scaleX),
-      y: layer.y + (sourceSelection.bounds.minY * scaleY),
+      x: layerTopLeft.x + (sourceSelection.bounds.minX * scaleX),
+      y: layerTopLeft.y + (sourceSelection.bounds.minY * scaleY),
       width: extractedCanvas.width * scaleX,
       height: extractedCanvas.height * scaleY,
       selectionPoints: documentSelection.points.map((point) => ({
@@ -4305,10 +4250,12 @@ function App() {
       interactionRef.current = {
         type: 'move-multi',
         selectedLayerIds: activeSelection.map((selectedLayer) => selectedLayer.id),
-        offsetX: documentPoint.x - bounds.x,
-        offsetY: documentPoint.y - bounds.y,
+        offsetX: documentPoint.x - bounds.centerX,
+        offsetY: documentPoint.y - bounds.centerY,
         frameWidth: bounds.width,
         frameHeight: bounds.height,
+        startCenterX: bounds.centerX,
+        startCenterY: bounds.centerY,
         originalPositions: Object.fromEntries(activeSelection.map((selectedLayer) => [
           selectedLayer.id,
           { x: selectedLayer.x, y: selectedLayer.y },
@@ -5140,10 +5087,11 @@ function App() {
       destinationY - minimumY,
     )
 
-    const nextLayerX = sourceLayer.x + (minimumX * floatingSelection.scaleX)
-    const nextLayerY = sourceLayer.y + (minimumY * floatingSelection.scaleY)
     const nextLayerWidth = targetCanvas.width * floatingSelection.scaleX
     const nextLayerHeight = targetCanvas.height * floatingSelection.scaleY
+    const sourceLayerTopLeft = getLayerTopLeft(sourceLayer)
+    const nextLayerTopLeftX = sourceLayerTopLeft.x + (minimumX * floatingSelection.scaleX)
+    const nextLayerTopLeftY = sourceLayerTopLeft.y + (minimumY * floatingSelection.scaleY)
 
     surfaceEntry.offscreenCanvas = targetCanvas
     drawRasterLayer(sourceLayer.id)
@@ -5154,8 +5102,12 @@ function App() {
         sourceLayer.id,
         canvasToBitmap(targetCanvas),
         {
-          x: nextLayerX,
-          y: nextLayerY,
+          ...topLeftToCenter(
+            nextLayerTopLeftX,
+            nextLayerTopLeftY,
+            nextLayerWidth,
+            nextLayerHeight,
+          ),
           width: nextLayerWidth,
           height: nextLayerHeight,
         },
@@ -5171,8 +5123,12 @@ function App() {
         floatingSelection.sourceLayerId,
         {
           ...sourceLayer,
-          x: nextLayerX,
-          y: nextLayerY,
+          ...topLeftToCenter(
+            nextLayerTopLeftX,
+            nextLayerTopLeftY,
+            nextLayerWidth,
+            nextLayerHeight,
+          ),
           width: nextLayerWidth,
           height: nextLayerHeight,
         },
@@ -5199,10 +5155,14 @@ function App() {
 
       const newLayer = createRasterLayer({
         name: `${sourceLayer.name} Selection`,
-        x: floatingSelection.x,
-        y: floatingSelection.y,
         width: Math.max(1, Math.round(floatingSelection.width)),
         height: Math.max(1, Math.round(floatingSelection.height)),
+        ...topLeftToCenter(
+          floatingSelection.x,
+          floatingSelection.y,
+          Math.max(1, Math.round(floatingSelection.width)),
+          Math.max(1, Math.round(floatingSelection.height)),
+        ),
         bitmap: canvasToBitmap(floatingSelection.canvas),
       })
 
@@ -5263,10 +5223,14 @@ function App() {
 
       const newLayer = createRasterLayer({
         name: `${sourceLayer.name} Selection`,
-        x: extractedSelection.x,
-        y: extractedSelection.y,
         width: Math.max(1, Math.round(extractedSelection.width)),
         height: Math.max(1, Math.round(extractedSelection.height)),
+        ...topLeftToCenter(
+          extractedSelection.x,
+          extractedSelection.y,
+          Math.max(1, Math.round(extractedSelection.width)),
+          Math.max(1, Math.round(extractedSelection.height)),
+        ),
         bitmap: canvasToBitmap(extractedSelection.canvas),
       })
 
@@ -5307,10 +5271,14 @@ function App() {
 
     const newLayer = createRasterLayer({
       name: `${sourceLayer.name} Selection`,
-      x: extractedCanvas.x,
-      y: extractedCanvas.y,
       width: Math.max(1, Math.round(extractedCanvas.width)),
       height: Math.max(1, Math.round(extractedCanvas.height)),
+      ...topLeftToCenter(
+        extractedCanvas.x,
+        extractedCanvas.y,
+        Math.max(1, Math.round(extractedCanvas.width)),
+        Math.max(1, Math.round(extractedCanvas.height)),
+      ),
       bitmap: canvasToBitmap(extractedCanvas.canvas),
     })
 
@@ -5932,6 +5900,7 @@ function App() {
     const textEditorOverlay = isEditingText
       ? getTextEditorOverlayGeometry(layer, textEditorSelection.start, textEditorSelection.end)
       : null
+    const layerTopLeft = getLayerTopLeft(layer)
 
     return (
       <div
@@ -5949,8 +5918,8 @@ function App() {
                   ? 'canvas-layer lasso-enabled'
                   : 'canvas-layer'}
         style={{
-          left: `${layer.x}px`,
-          top: `${layer.y}px`,
+          left: `${layerTopLeft.x}px`,
+          top: `${layerTopLeft.y}px`,
           width: `${layer.width}px`,
           height: `${layer.height}px`,
           transform: `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
@@ -6254,8 +6223,7 @@ function App() {
           onAddText={() =>
             addLayer(() =>
               createTextLayer({
-                x: 120,
-                y: 100,
+                ...topLeftToCenter(120, 100, 280, 96),
                 name: 'New Text',
               }),
             )

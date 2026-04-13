@@ -30,7 +30,7 @@ async function drawLayerToContext(context, layer) {
 
   context.save()
   context.globalAlpha = layer.opacity
-  context.translate(layer.x + (layer.width / 2), layer.y + (layer.height / 2))
+  context.translate(layer.x, layer.y)
   context.rotate((layer.rotation * Math.PI) / 180)
   context.scale(layer.scaleX, layer.scaleY)
   context.translate(-(layer.width / 2), -(layer.height / 2))

@@ -1,4 +1,5 @@
 import { createSizedCanvas } from './raster'
+import { getLayerTopLeft } from './layerGeometry'
 
 function traceSelectionPath(context, points, transformPoint = (point) => point) {
   if (!context || points.length === 0) {
@@ -132,12 +133,13 @@ export function createFloatingSelection(layer, sourceCanvas, selection, mode, re
 
   const scaleX = layer.width / Math.max(sourceCanvas.width, 1)
   const scaleY = layer.height / Math.max(sourceCanvas.height, 1)
+  const layerTopLeft = getLayerTopLeft(layer)
 
   return {
     sourceLayerId: layer.id,
     canvas: extractedCanvas,
-    x: layer.x + (selection.bounds.minX * scaleX),
-    y: layer.y + (selection.bounds.minY * scaleY),
+    x: layerTopLeft.x + (selection.bounds.minX * scaleX),
+    y: layerTopLeft.y + (selection.bounds.minY * scaleY),
     width: extractedCanvas.width * scaleX,
     height: extractedCanvas.height * scaleY,
     selectionPoints: selection.points.map((point) => ({

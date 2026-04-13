@@ -12,6 +12,7 @@ import {
   updateTextLayerFont,
   updateTextStyle,
 } from './textLayer'
+import { centerToTopLeft } from './layerGeometry'
 import { createTextLayer } from './layers'
 
 describe('text layer helpers', () => {
@@ -33,15 +34,22 @@ describe('text layer helpers', () => {
     const pointText = createTextLayer({
       mode: 'point',
       text: 'Hello',
-      x: 120,
+      x: 124,
       textAlign: 'left',
     })
 
     const centered = updateTextStyle(pointText, { textAlign: 'center' })
     const rightAligned = updateTextStyle(pointText, { textAlign: 'right' })
+    const centeredTopLeft = centerToTopLeft(centered.x, centered.y, centered.width, centered.height)
+    const rightAlignedTopLeft = centerToTopLeft(
+      rightAligned.x,
+      rightAligned.y,
+      rightAligned.width,
+      rightAligned.height,
+    )
 
-    expect(centered.x + ((centered.width - 8) / 2)).toBe(120)
-    expect(rightAligned.x + (rightAligned.width - 8)).toBe(120)
+    expect(centeredTopLeft.x + ((centered.width - 8) / 2)).toBe(120)
+    expect(rightAlignedTopLeft.x + (rightAligned.width - 8)).toBe(120)
   })
 
   it('updates text content and keeps the shared layout path in sync', () => {

@@ -356,14 +356,14 @@ export function expandBitmapSurfaceToFitBounds(
     (expandRightLocal - expandLeftLocal) / 2,
     (expandBottomLocal - expandTopLocal) / 2,
   )
-  const currentCenterX = (layer.x ?? 0) + ((layer.width ?? sourceCanvas.width) / 2)
-  const currentCenterY = (layer.y ?? 0) + ((layer.height ?? sourceCanvas.height) / 2)
+  const currentCenterX = layer.x ?? 0
+  const currentCenterY = layer.y ?? 0
   const nextCenterX = currentCenterX + centerDelta.x
   const nextCenterY = currentCenterY + centerDelta.y
   const nextLayer = {
     ...layer,
-    x: nextCenterX - (nextLayerWidth / 2),
-    y: nextCenterY - (nextLayerHeight / 2),
+    x: nextCenterX,
+    y: nextCenterY,
     width: nextLayerWidth,
     height: nextLayerHeight,
   }
