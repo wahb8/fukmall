@@ -1,0 +1,8 @@
+<!--?xml version="1.0" encoding="UTF-8"?-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Back rectangle -->
+  <rect x="6" y="10" width="16" height="16" rx="2" stroke="white" stroke-width="2"></rect>
+  
+  <!-- Front rectangle -->
+  <rect x="10" y="6" width="16" height="16" rx="2" stroke="white" stroke-width="2"></rect>
+</svg>
