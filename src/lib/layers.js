@@ -76,7 +76,7 @@ export function createTextLayer(overrides = {}) {
     width: 280,
     height: 96,
     text: 'New Text',
-    fontFamily: '"Space Grotesk", "Segoe UI", sans-serif',
+    fontFamily: 'Arial, sans-serif',
     fontSize: 42,
     fontWeight: 400,
     fontStyle: 'normal',

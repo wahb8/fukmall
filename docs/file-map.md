@@ -73,6 +73,7 @@ This document describes what each tracked file in the repo currently does.
 
 - main application component
 - main application orchestrator
+- owns the persisted light/dark UI theme state and applies it to the app shell through `data-theme`
 - still owns tool state, document state integration, layer rendering, keyboard shortcuts, drag/drop, viewport, and canvas interaction flow
 - now delegates several stable render sections into `src/components/editor/`
 - creates the default document, including the full-canvas white background layer used for new files
@@ -132,6 +133,7 @@ This document describes what each tracked file in the repo currently does.
 
 - presentational file-menu dropdown
 - renders the existing new/open/save/export actions through props
+- also renders the top-level light/dark UI theme toggle next to the file button
 
 ### `src/components/editor/AssetLibraryPanel.jsx`
 
@@ -179,11 +181,13 @@ This document describes what each tracked file in the repo currently does.
 
 - light React Testing Library coverage for stable presentational editor components
 - current coverage includes the toolbar, file menu, prompt shell, and modal components
+- `FileMenu.test.jsx` includes basic prop-surface coverage for the theme-aware file menu
 
 ### `src/App.css`
 
 - primary styling file for the entire editor
 - defines colors, layout, panels, stage, controls, selection frames, responsive behavior, and visual language
+- defines both the default light-theme CSS variables and the dark-theme overrides applied through `.app-shell[data-theme='dark']`
 - styles the new-file and unsaved-changes modal surfaces
 - constrains the asset library panel height and makes the thumbnail region scroll independently from the header
 - controls the masonry-like asset card layout and the asset delete button placement
@@ -256,7 +260,7 @@ This document describes what each tracked file in the repo currently does.
 
 - current text system
 - measures text, wraps box text, syncs text layout into layer bounds, updates text style/content, normalizes partial-style ranges, and renders text to canvas
-- defaults new text layers to box mode with left alignment, `1.15` line height, and `0` letter spacing
+- defaults new text layers to box mode with `Arial, sans-serif`, left alignment, `1.15` line height, and `0` letter spacing
 - now owns the `styleRanges` normalization and text-change remapping helpers used by partial text styling
 - now resolves partial-style text into styled runs so measurement, wrapping, alignment, and canvas rendering stay in sync
 - preserves point-text horizontal anchors across content/alignment updates

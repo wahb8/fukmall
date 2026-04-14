@@ -7,6 +7,7 @@ At the time this documentation was written:
 - `npm run build` succeeds
 - `npm run lint` reports warnings, not errors
 - the warnings are React hook dependency warnings in `src/App.jsx`
+- `npm run test:run` is currently not green; there are known failing tests in `textLayer`, `rectSelectTool`, and `EditorToolbar`
 
 ## Important Constraints
 
@@ -307,3 +308,7 @@ Current automated test scope is intentionally conservative:
 - no deep tests yet for the pointer lifecycle, raster surface cache behavior, or full `App.jsx` interaction orchestration
 
 Future work on complex editing behavior should assume manual regression risk is real.
+
+Contributor rule for the current baseline:
+
+- if you make a code change and the test suite still fails, distinguish clearly between pre-existing failures and failures introduced by your change

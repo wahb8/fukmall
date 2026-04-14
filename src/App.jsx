@@ -171,6 +171,16 @@ function isSupportedAssetFile(file) {
 
 const PIXEL_HIT_PADDING = 4
 const VISIBLE_PIXEL_ALPHA_THRESHOLD = 8
+const THEME_STORAGE_KEY = 'fukmall.theme'
+
+function loadThemeFromStorage() {
+  if (typeof window === 'undefined') {
+    return 'light'
+  }
+
+  const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+  return savedTheme === 'dark' ? 'dark' : 'light'
+}
 
 function getSupportedImageFiles(files) {
   return Array.from(files ?? []).filter(isSupportedAssetFile)
@@ -924,6 +934,7 @@ function App() {
     isFading: false,
   })
   const [activeTool, setActiveTool] = useState('select')
+  const [theme, setTheme] = useState(() => loadThemeFromStorage())
   const [globalColors, setGlobalColors] = useState(() => loadColorsFromStorage())
   const [penSize, setPenSize] = useState(DEFAULT_PEN_SIZE)
   const [eraserSize, setEraserSize] = useState(DEFAULT_ERASER_SIZE)
@@ -1471,6 +1482,14 @@ function App() {
   useEffect(() => {
     saveColorsToStorage(globalColors)
   }, [globalColors])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+  }, [theme])
 
   useEffect(() => {
     function handlePointerDownOutside(event) {
@@ -6152,6 +6171,7 @@ function App() {
     <main
       ref={appShellRef}
       className="app-shell"
+      data-theme={theme}
       onDragEnter={handleExternalImageDragEnter}
       onDragOver={handleExternalImageDragOver}
       onDragLeave={handleExternalImageDragLeave}
@@ -6190,7 +6210,11 @@ function App() {
         isOpen={isFileMenuOpen}
         isOpeningFile={isOpeningFile}
         isExporting={isExporting}
+        theme={theme}
         onToggle={() => setIsFileMenuOpen((currentValue) => !currentValue)}
+        onToggleTheme={() => setTheme((currentTheme) => (
+          currentTheme === 'dark' ? 'light' : 'dark'
+        ))}
         onNewFile={handleNewFile}
         onOpenFile={handleOpenFileClick}
         onSaveFile={handleSaveFile}

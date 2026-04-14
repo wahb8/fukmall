@@ -16,7 +16,9 @@ describe('FileMenu', () => {
         isOpen
         isOpeningFile={false}
         isExporting={false}
+        theme="light"
         onToggle={onToggle}
+        onToggleTheme={vi.fn()}
         onNewFile={onNewFile}
         onOpenFile={onOpenFile}
         onSaveFile={onSaveFile}

@@ -14,6 +14,11 @@ The design language is built around:
 
 The UI is meant to feel like a design tool, but softer and more tactile than a default gray desktop editor.
 
+The implementation now supports two chrome themes:
+
+- a warm editorial light mode
+- a darker studio-like mode that keeps the same accent and selection language
+
 ## Core Colors
 
 Primary custom properties are defined in `src/App.css`.
@@ -23,6 +28,14 @@ Primary custom properties are defined in `src/App.css`.
 - `--bg`: `#f5efe5`
 - `--panel`: `rgba(255, 251, 245, 0.92)`
 - `--panel-strong`: `#fffaf2`
+
+Additional light-mode surface variables in `src/App.css` include:
+
+- `--surface`
+- `--surface-soft`
+- `--surface-strong`
+- `--surface-hover`
+- `--surface-active`
 
 ### Line and Border Colors
 
@@ -39,6 +52,17 @@ Primary custom properties are defined in `src/App.css`.
 - `--accent`: `#d97706`
 - `--accent-strong`: `#b45309`
 - `--selection`: `#0f766e`
+
+## Dark Theme
+
+The app shell can switch to dark mode through a top-level toggle rendered beside the `File` button.
+
+Implementation notes:
+
+- the shell applies `data-theme="dark"` on `.app-shell`
+- `src/App.css` overrides shared custom properties instead of restyling each component separately
+- the dark palette keeps the amber accent while shifting panels and canvas chrome to deep blue-gray surfaces
+- the document itself is unchanged; this is UI chrome state only
 
 ### Canvas Grid Color
 
@@ -179,6 +203,7 @@ Danger states use dark red text rather than aggressive red fills.
 The top toolbar also includes:
 
 - a `File` dropdown anchored near the top-left of the app shell
+- a nearby theme toggle labeled `Dark UI` / `Light UI`
 - contextual range/select controls for brush size, eraser size, bucket tolerance, and gradient mode
 - a compact history control cluster for undo/redo
 - swap/reset buttons for the global foreground/background color pair
@@ -204,6 +229,9 @@ Transition timing in controls is short and subtle:
 - `160ms ease` on key control states
 
 This means the app feels responsive, but it is not currently a motion-heavy interface.
+
+Theme switching also benefits from the existing variable-driven transitions on controls and surfaces,
+but it is still a straightforward palette swap rather than a dedicated animated mode change.
 
 ## Cursor System
 

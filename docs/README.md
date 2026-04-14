@@ -2,6 +2,10 @@
 
 This folder is the working documentation set for the current app.
 
+The docs are meant to describe the current implementation rather than an aspirational future state.
+If code behavior changes in a way that makes one of these pages stale, update the docs in the same
+change whenever practical.
+
 Use these docs as the primary reference before editing the codebase:
 
 - [architecture.md](/C:/Users/Desk_1050/Desktop/fukmall/docs/architecture.md): system structure, runtime model, and major module boundaries
@@ -25,3 +29,7 @@ Suggested reading order for new work:
 5. [svg-support.md](/C:/Users/Desk_1050/Desktop/fukmall/docs/svg-support.md)
 6. [ui-system.md](/C:/Users/Desk_1050/Desktop/fukmall/docs/ui-system.md)
 7. [editing-notes.md](/C:/Users/Desk_1050/Desktop/fukmall/docs/editing-notes.md)
+
+Practical maintenance rule:
+
+- if a change affects file workflows, persistence, selection behavior, testing expectations, or UI theme behavior, update the relevant doc in this folder before considering the task complete

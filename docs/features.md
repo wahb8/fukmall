@@ -68,6 +68,7 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - text remains editable as structured text, not flattened by default
 - support point text and box text modes
 - new text layers default to box mode
+- new text layers default to `Arial, sans-serif`
 - support font family, size, weight, color, wrapping, letter spacing, line height, and text alignment
 - text layers now also store normalized partial-style ranges through `styleRanges`
 - when text is actively being edited and a non-empty text selection exists, supported style changes apply only to that selected range
@@ -331,6 +332,7 @@ Supported actions:
 - Open File
 - Export PNG
 - Export JPEG
+- Toggle light/dark UI chrome
 
 Project file behavior:
 
@@ -345,6 +347,7 @@ Project file behavior:
 - opening or loading a file also clears session-local runtime state such as the asset library, viewport, active tool, and raster caches
 - project-file normalization strips disabled group layers and repairs invalid selection and linked-layer references
 - the File menu closes on outside click or `Escape`
+- the UI theme toggle is separate from project files and remains controlled by local UI preference
 
 ## Snapping
 
@@ -391,6 +394,7 @@ Persistent behavior is still limited, but the editor is no longer session-only.
 Currently persisted or saveable:
 
 - foreground/background color pair in `localStorage`
+- UI theme in `localStorage`
 - the full document through `.kryop` project files
 
 Currently not persisted between sessions unless saved as a project file:

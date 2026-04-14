@@ -3,7 +3,9 @@ export function FileMenu({
   isOpen,
   isOpeningFile,
   isExporting,
+  theme,
   onToggle,
+  onToggleTheme,
   onNewFile,
   onOpenFile,
   onSaveFile,
@@ -19,6 +21,14 @@ export function FileMenu({
         aria-haspopup="menu"
       >
         File
+      </button>
+      <button
+        className={theme === 'dark' ? 'action-button active' : 'action-button'}
+        type="button"
+        onClick={onToggleTheme}
+        aria-label="Toggle dark mode"
+      >
+        {theme === 'dark' ? 'Light UI' : 'Dark UI'}
       </button>
       {isOpen && (
         <div className="topbar-menu-dropdown" role="menu" aria-label="File">

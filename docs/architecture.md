@@ -27,6 +27,7 @@ The architecture is simple in packaging but dense in implementation:
 `src/App.jsx` is the actual product shell. It owns:
 
 - tool switching
+- UI theme state and theme persistence
 - selection and interaction flow
 - keyboard shortcuts
 - document edits and history commits
@@ -110,6 +111,10 @@ The history layer can also be reset when a project file is opened or a new file 
 ### 4. Rendering Layer
 
 The app uses normal React DOM for UI chrome and individual layer wrappers, but actual raster/text painting uses HTML canvas.
+
+The app shell also applies a `data-theme` attribute that switches the shared CSS custom-property
+palette between light and dark UI modes. Theme is product chrome state only; it does not affect
+document export or project-file serialization.
 
 `src/lib/raster.js` provides the low-level canvas helpers:
 

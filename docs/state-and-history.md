@@ -19,6 +19,7 @@ Stored in normal React state and not part of undo history:
 - open/closed inspector
 - new-file and unsaved-changes modal state
 - active tool
+- current UI theme
 - pen and eraser size
 - lasso/floating selection objects
 - rectangular marquee/floating-rect selection objects
@@ -250,3 +251,9 @@ Current file model:
 - file normalization also repairs invalid linked-layer references by keeping only reciprocal valid pairs
 - undo/redo history is intentionally not stored in v1
 - runtime-only refs and raster caches are rebuilt after load instead of being serialized
+
+Separate local UI persistence also exists outside the project-file format:
+
+- UI theme is stored in `localStorage` under `fukmall.theme`
+- foreground/background colors are stored separately from the document model
+- opening a project should not overwrite the current chrome theme
