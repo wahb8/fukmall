@@ -143,7 +143,7 @@ import {
   readFileAsDataUrl,
   renderTextLayerToCanvas,
 } from './lib/raster'
-import { screenToWorld, zoomAtPoint } from './lib/viewport'
+import { screenToWorld, worldToScreen, zoomAtPoint } from './lib/viewport'
 import {
   appendStrokePoint,
   drawDot,
@@ -556,6 +556,16 @@ function isSelectionPreservingUiTarget(target) {
   )
 }
 
+function isResizeHandleTarget(target) {
+  return target instanceof HTMLElement && Boolean(target.closest('.resize-handle'))
+}
+
+function isSelectionFrameTarget(target) {
+  return target instanceof HTMLElement && Boolean(
+    target.closest('.selection-frame, .shared-selection-frame'),
+  )
+}
+
 function createRasterSurfaceEntry() {
   return {
     offscreenCanvas: null,
@@ -597,6 +607,13 @@ function toDocumentCoordinates(pointerEvent, element, viewport, documentScale) {
       ...viewport,
       zoom: viewport.zoom * documentScale,
     }),
+  }
+}
+
+function getHandleLocalPoint(handle, width, height) {
+  return {
+    x: handle.x === -1 ? 0 : handle.x === 1 ? width : width / 2,
+    y: handle.y === -1 ? 0 : handle.y === 1 ? height : height / 2,
   }
 }
 
@@ -1040,6 +1057,101 @@ function App() {
       '--resize-handle-scale-y': String(Math.max(Math.abs(selectedLayer.scaleY ?? 1), 0.0001)),
     }
     : resizeHandleStyleVars
+
+  function getActiveSelectionResizeHandleHit(event) {
+    if (currentTool !== 'select' || editingTextLayerId || !canvasRef.current) {
+      return null
+    }
+
+    const pointerPosition = getPointerPositionWithinElement(event, canvasRef.current)
+
+    if (!pointerPosition) {
+      return null
+    }
+
+    const effectiveViewport = {
+      ...viewport,
+      zoom: viewport.zoom * documentScale,
+    }
+    const screenHitRadius = (
+      (RESIZE_HANDLE_VISIBLE_SIZE_PX + (RESIZE_HANDLE_HIT_PADDING_PX * 2)) *
+      effectiveViewport.zoom
+    ) / 2
+
+    if (screenHitRadius <= 0) {
+      return null
+    }
+
+    if (selectedLayers.length > 1 && selectionBounds) {
+      for (const handle of HANDLE_DIRECTIONS) {
+        const handlePoint = {
+          x: handle.x === -1
+            ? selectionBounds.x
+            : handle.x === 1
+              ? selectionBounds.x + selectionBounds.width
+              : selectionBounds.x + (selectionBounds.width / 2),
+          y: handle.y === -1
+            ? selectionBounds.y
+            : handle.y === 1
+              ? selectionBounds.y + selectionBounds.height
+              : selectionBounds.y + (selectionBounds.height / 2),
+        }
+        const handleScreenPoint = worldToScreen(
+          handlePoint.x,
+          handlePoint.y,
+          effectiveViewport,
+        )
+
+        if (
+          Math.abs(pointerPosition.x - handleScreenPoint.x) <= screenHitRadius &&
+          Math.abs(pointerPosition.y - handleScreenPoint.y) <= screenHitRadius
+        ) {
+          return {
+            layer: selectedLayer ?? selectedLayers.at(-1) ?? null,
+            handle,
+          }
+        }
+      }
+
+      return null
+    }
+
+    if (!selectedLayer) {
+      return null
+    }
+
+    for (const handle of HANDLE_DIRECTIONS) {
+      const localPoint = getHandleLocalPoint(handle, selectedLayer.width, selectedLayer.height)
+      const handlePoint = layerLocalPointToDocumentPoint(
+        selectedLayer,
+        selectedLayer.width,
+        selectedLayer.height,
+        localPoint,
+      )
+
+      if (!handlePoint) {
+        continue
+      }
+
+      const handleScreenPoint = worldToScreen(
+        handlePoint.x,
+        handlePoint.y,
+        effectiveViewport,
+      )
+
+      if (
+        Math.abs(pointerPosition.x - handleScreenPoint.x) <= screenHitRadius &&
+        Math.abs(pointerPosition.y - handleScreenPoint.y) <= screenHitRadius
+      ) {
+        return {
+          layer: selectedLayer,
+          handle,
+        }
+      }
+    }
+
+    return null
+  }
 
   const clearToolPanelErrorTimers = useCallback(() => {
     if (toolPanelErrorFadeTimeoutRef.current) {
@@ -5736,7 +5848,18 @@ function App() {
       return
     }
 
+    const resizeHandleHit = getActiveSelectionResizeHandleHit(event)
+
+    if (resizeHandleHit?.layer) {
+      startResize(event, resizeHandleHit.layer, resizeHandleHit.handle)
+      return
+    }
+
     if (currentTool === 'select') {
+      if (isResizeHandleTarget(event.target)) {
+        return
+      }
+
       const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
       const hitLayer = documentPoint ? resolveTopLayerAtPoint(documentPoint, layer) : layer
 
@@ -5849,6 +5972,21 @@ function App() {
   function handleCanvasPointerDown(event) {
     if (currentTool === 'zoom') {
       handleZoomPointer(event)
+      return
+    }
+
+    const resizeHandleHit = getActiveSelectionResizeHandleHit(event)
+
+    if (resizeHandleHit?.layer) {
+      startResize(event, resizeHandleHit.layer, resizeHandleHit.handle)
+      return
+    }
+
+    if (isResizeHandleTarget(event.target)) {
+      return
+    }
+
+    if (currentTool === 'select' && isSelectionFrameTarget(event.target)) {
       return
     }
 
@@ -6383,6 +6521,10 @@ function App() {
             className="selection-frame interactive"
             style={selectedResizeHandleStyleVars}
             onPointerDown={(event) => {
+              if (isResizeHandleTarget(event.target)) {
+                return
+              }
+
               const documentPoint = toDocumentCoordinates(
                 event,
                 canvasRef.current,
@@ -6405,6 +6547,7 @@ function App() {
                 key={handle.key}
                 className={`resize-handle handle-${handle.key}`}
                 type="button"
+                data-handle-direction={handle.key}
                 onPointerDown={(event) => startResize(event, layer, handle)}
               />
             ))}
@@ -6442,7 +6585,13 @@ function App() {
           width: `${selectionBounds.width}px`,
           height: `${selectionBounds.height}px`,
         }}
-        onPointerDown={(event) => startMove(event, primaryLayer)}
+        onPointerDown={(event) => {
+          if (isResizeHandleTarget(event.target)) {
+            return
+          }
+
+          startMove(event, primaryLayer)
+        }}
         aria-hidden="true"
       >
         {HANDLE_DIRECTIONS.map((handle) => (
@@ -6450,6 +6599,7 @@ function App() {
             key={handle.key}
             className={`resize-handle handle-${handle.key}`}
             type="button"
+            data-handle-direction={handle.key}
             onPointerDown={(event) => startResize(event, primaryLayer, handle)}
           />
         ))}
