@@ -1,17 +1,6 @@
-import addImageIcon from '../../assets/add image.svg'
-import addTextIcon from '../../assets/add text.svg'
-import bucketIcon from '../../assets/bucket.svg'
-import eraserIcon from '../../assets/eraser.svg'
-import gradientIcon from '../../assets/gradient.svg'
-import lassoIcon from '../../assets/lasso.svg'
-import marqueeIcon from '../../assets/marquee.svg'
-import penIcon from '../../assets/pen.svg'
-import pointerIcon from '../../assets/pointer.svg'
-import redoIcon from '../../assets/redo.svg'
-import undoIcon from '../../assets/undo.svg'
-import zoomIcon from '../../assets/zoom.svg'
+import { getEditorIcons } from '../../editor/iconAssets'
 
-function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
+function ToolButtons({ currentTool, icons, onActivateTool, onResetViewport }) {
   return (
     <div className="toolbar-tools">
       <div className="toolbar-tools-row">
@@ -21,7 +10,7 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           onClick={() => onActivateTool('select')}
           aria-label="Select"
         >
-          <img className="button-icon" src={pointerIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.pointer} alt="" aria-hidden="true" />
         </button>
         <button
           className={currentTool === 'pen' ? 'action-button active' : 'action-button'}
@@ -29,7 +18,7 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           onClick={() => onActivateTool('pen')}
           aria-label="Pen"
         >
-          <img className="button-icon" src={penIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.pen} alt="" aria-hidden="true" />
         </button>
         <button
           className={currentTool === 'eraser' ? 'action-button active' : 'action-button'}
@@ -37,7 +26,7 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           onClick={() => onActivateTool('eraser')}
           aria-label="Eraser"
         >
-          <img className="button-icon" src={eraserIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.eraser} alt="" aria-hidden="true" />
         </button>
         <button
           className={currentTool === 'zoom' ? 'action-button active' : 'action-button'}
@@ -46,7 +35,7 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           onDoubleClick={onResetViewport}
           aria-label="Zoom"
         >
-          <img className="button-icon" src={zoomIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.zoom} alt="" aria-hidden="true" />
         </button>
       </div>
       <div className="toolbar-tools-row">
@@ -56,7 +45,7 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           onClick={() => onActivateTool('bucket')}
           aria-label="Bucket Fill"
         >
-          <img className="button-icon" src={bucketIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.bucket} alt="" aria-hidden="true" />
         </button>
         <button
           className={currentTool === 'gradient' ? 'action-button active' : 'action-button'}
@@ -64,7 +53,7 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           onClick={() => onActivateTool('gradient')}
           aria-label="Gradient"
         >
-          <img className="button-icon" src={gradientIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.gradient} alt="" aria-hidden="true" />
         </button>
         <button
           className={currentTool === 'lasso' ? 'action-button active' : 'action-button'}
@@ -72,7 +61,7 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           onClick={() => onActivateTool('lasso')}
           aria-label="Lasso"
         >
-          <img className="button-icon" src={lassoIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.lasso} alt="" aria-hidden="true" />
         </button>
         <button
           className={currentTool === 'rectSelect' ? 'action-button active' : 'action-button'}
@@ -80,7 +69,7 @@ function ToolButtons({ currentTool, onActivateTool, onResetViewport }) {
           onClick={() => onActivateTool('rectSelect')}
           aria-label="Rectangle Selection"
         >
-          <img className="button-icon" src={marqueeIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.marquee} alt="" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -173,6 +162,7 @@ function ColorSwatchPanel({
 }
 
 export function EditorToolbar({
+  icons = getEditorIcons('light'),
   currentTool,
   activeBrushTool,
   penSize,
@@ -206,6 +196,7 @@ export function EditorToolbar({
     <header className="editor-topbar">
       <ToolButtons
         currentTool={currentTool}
+        icons={icons}
         onActivateTool={onActivateTool}
         onResetViewport={onResetViewport}
       />
@@ -267,7 +258,7 @@ export function EditorToolbar({
             onClick={onUndo}
             aria-label="Undo"
           >
-            <img className="button-icon" src={undoIcon} alt="" aria-hidden="true" />
+            <img className="button-icon" src={icons.undo} alt="" aria-hidden="true" />
           </button>
           <button
             className="icon-button history-widget-button"
@@ -276,14 +267,14 @@ export function EditorToolbar({
             onClick={onRedo}
             aria-label="Redo"
           >
-            <img className="button-icon" src={redoIcon} alt="" aria-hidden="true" />
+            <img className="button-icon" src={icons.redo} alt="" aria-hidden="true" />
           </button>
         </div>
         <button className="action-button" type="button" onClick={onAddText} aria-label="Add Text">
-          <img className="button-icon" src={addTextIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.addText} alt="" aria-hidden="true" />
         </button>
         <button className="action-button" type="button" onClick={onAddImage} aria-label="Add Image">
-          <img className="button-icon" src={addImageIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.addImage} alt="" aria-hidden="true" />
         </button>
         <ColorSwatchPanel
           globalColors={globalColors}

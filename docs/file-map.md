@@ -121,6 +121,13 @@ This document describes what each tracked file in the repo currently does.
 - contains imported-image placement helpers
 - contains bitmap-patch helpers used when converting editable layers into bitmap-backed variants
 
+### `src/editor/iconAssets.js`
+
+- centralized UI icon resolver used by the editor chrome
+- maps each supported UI icon to its normal asset and, when available, its dark-mode white replacement
+- falls back to the normal icon automatically when no dark replacement exists
+- keeps dark-mode icon swapping explicit instead of scattering theme conditionals across components
+
 ## Editor Components
 
 ### `src/components/editor/EditorToolbar.jsx`

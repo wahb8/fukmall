@@ -1,6 +1,7 @@
-import closeIcon from '../../assets/Close (X).svg'
+import { getEditorIcons } from '../../editor/iconAssets'
 
 export function AssetLibraryPanel({
+  icons = getEditorIcons('light'),
   assetLibraryInputRef,
   assetLibrary,
   draggedAssetId,
@@ -66,7 +67,7 @@ export function AssetLibraryPanel({
                       }}
                       aria-label={`Delete ${asset.name} from asset library`}
                     >
-                      <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
+                      <img className="button-icon" src={icons.close} alt="" aria-hidden="true" />
                     </button>
                   </div>
                 </button>

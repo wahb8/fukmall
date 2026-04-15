@@ -43,6 +43,7 @@ import {
   normalizeNewFileDimensionInput,
   normalizeNewFileNameInput,
 } from './editor/documentHelpers'
+import { getEditorIcons } from './editor/iconAssets'
 import { useHistory } from './hooks/useHistory'
 import { eraseDot, eraseStroke, paintMaskDot, paintMaskStroke } from './lib/eraserTool'
 import {
@@ -980,6 +981,7 @@ function App() {
   const documentWidth = documentState.width ?? DEFAULT_DOCUMENT_WIDTH
   const documentHeight = documentState.height ?? DEFAULT_DOCUMENT_HEIGHT
   const documentName = normalizeNewFileNameInput(documentState.name, DEFAULT_DOCUMENT_NAME)
+  const editorIcons = useMemo(() => getEditorIcons(theme), [theme])
   const currentDocumentSignature = useMemo(() => serializeProjectFile(documentState), [documentState])
   const hasUnsavedChanges = currentDocumentSignature !== savedDocumentSignature
   const documentScale = DISPLAY_DOCUMENT_WIDTH / Math.max(documentWidth, 1)
@@ -6222,6 +6224,7 @@ function App() {
       />
       <section className="editor-panel">
         <EditorToolbar
+          icons={editorIcons}
           currentTool={currentTool}
           activeBrushTool={activeBrushTool}
           penSize={penSize}
@@ -6261,6 +6264,7 @@ function App() {
 
         <div className="workspace-grid">
           <AssetLibraryPanel
+            icons={editorIcons}
             assetLibraryInputRef={assetLibraryInputRef}
             assetLibrary={assetLibrary}
             draggedAssetId={draggedAssetId}
@@ -6331,6 +6335,7 @@ function App() {
               onChange={handleImageImport}
             />
             <LayerPanel
+              icons={editorIcons}
               documentState={documentState}
               documentWidth={documentWidth}
               documentHeight={documentHeight}

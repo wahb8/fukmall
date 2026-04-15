@@ -1,11 +1,4 @@
-import addLayerIcon from '../../assets/add layer.svg'
-import closeIcon from '../../assets/Close (X).svg'
-import duplicateIcon from '../../assets/duplicate.svg'
-import downIcon from '../../assets/down.svg'
-import hiddenIcon from '../../assets/Hidden.svg'
-import mergeDownIcon from '../../assets/merge down.svg'
-import upIcon from '../../assets/up.svg'
-import visibleIcon from '../../assets/Visible.svg'
+import { getEditorIcons } from '../../editor/iconAssets'
 import {
   canMergeDown,
   duplicateLayer,
@@ -27,6 +20,7 @@ function getLayerRowClassName({ isSelected, isDragging, dropPlacement }) {
 }
 
 export function LayerPanel({
+  icons = getEditorIcons('light'),
   documentState,
   documentWidth,
   documentHeight,
@@ -102,7 +96,7 @@ export function LayerPanel({
               >
                 <img
                   className="button-icon"
-                  src={layer.visible ? visibleIcon : hiddenIcon}
+                  src={layer.visible ? icons.visible : icons.hidden}
                   alt=""
                   aria-hidden="true"
                 />
@@ -143,7 +137,7 @@ export function LayerPanel({
                   }}
                   aria-label="Duplicate layer"
                 >
-                  <img className="button-icon" src={duplicateIcon} alt="" aria-hidden="true" />
+                  <img className="button-icon" src={icons.duplicate} alt="" aria-hidden="true" />
                 </button>
                 <button
                   className="icon-button"
@@ -155,7 +149,7 @@ export function LayerPanel({
                   }}
                   aria-label="Move layer up"
                 >
-                  <img className="button-icon" src={upIcon} alt="" aria-hidden="true" />
+                  <img className="button-icon" src={icons.up} alt="" aria-hidden="true" />
                 </button>
                 <button
                   className="icon-button"
@@ -167,7 +161,7 @@ export function LayerPanel({
                   }}
                   aria-label="Move layer down"
                 >
-                  <img className="button-icon" src={downIcon} alt="" aria-hidden="true" />
+                  <img className="button-icon" src={icons.down} alt="" aria-hidden="true" />
                 </button>
                 <button
                   className="icon-button"
@@ -179,7 +173,7 @@ export function LayerPanel({
                   }}
                   aria-label="Merge layer down"
                 >
-                  <img className="button-icon" src={mergeDownIcon} alt="" aria-hidden="true" />
+                  <img className="button-icon" src={icons.mergeDown} alt="" aria-hidden="true" />
                 </button>
                 <button
                   className="icon-button danger"
@@ -190,7 +184,7 @@ export function LayerPanel({
                   }}
                   aria-label="Delete layer"
                 >
-                  <img className="button-icon" src={closeIcon} alt="" aria-hidden="true" />
+                  <img className="button-icon" src={icons.close} alt="" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -212,7 +206,7 @@ export function LayerPanel({
           }
           aria-label="Add Drawing"
         >
-          <img className="button-icon" src={addLayerIcon} alt="" aria-hidden="true" />
+          <img className="button-icon" src={icons.addLayer} alt="" aria-hidden="true" />
         </button>
       </div>
     </section>
