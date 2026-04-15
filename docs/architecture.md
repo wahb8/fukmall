@@ -11,7 +11,7 @@ The architecture is simple in packaging but dense in implementation:
   focused editor components.
 - Small utility modules in `src/lib/` handle data transforms, canvas operations, tool math, and document helpers.
 - `src/editor/` now holds app-specific constants and document/file helper logic that does not belong in the lower-level domain modules.
-- `src/components/editor/` now holds presentational editor UI sections such as the toolbar, file menu, modals, asset library, prompt shell, and layer panel.
+- `src/components/editor/` now holds presentational editor UI sections such as the toolbar, file menu, modals, asset library, add-layer panel, prompt shell, and layer panel.
 - Undo/redo is snapshot-based.
 - Raster and text surfaces are cached in memory using `canvas` elements stored in refs.
 - The app now supports flattened image export and simple file-based project save/open workflows.
@@ -35,7 +35,7 @@ The architecture is simple in packaging but dense in implementation:
 - wiring of extracted editor UI components
 
 Stable UI sections such as the toolbar, file menu, new-file modal, unsaved-changes modal,
-asset library, prompt shell, and layer panel now render through `src/components/editor/`.
+asset library, add-layer panel, prompt shell, and layer panel now render through `src/components/editor/`.
 
 The highest-risk logic still stays in `App`:
 
@@ -48,6 +48,7 @@ The highest-risk logic still stays in `App`:
 - layer inspector behavior
 - text-shadow orchestration for text layers
 - asset-library-to-canvas wiring
+- add-layer panel state, JSON/manual creation wiring, and async image-source resolution
 - project-file open/save/new actions
 - flattened export actions
 
@@ -226,6 +227,7 @@ The safest places to add behavior are:
 - `src/lib/raster.js` for bitmap/canvas helpers
 - `src/lib/moveSnapping.js` for snapping logic
 - `src/editor/` for app-specific constants and non-domain editor helpers
+- `src/editor/addLayerPanelHelpers.js` for Add Layer panel parsing/defaulting/normalization
 - `src/components/editor/` for presentational UI extraction that should stay thin
 - extracted subcomponents/hooks if `src/App.jsx` starts being broken apart further
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import addImageIcon from './assets/add image.svg'
+import { AddLayerPanel } from './components/editor/AddLayerPanel'
 import { AssetLibraryPanel } from './components/editor/AssetLibraryPanel'
 import { EditorToolbar } from './components/editor/EditorToolbar'
 import { ExternalImageDropOverlay } from './components/editor/ExternalImageDropOverlay'
@@ -32,6 +33,17 @@ import {
   TOOL_PANEL_ERROR_FADE_DELAY_MS,
   VIEWPORT_ZOOM_STEP,
 } from './editor/constants'
+import {
+  applyInspectorSizeToLayer,
+  createExactTextLayerFromJsonSpec,
+  getDefaultImageLayerFormValues,
+  getDefaultTextLayerFormValues,
+  createImageLayerFromAddSpec,
+  createTextLayerFromAddSpec,
+  normalizeImageLayerSpecFromForm,
+  normalizeTextLayerSpecFromForm,
+  parseAddLayerJson,
+} from './editor/addLayerPanelHelpers'
 import {
   clampImportedImagePosition,
   createBitmapEditableLayerPatch,
@@ -537,6 +549,7 @@ function isEditableTarget(target) {
 function isSelectionPreservingUiTarget(target) {
   return target instanceof HTMLElement && (
     isEditableTarget(target) ||
+    target.closest('.sidebar, .inspector-panel, .inspector-panel-body') ||
     target.closest(
       'button, a, label, select, option, summary, [role="button"], [role="dialog"], .modal-backdrop',
     )
@@ -902,6 +915,7 @@ function App() {
   const externalImageDragDepthRef = useRef(0)
   const toolPanelErrorFadeTimeoutRef = useRef(null)
   const toolPanelErrorClearTimeoutRef = useRef(null)
+  const addLayerPanelStatusTimeoutRef = useRef(null)
   const fontSizeRepeatTimeoutRef = useRef(null)
   const fontSizeRepeatIntervalRef = useRef(null)
   const {
@@ -948,6 +962,16 @@ function App() {
   const [draggedLayerId, setDraggedLayerId] = useState(null)
   const [layerDropTarget, setLayerDropTarget] = useState(null)
   const [assetLibrary, setAssetLibrary] = useState([])
+  const [addLayerJsonInput, setAddLayerJsonInput] = useState('')
+  const [addLayerPanelStatus, setAddLayerPanelStatus] = useState({ message: '', tone: 'info' })
+  const [addLayerPanelType, setAddLayerPanelType] = useState('text')
+  const [addLayerTextCreationSource, setAddLayerTextCreationSource] = useState('manual')
+  const [addLayerTextFormValues, setAddLayerTextFormValues] = useState(() => (
+    getDefaultTextLayerFormValues()
+  ))
+  const [addLayerImageFormValues, setAddLayerImageFormValues] = useState(() => (
+    getDefaultImageLayerFormValues()
+  ))
   const [draggedAssetId, setDraggedAssetId] = useState(null)
   const [activeSvgToolLayerId, setActiveSvgToolLayerId] = useState(null)
   const [isCanvasAssetDropActive, setIsCanvasAssetDropActive] = useState(false)
@@ -1029,6 +1053,23 @@ function App() {
     }
   }, [])
 
+  const clearAddLayerPanelStatusTimer = useCallback(() => {
+    if (addLayerPanelStatusTimeoutRef.current) {
+      window.clearTimeout(addLayerPanelStatusTimeoutRef.current)
+      addLayerPanelStatusTimeoutRef.current = null
+    }
+  }, [])
+
+  const showAddLayerPanelStatus = useCallback((message, tone = 'info') => {
+    clearAddLayerPanelStatusTimer()
+    setAddLayerPanelStatus({ message, tone })
+
+    addLayerPanelStatusTimeoutRef.current = window.setTimeout(() => {
+      setAddLayerPanelStatus({ message: '', tone: 'info' })
+      addLayerPanelStatusTimeoutRef.current = null
+    }, 4000)
+  }, [clearAddLayerPanelStatusTimer])
+
   const showToolPanelError = useCallback((message) => {
     clearToolPanelErrorTimers()
     setToolPanelError({
@@ -1071,9 +1112,10 @@ function App() {
   useEffect(() => (
     () => {
       clearToolPanelErrorTimers()
+      clearAddLayerPanelStatusTimer()
       clearFontSizeRepeatTimers()
     }
-  ), [clearFontSizeRepeatTimers, clearToolPanelErrorTimers])
+  ), [clearAddLayerPanelStatusTimer, clearFontSizeRepeatTimers, clearToolPanelErrorTimers])
 
   useEffect(() => {
     function stopFontSizeRepeat() {
@@ -3258,6 +3300,260 @@ function App() {
     }
   }
 
+  function updateAddLayerTextField(field, value) {
+    setAddLayerTextFormValues((currentValues) => ({
+      ...currentValues,
+      [field]: value,
+    }))
+  }
+
+  function updateAddLayerImageField(field, value) {
+    setAddLayerImageFormValues((currentValues) => ({
+      ...currentValues,
+      [field]: value,
+    }))
+  }
+
+  function applyAddLayerJsonToForms(parsedJson) {
+    setAddLayerTextFormValues(parsedJson.textFormValues)
+    setAddLayerImageFormValues(parsedJson.imageFormValues)
+    setAddLayerTextCreationSource(parsedJson.textSpecs.length > 0 ? 'json' : 'manual')
+
+    if (parsedJson.textSpecs.length > 0 && parsedJson.imageSpecs.length === 0) {
+      setAddLayerPanelType('text')
+      return
+    }
+
+    if (parsedJson.imageSpecs.length > 0 && parsedJson.textSpecs.length === 0) {
+      setAddLayerPanelType('image')
+      return
+    }
+
+    if (addLayerPanelType === 'text' && parsedJson.textSpecs.length === 0 && parsedJson.imageSpecs.length > 0) {
+      setAddLayerPanelType('image')
+      return
+    }
+
+    if (addLayerPanelType === 'image' && parsedJson.imageSpecs.length === 0 && parsedJson.textSpecs.length > 0) {
+      setAddLayerPanelType('text')
+    }
+  }
+
+  function handleApplyAddLayerJson() {
+    const parsedJson = parseAddLayerJson(addLayerJsonInput)
+
+    if (parsedJson.error) {
+      showAddLayerPanelStatus(parsedJson.error, 'error')
+      return
+    }
+
+    applyAddLayerJsonToForms(parsedJson)
+
+    const createdLayerCount = parsedJson.textSpecs.length + parsedJson.imageSpecs.length
+    showAddLayerPanelStatus(
+      createdLayerCount === 1
+        ? 'JSON parsed. One layer spec is ready.'
+        : `JSON parsed. ${createdLayerCount} layer specs are ready.`,
+    )
+  }
+
+  function clampLayerInsertionIndex(index, layerCount) {
+    if (!Number.isFinite(index)) {
+      return layerCount
+    }
+
+    return Math.max(0, Math.min(Math.trunc(index), layerCount))
+  }
+
+  function insertLayerAtPlacement(layers, layer, layerPlacement) {
+    const nextLayers = [...layers]
+    const insertionIndex = clampLayerInsertionIndex(
+      layerPlacement === undefined ? nextLayers.length : layerPlacement,
+      nextLayers.length,
+    )
+
+    nextLayers.splice(insertionIndex, 0, layer)
+    return nextLayers
+  }
+
+  function applyPreparedLayerCreations(currentDocument, preparedEntries) {
+    if (preparedEntries.length === 0) {
+      return currentDocument
+    }
+
+    let nextDocument = currentDocument
+    const primaryLayerIds = []
+
+    for (const entry of preparedEntries) {
+      nextDocument = {
+        ...nextDocument,
+        layers: insertLayerAtPlacement(
+          nextDocument.layers,
+          entry.layer,
+          entry.layerPlacement,
+        ),
+      }
+      primaryLayerIds.push(entry.layer.id)
+
+      if (!entry.addShadow || entry.layer.type !== 'text' || entry.layer.isTextShadow) {
+        continue
+      }
+
+      const sourceLayer = findLayer(nextDocument, entry.layer.id)
+
+      if (!sourceLayer || sourceLayer.type !== 'text' || sourceLayer.isTextShadow) {
+        continue
+      }
+
+      const shadowLayer = createTextShadowLayer(sourceLayer, {
+        offsetX: DEFAULT_TEXT_SHADOW_OFFSET_X,
+        offsetY: DEFAULT_TEXT_SHADOW_OFFSET_Y,
+        opacity: DEFAULT_TEXT_SHADOW_OPACITY,
+      })
+      const sourceIndex = nextDocument.layers.findIndex((layer) => layer.id === sourceLayer.id)
+
+      if (sourceIndex === -1) {
+        continue
+      }
+
+      const nextLayers = [...nextDocument.layers]
+      nextLayers.splice(sourceIndex, 0, shadowLayer)
+      nextDocument = {
+        ...nextDocument,
+        layers: nextLayers.map((layer) => (
+          layer.id === sourceLayer.id
+            ? {
+              ...layer,
+              shadowLayerId: shadowLayer.id,
+            }
+            : layer
+        )),
+      }
+      nextDocument = linkLayerPair(nextDocument, sourceLayer.id, shadowLayer.id)
+    }
+
+    return {
+      ...nextDocument,
+      selectedLayerId: primaryLayerIds.at(-1) ?? null,
+      selectedLayerIds: primaryLayerIds,
+    }
+  }
+
+  async function prepareAddPanelLayerEntries(entries) {
+    const preparedEntries = []
+    const errors = []
+
+    for (const entry of entries) {
+      if (entry.type === 'text') {
+        preparedEntries.push({
+          layer: entry.source === 'json'
+            ? createExactTextLayerFromJsonSpec(entry.spec)
+            : createTextLayerFromAddSpec(entry.spec),
+          layerPlacement: entry.spec.layerPlacement,
+          addShadow: Boolean(entry.spec.addShadow),
+        })
+        continue
+      }
+
+      try {
+        const layer = await createImageLayerFromAddSpec(entry.spec, {
+          loadImageDimensions: async (src) => {
+            const dimensions = await loadImageDimensionsFromSource(src)
+            return {
+              width: dimensions.width,
+              height: dimensions.height,
+            }
+          },
+          documentWidth,
+          documentHeight,
+        })
+        preparedEntries.push({
+          layer,
+          layerPlacement: entry.spec.layerPlacement,
+          addShadow: false,
+        })
+      } catch {
+        errors.push(`Image source could not be loaded: ${entry.spec.src}`)
+      }
+    }
+
+    return {
+      preparedEntries,
+      errors,
+    }
+  }
+
+  async function createLayersFromAddPanelEntries(entries, successMessage) {
+    const { preparedEntries, errors } = await prepareAddPanelLayerEntries(entries)
+
+    if (preparedEntries.length === 0) {
+      showAddLayerPanelStatus(errors[0] ?? 'No valid layer specs were provided.', 'error')
+      return
+    }
+
+    commit((currentDocument) => applyPreparedLayerCreations(currentDocument, preparedEntries))
+    setActiveTool('select')
+
+    if (errors.length > 0) {
+      showAddLayerPanelStatus(
+        `${successMessage} ${errors[0]}`,
+        'error',
+      )
+      return
+    }
+
+    showAddLayerPanelStatus(successMessage)
+  }
+
+  async function handleCreateAddLayer() {
+    if (addLayerPanelType === 'text') {
+      const textSpec = normalizeTextLayerSpecFromForm(addLayerTextFormValues)
+
+      await createLayersFromAddPanelEntries(
+        [{
+          type: 'text',
+          spec: textSpec,
+          ...(addLayerTextCreationSource === 'json' ? { source: 'json' } : {}),
+        }],
+        'Text layer created.',
+      )
+      return
+    }
+
+    const imageSpec = normalizeImageLayerSpecFromForm(addLayerImageFormValues)
+
+    if (!imageSpec) {
+      showAddLayerPanelStatus('A valid image source is required to create an image layer.', 'error')
+      return
+    }
+
+    await createLayersFromAddPanelEntries(
+      [{ type: 'image', spec: imageSpec }],
+      'Image layer created.',
+    )
+  }
+
+  async function handleCreateLayersFromJson() {
+    const parsedJson = parseAddLayerJson(addLayerJsonInput)
+
+    if (parsedJson.error) {
+      showAddLayerPanelStatus(parsedJson.error, 'error')
+      return
+    }
+
+    applyAddLayerJsonToForms(parsedJson)
+
+    const entries = [
+      ...parsedJson.textSpecs.map((spec) => ({ type: 'text', spec })),
+      ...parsedJson.imageSpecs.map((spec) => ({ type: 'image', spec })),
+    ]
+
+    await createLayersFromAddPanelEntries(
+      entries.map((entry) => ({ ...entry, source: 'json' })),
+      entries.length === 1 ? 'One layer created from JSON.' : `${entries.length} layers created from JSON.`,
+    )
+  }
+
   function resolvePenLayer(targetLayer) {
     const selectedDocumentLayer = getSingleSelectedLayer(documentState)
     const selectedLayerCount = getSelectedLayerCount(documentState)
@@ -3320,6 +3616,7 @@ function App() {
   }
 
   const resetEditorRuntimeState = useCallback(() => {
+    clearAddLayerPanelStatusTimer()
     interactionRef.current = null
     rasterSurfacesRef.current = new Map()
     copiedLayerRef.current = null
@@ -3334,6 +3631,12 @@ function App() {
     setDraggedLayerId(null)
     setLayerDropTarget(null)
     setAssetLibrary([])
+    setAddLayerJsonInput('')
+    setAddLayerPanelStatus({ message: '', tone: 'info' })
+    setAddLayerPanelType('text')
+    setAddLayerTextCreationSource('manual')
+    setAddLayerTextFormValues(getDefaultTextLayerFormValues())
+    setAddLayerImageFormValues(getDefaultImageLayerFormValues())
     setDraggedAssetId(null)
     setActiveSvgToolLayerId(null)
     setIsCanvasAssetDropActive(false)
@@ -3344,7 +3647,7 @@ function App() {
       offsetX: 0,
       offsetY: 0,
     })
-  }, [])
+  }, [clearAddLayerPanelStatusTimer])
 
   const loadDocumentState = useCallback((nextDocumentState) => {
     const normalizedDocument = normalizeDocumentState(nextDocumentState)
@@ -5669,33 +5972,18 @@ function App() {
       }
 
       if (key === 'width') {
-        if (selectedLayer.mode === 'box') {
-          applyTextLayerUpdate(selectedLayer.id, (layer) => resizeBoxText(layer, resolvedValue))
-          return
-        }
-
-        applyTextLayerUpdate(selectedLayer.id, (layer) => resizePointTextTransform(
-          layer,
-          Math.max(0.1, resolvedValue / Math.max(layer.measuredWidth ?? layer.width, 1)),
-          layer.scaleY,
-        ))
+        applyTextLayerUpdate(
+          selectedLayer.id,
+          (layer) => applyInspectorSizeToLayer(layer, { width: resolvedValue }),
+        )
         return
       }
 
       if (key === 'height') {
-        if (selectedLayer.mode === 'box') {
-          applyTextLayerUpdate(
-            selectedLayer.id,
-            (layer) => resizeBoxText(layer, layer.boxWidth ?? layer.width, resolvedValue),
-          )
-          return
-        }
-
-        applyTextLayerUpdate(selectedLayer.id, (layer) => resizePointTextTransform(
-          layer,
-          layer.scaleX,
-          Math.max(0.1, resolvedValue / Math.max(layer.measuredHeight ?? layer.height, 1)),
-        ))
+        applyTextLayerUpdate(
+          selectedLayer.id,
+          (layer) => applyInspectorSizeToLayer(layer, { height: resolvedValue }),
+        )
         return
       }
     }
@@ -6263,17 +6551,38 @@ function App() {
         />
 
         <div className="workspace-grid">
-          <AssetLibraryPanel
-            icons={editorIcons}
-            assetLibraryInputRef={assetLibraryInputRef}
-            assetLibrary={assetLibrary}
-            draggedAssetId={draggedAssetId}
-            onImport={() => assetLibraryInputRef.current?.click()}
-            onInputChange={handleAssetLibraryImport}
-            onAssetDragStart={handleAssetDragStart}
-            onAssetDragEnd={handleAssetDragEnd}
-            onDeleteAsset={removeAssetFromLibrary}
-          />
+          <aside className="asset-sidebar">
+            <AssetLibraryPanel
+              icons={editorIcons}
+              assetLibraryInputRef={assetLibraryInputRef}
+              assetLibrary={assetLibrary}
+              draggedAssetId={draggedAssetId}
+              onImport={() => assetLibraryInputRef.current?.click()}
+              onInputChange={handleAssetLibraryImport}
+              onAssetDragStart={handleAssetDragStart}
+              onAssetDragEnd={handleAssetDragEnd}
+              onDeleteAsset={removeAssetFromLibrary}
+            />
+            <AddLayerPanel
+              jsonInput={addLayerJsonInput}
+              status={addLayerPanelStatus}
+              selectedLayerType={addLayerPanelType}
+              textFormValues={addLayerTextFormValues}
+              imageFormValues={addLayerImageFormValues}
+              fontFamilyOptions={FONT_FAMILY_OPTIONS}
+              onJsonInputChange={setAddLayerJsonInput}
+              onApplyJson={handleApplyAddLayerJson}
+              onCreateFromJson={() => {
+                void handleCreateLayersFromJson()
+              }}
+              onSelectedLayerTypeChange={setAddLayerPanelType}
+              onTextFormChange={updateAddLayerTextField}
+              onImageFormChange={updateAddLayerImageField}
+              onCreateLayer={() => {
+                void handleCreateAddLayer()
+              }}
+            />
+          </aside>
 
           <div className="workspace-main-column">
             <section className="canvas-panel">

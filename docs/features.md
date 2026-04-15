@@ -275,6 +275,120 @@ Layout behavior:
 
 This asset library is session-local. There is no persistence beyond the current page state.
 
+## Add Layer Panel
+
+Below the asset library, the left sidebar now also includes a manual `Add Layer` panel.
+
+Current scope:
+
+- supports creating `text` layers
+- supports creating `image` layers
+- supports either manual form entry or pasted JSON specs
+- keeps creation in the normal document/history flow rather than a separate staging area
+
+### JSON Input
+
+The panel includes a labeled multiline `JSON` field and actions to:
+
+- apply/parse JSON into the form state
+- create one or more layers from the JSON payload
+
+Supported payload shape:
+
+```json
+{
+  "texts": [],
+  "images": []
+}
+```
+
+Current parsing behavior:
+
+- invalid JSON shows an inline transient error instead of crashing
+- unknown fields are ignored
+- numeric strings are coerced when they are safely parseable
+- text alignment accepts only `left`, `center`, or `right`
+- image specs require a valid non-empty `src`
+- text specs can omit all fields and fall back to current text defaults
+- if valid specs exist, the first valid text/image entries also populate the manual form fields so the user can tweak them before creating
+- `x` and `y` for JSON-created layers use the same raw stored layer fields that the existing inspector shows and edits
+- `width` and `height` for JSON-created layers also use the same raw stored layer fields that the existing inspector shows and edits
+- the Add Layer panel and JSON flow do not apply preview/stage scaling or viewport transforms to these values
+- JSON-created text layers now use an exact-spec creation path that preserves the requested final `x`, `y`, `width`, `height`, typography, alignment, and text content values directly on the created layer
+
+### Manual Text Layer Creation
+
+The text form currently supports:
+
+- text content
+- color
+- bold toggle
+- font family
+- font size
+- alignment
+- `x`
+- `y`
+- `width`
+- `height`
+- optional `addShadow`
+- optional `layerPlacement`
+
+Current coordinate behavior:
+
+- `x` and `y` in this panel map directly to the created text layer's stored `x` and `y`
+- `width` and `height` in this panel map to the created text layer's stored `width` and `height` in the same way the existing inspector uses them
+- these are the same raw values shown later in the existing inspector
+- text alignment still affects how the text renders around that stored position, but the Add Layer flow does not translate `x` / `y` into a second placement abstraction
+
+When `addShadow` is enabled:
+
+- creation reuses the existing linked text-shadow behavior
+- the shadow is inserted as its own linked text layer
+- the main created text layer remains the selected layer
+
+### Manual Image Layer Creation
+
+The image form currently supports:
+
+- `src`
+- `x`
+- `y`
+- `width`
+- `height`
+- `opacity`
+- `rotation`
+- `scaleX`
+- `scaleY`
+- `layerPlacement`
+
+Image creation behavior:
+
+- `src` is required
+- if `width` and `height` are both omitted, the app tries to load intrinsic image dimensions
+- if only one dimension is omitted, the app currently uses the intrinsic value for the missing side
+- failed image loads show an inline transient error and skip only that image layer
+- explicit `x` / `y` values bypass the normal centered-import placement path and are written directly to the created image layer's stored `x` / `y`
+- explicit `width` / `height` values are written directly to the created image layer's stored `width` / `height`
+- `scaleX` and `scaleY` remain separate transform fields; explicit `width` / `height` are not converted into post-scale display size
+- the normal centered import placement helper is only reused when image `x` and/or `y` is omitted
+
+### Layer Placement And History
+
+The panel maps `layerPlacement` to the current document stack index:
+
+- `0` means the bottom of the stack
+- higher values insert further upward in the stack
+- invalid values are clamped safely
+- omitted placement falls back to normal append-to-top behavior
+
+Creation behavior:
+
+- one manual creation is one undoable history step
+- one JSON creation action is also one undoable history step, even when it creates multiple layers
+- when one primary layer is created, that layer becomes the selection
+- when multiple primary layers are created, the last created primary layer becomes `selectedLayerId` and all primary created layer IDs become `selectedLayerIds`
+- linked shadow helper layers created through `addShadow` are not added to that multi-selection list
+
 ## External File Drop
 
 The editor also supports dragging supported image files in from the user's machine.

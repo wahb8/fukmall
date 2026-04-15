@@ -12,7 +12,7 @@ export function AssetLibraryPanel({
   onDeleteAsset,
 }) {
   return (
-    <aside className="asset-sidebar">
+    <>
       <input
         ref={assetLibraryInputRef}
         className="sr-only"
@@ -76,6 +76,6 @@ export function AssetLibraryPanel({
           )}
         </div>
       </section>
-    </aside>
+    </>
   )
 }

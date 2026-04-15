@@ -121,6 +121,14 @@ This document describes what each tracked file in the repo currently does.
 - contains imported-image placement helpers
 - contains bitmap-patch helpers used when converting editable layers into bitmap-backed variants
 
+### `src/editor/addLayerPanelHelpers.js`
+
+- app-level helper module for the Add Layer panel
+- parses and validates pasted JSON payloads for text/image layer creation
+- normalizes manual-form values into safe text/image creation specs
+- converts normalized specs back into controlled form values
+- keeps panel-specific coercion and defaulting out of `App.jsx`
+
 ### `src/editor/iconAssets.js`
 
 - centralized UI icon resolver used by the editor chrome
@@ -146,6 +154,12 @@ This document describes what each tracked file in the repo currently does.
 
 - presentational asset library sidebar
 - renders asset import UI, empty state, drag-start/drag-end wiring, and delete buttons
+
+### `src/components/editor/AddLayerPanel.jsx`
+
+- presentational manual/json layer-creation panel rendered below the asset library
+- renders the JSON textarea, inline status, layer-type selector, and text/image form controls
+- leaves parsing, validation, async image loading, and document commits to `App.jsx` and editor helpers
 
 ### `src/components/editor/ExternalImageDropOverlay.jsx`
 
@@ -184,11 +198,16 @@ This document describes what each tracked file in the repo currently does.
 
 - unit tests for seeded document creation, new-file normalization, filename sanitization, import placement, and bitmap patch helpers
 
+### `src/editor/addLayerPanelHelpers.test.js`
+
+- unit tests for Add Layer JSON parsing, invalid JSON handling, default fallbacks, and text/image spec normalization
+
 ### `src/components/editor/*.test.jsx`
 
 - light React Testing Library coverage for stable presentational editor components
 - current coverage includes the toolbar, file menu, prompt shell, and modal components
 - `FileMenu.test.jsx` includes basic prop-surface coverage for the theme-aware file menu
+- `AddLayerPanel.test.jsx` covers panel rendering and basic callback wiring for text/image modes
 
 ### `src/App.css`
 
@@ -197,6 +216,7 @@ This document describes what each tracked file in the repo currently does.
 - defines both the default light-theme CSS variables and the dark-theme overrides applied through `.app-shell[data-theme='dark']`
 - styles the new-file and unsaved-changes modal surfaces
 - constrains the asset library panel height and makes the thumbnail region scroll independently from the header
+- constrains the Add Layer panel height and gives it its own internal scroll region below the asset library
 - controls the masonry-like asset card layout and the asset delete button placement
 - styles the file menu dropdown, active asset-drop canvas state, shared multi-selection frame, inline text editor, and the prompt shell below the canvas
 - makes the single-layer selection frame interactive so it can act as the move region for already-selected layers

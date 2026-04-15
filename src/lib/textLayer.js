@@ -1021,11 +1021,16 @@ function preservePointTextAnchor(previousLayer, nextLayer) {
 
 export function syncTextLayerLayout(layer, previousLayer = null) {
   const measurement = measureTextLayer(layer)
+  const preserveExactJsonBoxSize = layer.mode === 'box' && layer.preserveExactJsonBoxSize === true
   const normalizedBoxWidth = layer.mode === 'box'
-    ? Math.max(layer.boxWidth ?? measurement.width, 1)
+    ? preserveExactJsonBoxSize
+      ? Math.max(Number(layer.boxWidth ?? layer.width ?? measurement.width) || 0, 1)
+      : Math.max(layer.boxWidth ?? measurement.width, 1)
     : null
   const normalizedBoxHeight = layer.mode === 'box'
-    ? Math.max(layer.boxHeight ?? measurement.height, measurement.height, 1)
+    ? preserveExactJsonBoxSize
+      ? Math.max(Number(layer.boxHeight ?? layer.height ?? measurement.height) || 0, 1)
+      : Math.max(layer.boxHeight ?? measurement.height, measurement.height, 1)
     : null
 
   const nextLayer = {
