@@ -11,6 +11,7 @@ import { normalizeTextStyleRanges } from './textLayer'
 
 const PROJECT_APP_NAME = 'Fukmall'
 const PROJECT_FORMAT_VERSION = 2
+export const CURRENT_DOCUMENT_STORAGE_KEY = 'fukmall.current-document'
 
 function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
   if (!documentState.layers.length) {
@@ -150,4 +151,33 @@ export function downloadProjectFile(documentState, filenameBase = 'fukmall-proje
   downloadLink.click()
   downloadLink.remove()
   URL.revokeObjectURL(objectUrl)
+}
+
+export function loadCurrentDocumentFromStorage(storage = globalThis?.localStorage) {
+  if (!storage || typeof storage.getItem !== 'function') {
+    return null
+  }
+
+  const fileContents = storage.getItem(CURRENT_DOCUMENT_STORAGE_KEY)
+
+  if (!fileContents) {
+    return null
+  }
+
+  try {
+    return parseProjectFile(fileContents)
+  } catch {
+    return null
+  }
+}
+
+export function saveCurrentDocumentToStorage(
+  documentState,
+  storage = globalThis?.localStorage,
+) {
+  if (!storage || typeof storage.setItem !== 'function') {
+    return
+  }
+
+  storage.setItem(CURRENT_DOCUMENT_STORAGE_KEY, serializeProjectFile(documentState))
 }

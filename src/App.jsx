@@ -173,8 +173,10 @@ import {
 import { exportDocumentImage } from './lib/exportDocument'
 import {
   downloadProjectFile,
+  loadCurrentDocumentFromStorage,
   normalizeDocumentState,
   parseProjectFile,
+  saveCurrentDocumentToStorage,
   serializeProjectFile,
 } from './lib/documentFiles'
 
@@ -185,6 +187,11 @@ function isSupportedAssetFile(file) {
 const PIXEL_HIT_PADDING = 4
 const VISIBLE_PIXEL_ALPHA_THRESHOLD = 8
 const THEME_STORAGE_KEY = 'fukmall.theme'
+
+function createStartupDocument() {
+  return loadCurrentDocumentFromStorage()
+    ?? createInitialDocument(DEFAULT_DOCUMENT_WIDTH, DEFAULT_DOCUMENT_HEIGHT)
+}
 
 function loadThemeFromStorage() {
   if (typeof window === 'undefined') {
@@ -945,7 +952,7 @@ function App() {
     reset,
     canUndo,
     canRedo,
-  } = useHistory(createInitialDocument(DEFAULT_DOCUMENT_WIDTH, DEFAULT_DOCUMENT_HEIGHT))
+  } = useHistory(createStartupDocument())
   const documentStateRef = useRef(documentState)
   documentStateRef.current = documentState
   const [savedDocumentSignature, setSavedDocumentSignature] = useState(() => (
@@ -1646,6 +1653,14 @@ function App() {
 
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    saveCurrentDocumentToStorage(documentState, window.localStorage)
+  }, [documentState])
 
   useEffect(() => {
     function handlePointerDownOutside(event) {

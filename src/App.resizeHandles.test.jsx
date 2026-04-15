@@ -46,6 +46,8 @@ describe('App resize handle routing', () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext
 
   beforeEach(() => {
+    window.localStorage.clear()
+
     vi
       .spyOn(HTMLCanvasElement.prototype, 'getContext')
       .mockImplementation(function mockGetContext(contextType) {
