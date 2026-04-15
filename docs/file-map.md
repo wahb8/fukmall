@@ -97,6 +97,7 @@ This document describes what each tracked file in the repo currently does.
 - contains the shared topmost-layer resolver used by single-click selection and as the fallback path for text double-click edit entry after selected-text priority checks
 - contains pixel-aware layer picking for raster, image, and text layers, including the current click-through and hit-padding behavior
 - contains the outside-canvas deselect behavior that allows an explicit empty selection on pointer down outside the stage
+- contains the guard that treats the full right-side inspector/sidebar region as selection-preserving UI so inspector clicks and scrollbar interaction do not clear selection
 - contains the inline text-editor caret placement behavior so edit mode opens with the cursor at the end of the text
 - contains the current resize-session snapshot logic and the `5000 x 5000` absolute resize cap
 - contains both lasso and rectangular marquee transient-selection orchestration, including floating selection extraction and `Sel to Layer`
@@ -128,6 +129,7 @@ This document describes what each tracked file in the repo currently does.
 - normalizes manual-form values into safe text/image creation specs
 - converts normalized specs back into controlled form values
 - keeps panel-specific coercion and defaulting out of `App.jsx`
+- contains the dedicated exact JSON text-layer creation helper used when JSON text layers must preserve final requested `width` and `height`
 
 ### `src/editor/iconAssets.js`
 
@@ -208,6 +210,12 @@ This document describes what each tracked file in the repo currently does.
 - current coverage includes the toolbar, file menu, prompt shell, and modal components
 - `FileMenu.test.jsx` includes basic prop-surface coverage for the theme-aware file menu
 - `AddLayerPanel.test.jsx` covers panel rendering and basic callback wiring for text/image modes
+
+### `src/App.addLayerJson.test.jsx`
+
+- App-level integration coverage for the live Add Layer JSON flow
+- verifies both `Create From JSON` and `Apply JSON -> Create Layer` runtime paths
+- verifies inspector-preserving selection behavior inside the right-side inspector panel
 
 ### `src/App.css`
 
@@ -292,6 +300,7 @@ This document describes what each tracked file in the repo currently does.
 - now resolves partial-style text into styled runs so measurement, wrapping, alignment, and canvas rendering stay in sync
 - preserves point-text horizontal anchors across content/alignment updates
 - applies left/center/right alignment in both normal line rendering and letter-spaced glyph rendering
+- now also supports an exact JSON box-size preservation flag used by JSON-created text layers so later layout sync does not overwrite requested final `width` and `height`
 
 ### `src/lib/penTool.js`
 

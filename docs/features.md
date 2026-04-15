@@ -11,7 +11,8 @@ The initial document includes:
 - an orange rounded rectangle shape layer
 - an editable text layer
 
-This seed data is created inside `src/App.jsx` through `createInitialDocument()`.
+This seed data is created in `src/editor/documentHelpers.js` through `createInitialDocument()` and
+loaded by `src/App.jsx`.
 
 ## Layer Types
 
@@ -118,6 +119,8 @@ This seed data is created inside `src/App.jsx` through `createInitialDocument()`
 - moving a layer while holding `Shift` now constrains movement to either horizontal or vertical after drag direction is detected
 - as long as the document has layers, the editor now keeps at least one layer selected
 - clicking outside the canvas/stage explicitly clears selection, even though normal in-canvas selection behavior still prefers keeping a valid selection during editing
+- interacting with the right-side inspector/settings panel does not clear selection
+- this includes clicks on the inspector body, form controls, and the inspector scroll region / scrollbar
 - canvas picking for raster, image, and text layers is now pixel-aware instead of purely box-based
 - transparent pixels in those layer types can fall through to lower visible layers
 - pixel-aware selection also uses a small hit padding radius, so clicks slightly near visible text, image edges, or raster strokes can still select the top visible layer
@@ -315,6 +318,11 @@ Current parsing behavior:
 - `width` and `height` for JSON-created layers also use the same raw stored layer fields that the existing inspector shows and edits
 - the Add Layer panel and JSON flow do not apply preview/stage scaling or viewport transforms to these values
 - JSON-created text layers now use an exact-spec creation path that preserves the requested final `x`, `y`, `width`, `height`, typography, alignment, and text content values directly on the created layer
+- JSON field names are case-sensitive; supported text size keys are lowercase `width` and `height`
+- the optional `language` field is currently ignored
+- text `font` values work best when they use the app's stored font-family string, not only the display label
+- for example, the Inter option is stored as `Inter, "Segoe UI", sans-serif`
+- `Apply JSON` and `Create From JSON` now both preserve the same exact JSON text-size path at runtime for text layers
 
 ### Manual Text Layer Creation
 
@@ -345,6 +353,11 @@ When `addShadow` is enabled:
 - creation reuses the existing linked text-shadow behavior
 - the shadow is inserted as its own linked text layer
 - the main created text layer remains the selected layer
+
+When the text form was last populated from valid JSON:
+
+- using `Create Layer` continues through the same exact JSON text creation path
+- this keeps final text `width` and `height` aligned with the JSON-populated values instead of falling back to the normal inspector-style text sizing path
 
 ### Manual Image Layer Creation
 
