@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { createShapeLayer } from '../lib/layers'
 import {
   clampImportedImagePosition,
+  createValidatedImportedImageLayer,
   createBitmapEditableLayerPatch,
   createImageLayerBitmapPatch,
   createInitialDocument,
   getDefaultImportedImagePosition,
   getDocumentFilenameBase,
+  getImportedImageDimensions,
   normalizeNewFileDimensionInput,
   normalizeNewFileNameInput,
 } from './documentHelpers'
@@ -35,6 +37,33 @@ describe('document helpers', () => {
   it('clamps imported image placement into the document bounds', () => {
     expect(clampImportedImagePosition(-10, 30, 100, 50, 500, 500)).toEqual({ x: 0, y: 30 })
     expect(getDefaultImportedImagePosition(200, 100, 1080, 1440)).toEqual({ x: 440, y: 670 })
+  })
+
+  it('rejects invalid imported image dimensions instead of returning NaN values', () => {
+    expect(getImportedImageDimensions(undefined, 120)).toBeNull()
+    expect(getImportedImageDimensions(120, 0)).toBeNull()
+    expect(getImportedImageDimensions(120.4, 240.6)).toEqual({ width: 120, height: 241 })
+  })
+
+  it('creates validated imported image layers with clamped placement and normalized source kind', () => {
+    const layer = createValidatedImportedImageLayer({
+      name: 'Imported',
+      src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+      width: 240,
+      height: 180,
+      documentWidth: 300,
+      documentHeight: 200,
+      topLeftX: 200,
+      topLeftY: 90,
+      sourceKind: 'svg',
+    })
+
+    expect(layer.type).toBe('image')
+    expect(layer.sourceKind).toBe('svg')
+    expect(layer.width).toBe(240)
+    expect(layer.height).toBe(180)
+    expect(layer.x).toBe(180)
+    expect(layer.y).toBe(110)
   })
 
   it('creates deterministic bitmap-backed layer patches', () => {

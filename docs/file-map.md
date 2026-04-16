@@ -74,6 +74,7 @@ This document describes what each tracked file in the repo currently does.
 - main application component
 - main application orchestrator
 - owns the persisted light/dark UI theme state and applies it to the app shell through `data-theme`
+- restores the last current document from local storage on startup and autosaves document changes back to that storage
 - still owns tool state, document state integration, layer rendering, keyboard shortcuts, drag/drop, viewport, and canvas interaction flow
 - now delegates several stable render sections into `src/components/editor/`
 - creates the default document, including the full-canvas white background layer used for new files
@@ -286,6 +287,7 @@ This document describes what each tracked file in the repo currently does.
 
 - serializes and validates `.kryop` project files
 - normalizes loaded document state
+- stores and restores the current working document in `localStorage` through `fukmall.current-document`
 - strips disabled group layers during normalization so they do not re-enter the UI through saved files
 - repairs invalid saved selection state by falling back to the last valid layer when possible
 - repairs invalid linked-layer references by keeping only valid reciprocal pairs

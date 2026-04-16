@@ -2,7 +2,9 @@
 
 ## Initial Document
 
-On startup, the app creates a demo composition instead of loading external data.
+On startup, the app first tries to restore the last current document from local storage.
+
+If no locally saved current document exists, the app falls back to a seeded demo composition.
 
 The initial document includes:
 
@@ -520,6 +522,7 @@ Persistent behavior is still limited, but the editor is no longer session-only.
 
 Currently persisted or saveable:
 
+- the current document in `localStorage`
 - foreground/background color pair in `localStorage`
 - UI theme in `localStorage`
 - the full document through `.kryop` project files

@@ -5,8 +5,9 @@
 At the time this documentation was written:
 
 - `npm run build` succeeds
-- `npm run lint` reports warnings, not errors
+- `npm run lint` reports both warnings and errors
 - the warnings are React hook dependency warnings in `src/App.jsx`
+- the current lint errors are test-file unused-variable issues in `src/App.resizeHandles.test.jsx`
 - `npm run test:run` is currently not green; there are known failing tests in `textLayer`, `rectSelectTool`, and `EditorToolbar`
 
 ## Important Constraints
@@ -73,6 +74,7 @@ The app now supports simple project-file persistence.
 Current behavior:
 
 - full documents can be saved and reopened through `.kryop` project files
+- the current working document is also autosaved locally in `localStorage` and restored on startup when present
 - only the current document is saved in v1, not the full undo/redo stack
 - global colors are still persisted separately in `localStorage`
 - saved/opened documents also pass through normalization, which repairs selection state, repairs invalid linked-layer references, and strips disabled group layers

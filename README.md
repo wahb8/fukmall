@@ -56,3 +56,9 @@ Start with:
 - Group layers are intentionally disabled in the user-facing app, even though some internal helper code remains.
 - Undo/redo is snapshot-based and stored in memory only.
 - Project files save the current document, but not undo/redo history or session-local runtime state.
+
+## Persistence Notes
+
+- On startup, the app first tries to restore the last current document from `localStorage`.
+- If no saved current document exists, it falls back to the seeded demo composition.
+- The current document autosaves locally, while explicit `.kryop` project files remain the portable save/open format.

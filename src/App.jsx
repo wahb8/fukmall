@@ -45,11 +45,10 @@ import {
   parseAddLayerJson,
 } from './editor/addLayerPanelHelpers'
 import {
-  clampImportedImagePosition,
+  createValidatedImportedImageLayer,
   createBitmapEditableLayerPatch,
   createImageLayerBitmapPatch,
   createInitialDocument,
-  getDefaultImportedImagePosition,
   getDocumentFilenameBase,
   getImportedImageDimensions,
   normalizeNewFileDimensionInput,
@@ -90,7 +89,6 @@ import {
   DEFAULT_DOCUMENT_NAME,
   DEFAULT_DOCUMENT_HEIGHT,
   DEFAULT_DOCUMENT_WIDTH,
-  createImageLayer,
   createRasterLayer,
   createTextShadowLayer,
   createTextLayer,
@@ -263,11 +261,18 @@ function getImportedSourceKind(file, src) {
 
 async function importAssetsFromFiles(files) {
   const supportedFiles = getSupportedImageFiles(files)
-
-  return Promise.all(supportedFiles.map(async (file) => {
+  const settledImports = await Promise.allSettled(supportedFiles.map(async (file) => {
     const src = await readFileAsDataUrl(file)
     const sourceKind = getImportedSourceKind(file, src)
-    const dimensions = await loadImageDimensionsFromSource(src)
+    const resolvedDimensions = await loadImageDimensionsFromSource(src)
+    const dimensions = getImportedImageDimensions(
+      resolvedDimensions.width,
+      resolvedDimensions.height,
+    )
+
+    if (!dimensions) {
+      throw new Error(`Image source could not be loaded: ${file.name}`)
+    }
 
     return {
       id: crypto.randomUUID(),
@@ -279,6 +284,23 @@ async function importAssetsFromFiles(files) {
       height: dimensions.height,
     }
   }))
+
+  return settledImports.reduce((result, entry, index) => {
+    if (entry.status === 'fulfilled') {
+      result.assets.push(entry.value)
+      return result
+    }
+
+    result.errors.push(
+      entry.reason instanceof Error
+        ? entry.reason.message
+        : `Image source could not be loaded: ${supportedFiles[index]?.name ?? 'Unknown image'}`,
+    )
+    return result
+  }, {
+    assets: [],
+    errors: [],
+  })
 }
 
 function isPointInsideLayerFrame(layer, localPoint) {
@@ -937,6 +959,7 @@ function App() {
   const textSelectionRestoreRef = useRef(null)
   const preserveTextEditingBlurRef = useRef(false)
   const externalImageDragDepthRef = useRef(0)
+  const hasShownAutosaveErrorRef = useRef(false)
   const toolPanelErrorFadeTimeoutRef = useRef(null)
   const toolPanelErrorClearTimeoutRef = useRef(null)
   const addLayerPanelStatusTimeoutRef = useRef(null)
@@ -1659,8 +1682,18 @@ function App() {
       return
     }
 
-    saveCurrentDocumentToStorage(documentState, window.localStorage)
-  }, [documentState])
+    const savedSuccessfully = saveCurrentDocumentToStorage(documentState, window.localStorage)
+
+    if (savedSuccessfully) {
+      hasShownAutosaveErrorRef.current = false
+      return
+    }
+
+    if (!hasShownAutosaveErrorRef.current) {
+      hasShownAutosaveErrorRef.current = true
+      showToolPanelError('Current document could not be autosaved locally.')
+    }
+  }, [documentState, showToolPanelError])
 
   useEffect(() => {
     function handlePointerDownOutside(event) {
@@ -3943,31 +3976,74 @@ function App() {
     }
   }
 
-  async function importImageFile(file) {
-    const imageDataUrl = await readFileAsDataUrl(file)
-    const sourceKind = getImportedSourceKind(file, imageDataUrl)
-    const { width, height } = await loadImageDimensionsFromSource(imageDataUrl)
-    const dimensions = getImportedImageDimensions(width, height)
-    const position = getDefaultImportedImagePosition(
-      dimensions.width,
-      dimensions.height,
+  async function createImportedImageLayerFromSource({
+    name,
+    src,
+    sourceKind,
+    width = null,
+    height = null,
+    topLeftX = null,
+    topLeftY = null,
+    centerX = null,
+    centerY = null,
+  }) {
+    const normalizedSource = typeof src === 'string' ? src.trim() : ''
+
+    if (!normalizedSource) {
+      throw new Error('Image source could not be loaded.')
+    }
+
+    let dimensions = getImportedImageDimensions(width, height)
+
+    if (!dimensions) {
+      const loadedDimensions = await loadImageDimensionsFromSource(normalizedSource)
+      dimensions = getImportedImageDimensions(loadedDimensions.width, loadedDimensions.height)
+    }
+
+    if (!dimensions) {
+      throw new Error('Image source could not be loaded.')
+    }
+
+    const resolvedTopLeftX = Number.isFinite(Number(centerX))
+      ? Number(centerX) - (dimensions.width / 2)
+      : topLeftX
+    const resolvedTopLeftY = Number.isFinite(Number(centerY))
+      ? Number(centerY) - (dimensions.height / 2)
+      : topLeftY
+
+    return createValidatedImportedImageLayer({
+      name,
+      src: normalizedSource,
+      width: dimensions.width,
+      height: dimensions.height,
       documentWidth,
       documentHeight,
-    )
+      topLeftX: resolvedTopLeftX,
+      topLeftY: resolvedTopLeftY,
+      sourceKind,
+    })
+  }
 
-    addLayer(() =>
-      createImageLayer({
-        ...topLeftToCenter(position.x, position.y, dimensions.width, dimensions.height),
-        width: dimensions.width,
-        height: dimensions.height,
-        name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
-        src: imageDataUrl,
-        bitmap: imageDataUrl,
-        sourceKind,
-        fit: 'fill',
-      }),
-    )
+  async function importImageFile(file) {
+    const imageDataUrl = await readFileAsDataUrl(file)
+    const nextLayer = await createImportedImageLayerFromSource({
+      name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
+      src: imageDataUrl,
+      sourceKind: getImportedSourceKind(file, imageDataUrl),
+    })
+
+    addLayer(() => nextLayer)
     setActiveTool('select')
+  }
+
+  function handleImageImportFailure(error, fallbackMessage = 'Image source could not be loaded.') {
+    showToolPanelError(
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string' && error.trim().length > 0
+          ? error
+          : fallbackMessage,
+    )
   }
 
   async function handleImageImport(event) {
@@ -3984,8 +4060,8 @@ function App() {
 
     try {
       await importImageFile(file)
-    } catch {
-      // Ignore failed imports for the MVP.
+    } catch (error) {
+      handleImageImportFailure(error)
     }
 
     resetInput()
@@ -3999,49 +4075,31 @@ function App() {
     }
 
     try {
-      const nextAssets = await importAssetsFromFiles(files)
-      setAssetLibrary((currentAssets) => [...currentAssets, ...nextAssets])
+      const { assets, errors } = await importAssetsFromFiles(files)
+
+      if (assets.length > 0) {
+        setAssetLibrary((currentAssets) => [...currentAssets, ...assets])
+      }
+
+      if (errors.length > 0) {
+        handleImageImportFailure(errors[0])
+      }
     } finally {
       event.target.value = ''
     }
   }
 
   async function createImageLayerFromAsset(asset, x, y) {
-    let width = MIN_LAYER_WIDTH
-    let height = MIN_LAYER_HEIGHT
+    const dimensions = getImportedImageDimensions(asset.width, asset.height)
 
-    try {
-      const dimensions = await loadImageDimensionsFromSource(asset.src)
-      const naturalDimensions = getImportedImageDimensions(dimensions.width, dimensions.height)
-      width = naturalDimensions.width
-      height = naturalDimensions.height
-    } catch {
-      const fallbackDimensions = getImportedImageDimensions(
-        asset.width ?? 240,
-        asset.height ?? 240,
-      )
-      width = fallbackDimensions.width
-      height = fallbackDimensions.height
-    }
-
-    const position = clampImportedImagePosition(
-      Math.round(x - (width / 2)),
-      Math.round(y - (height / 2)),
-      width,
-      height,
-      documentWidth,
-      documentHeight,
-    )
-
-    return createImageLayer({
-      ...topLeftToCenter(position.x, position.y, width, height),
-      width,
-      height,
+    return createImportedImageLayerFromSource({
       name: asset.name,
       src: asset.src,
-      bitmap: asset.src,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null,
+      centerX: x,
+      centerY: y,
       sourceKind: asset.sourceKind ?? inferImageSourceKindFromSrc(asset.src),
-      fit: 'fill',
     })
   }
 
@@ -4123,8 +4181,8 @@ function App() {
 
     try {
       await importImageFile(file)
-    } catch {
-      // Ignore failed imports for the MVP.
+    } catch (error) {
+      handleImageImportFailure(error)
     }
 
     return true
@@ -4168,8 +4226,12 @@ function App() {
       return
     }
 
-    const nextLayer = await createImageLayerFromAsset(asset, dropPoint.x, dropPoint.y)
-    applyDocumentChange((currentDocument) => appendLayer(currentDocument, nextLayer))
+    try {
+      const nextLayer = await createImageLayerFromAsset(asset, dropPoint.x, dropPoint.y)
+      applyDocumentChange((currentDocument) => appendLayer(currentDocument, nextLayer))
+    } catch (error) {
+      handleImageImportFailure(error)
+    }
   }
 
   function updateSelectedLayer(patch) {

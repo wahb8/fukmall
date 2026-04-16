@@ -254,6 +254,7 @@ Current file model:
 
 Separate local UI persistence also exists outside the project-file format:
 
+- the current working document is also autosaved in `localStorage` under `fukmall.current-document`
 - UI theme is stored in `localStorage` under `fukmall.theme`
 - foreground/background colors are stored separately from the document model
 - opening a project should not overwrite the current chrome theme

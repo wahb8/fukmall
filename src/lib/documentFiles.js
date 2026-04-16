@@ -176,8 +176,13 @@ export function saveCurrentDocumentToStorage(
   storage = globalThis?.localStorage,
 ) {
   if (!storage || typeof storage.setItem !== 'function') {
-    return
+    return false
   }
 
-  storage.setItem(CURRENT_DOCUMENT_STORAGE_KEY, serializeProjectFile(documentState))
+  try {
+    storage.setItem(CURRENT_DOCUMENT_STORAGE_KEY, serializeProjectFile(documentState))
+    return true
+  } catch {
+    return false
+  }
 }
