@@ -6761,6 +6761,10 @@ function App() {
                     lineHeight: layer.lineHeight,
                     color: layer.color,
                     textAlign: layer.textAlign ?? 'left',
+                    paddingTop: `${textEditorOverlay?.paddingTop ?? 0}px`,
+                    paddingRight: `${textEditorOverlay?.paddingRight ?? 0}px`,
+                    paddingBottom: `${textEditorOverlay?.paddingBottom ?? 0}px`,
+                    paddingLeft: `${textEditorOverlay?.paddingLeft ?? 0}px`,
                   }}
                   onChange={(event) => {
                     setTextDraft(event.target.value)

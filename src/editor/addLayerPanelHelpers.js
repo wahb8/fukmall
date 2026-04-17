@@ -1,7 +1,7 @@
 import { createImageLayer, createTextLayer } from '../lib/layers'
 import { getDefaultImportedImagePosition } from './documentHelpers'
 import { MIN_LAYER_HEIGHT, MIN_LAYER_WIDTH } from './constants'
-import { resizeBoxText, resizePointTextTransform } from '../lib/textLayer'
+import { resizeBoxText, resizePointTextTransform, syncTextLayerLayout } from '../lib/textLayer'
 
 const VALID_TEXT_ALIGNMENTS = new Set(['left', 'center', 'right'])
 const DEFAULT_TEXT_LAYER = createTextLayer()
@@ -242,10 +242,17 @@ export function createExactTextLayerFromJsonSpec(spec) {
     x: DEFAULT_TEXT_LAYER.x,
     y: DEFAULT_TEXT_LAYER.y,
   })
-  const requestedSize = {
-    width: normalizedSpec.width ?? DEFAULT_TEXT_LAYER.width,
-    height: normalizedSpec.height ?? DEFAULT_TEXT_LAYER.height,
-  }
+  const requestedSize = resolveStoredLayerSize(
+    normalizedSpec,
+    {
+      width: DEFAULT_TEXT_LAYER.width,
+      height: DEFAULT_TEXT_LAYER.height,
+    },
+    {
+      width: MIN_LAYER_WIDTH,
+      height: MIN_LAYER_HEIGHT,
+    },
+  )
   const seedLayer = createTextLayer({
     ...(Object.prototype.hasOwnProperty.call(normalizedSpec, 'text')
       ? { text: normalizedSpec.text }
@@ -261,7 +268,7 @@ export function createExactTextLayerFromJsonSpec(spec) {
     y: requestedPosition.y,
   })
 
-  return {
+  return syncTextLayerLayout({
     ...seedLayer,
     x: requestedPosition.x,
     y: requestedPosition.y,
@@ -271,7 +278,7 @@ export function createExactTextLayerFromJsonSpec(spec) {
     boxHeight: requestedSize.height,
     mode: 'box',
     preserveExactJsonBoxSize: true,
-  }
+  }, seedLayer)
 }
 
 export async function createImageLayerFromAddSpec(

@@ -472,4 +472,47 @@ describe('addLayerPanel helpers', () => {
     expect(syncedLayer.width).toBe(500)
     expect(syncedLayer.height).toBe(200)
   })
+
+  it('applies anti-clipping expansion immediately when JSON text width or height are too small', () => {
+    const layer = createExactTextLayerFromJsonSpec({
+      text: 'Wrapped JSON text that needs more room immediately',
+      color: '#123456',
+      bolded: true,
+      font: 'Arial, sans-serif',
+      size: 88,
+      alignment: 'left',
+      x: 320,
+      y: 640,
+      width: 140,
+      height: 72,
+      addShadow: false,
+      layerPlacement: 0,
+    })
+
+    expect(layer.width).toBeGreaterThanOrEqual(140)
+    expect(layer.height).toBeGreaterThan(72)
+    expect(layer.boxWidth).toBe(layer.width)
+    expect(layer.boxHeight).toBe(layer.height)
+    expect(layer.height).toBeGreaterThanOrEqual(layer.measuredHeight)
+  })
+
+  it('keeps already-safe JSON text sizes exact on initial creation', () => {
+    const layer = createExactTextLayerFromJsonSpec({
+      text: 'Hello world',
+      color: '#123456',
+      bolded: true,
+      font: 'Arial, sans-serif',
+      size: 72,
+      alignment: 'center',
+      x: 400,
+      y: 1000,
+      width: 500,
+      height: 200,
+      addShadow: false,
+      layerPlacement: 0,
+    })
+
+    expect(layer.width).toBe(500)
+    expect(layer.height).toBe(200)
+  })
 })

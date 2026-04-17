@@ -18,9 +18,11 @@ export const PARTIAL_TEXT_STYLE_KEYS = [
   'strokeColor',
   'strokeWidth',
 ]
-const POINT_TEXT_HORIZONTAL_PADDING = 8
+const POINT_TEXT_HORIZONTAL_PADDING_LEFT = 4
+const POINT_TEXT_HORIZONTAL_PADDING_RIGHT = 4
 const TEXT_VERTICAL_PADDING_TOP = 4
 const TEXT_VERTICAL_PADDING_BOTTOM = 4
+const TEXT_GLYPH_EDGE_BUFFER = 2
 
 function compareStyleValues(firstValue, secondValue) {
   if (Number.isFinite(firstValue) || Number.isFinite(secondValue)) {
@@ -456,15 +458,16 @@ function getTextStyleMetrics(context, style, metricsCache) {
   const metrics = context.measureText('Mg')
   const fallbackAscent = style.fontSize * 0.8
   const fallbackDescent = style.fontSize * 0.2
+  const strokePadding = style.strokeWidth / 2
   const resolvedMetrics = {
     ascent: Math.max(
       Number(metrics.actualBoundingBoxAscent) || 0,
       fallbackAscent,
-    ),
+    ) + strokePadding + TEXT_GLYPH_EDGE_BUFFER,
     descent: Math.max(
       Number(metrics.actualBoundingBoxDescent) || 0,
       fallbackDescent,
-    ),
+    ) + strokePadding + TEXT_GLYPH_EDGE_BUFFER,
   }
 
   metricsCache?.set(cacheKey, resolvedMetrics)
@@ -536,7 +539,7 @@ function createStyledTextRuns(layer) {
   return getEffectiveTextStyleSegments(layer)
 }
 
-function createStyledCharacters(layer, context) {
+function createStyledCharacters(layer, context, metricsCache) {
   const runs = createStyledTextRuns(layer)
   const characters = []
   let currentIndex = 0
@@ -547,11 +550,28 @@ function createStyledCharacters(layer, context) {
     for (const character of Array.from(run.text)) {
       const startIndex = currentIndex
       const endIndex = startIndex + character.length
+      const metrics = context.measureText(character)
+      const fallbackMetrics = getTextStyleMetrics(context, run.style, metricsCache)
 
       characters.push({
         char: character,
         style: run.style,
-        width: context.measureText(character).width,
+        width: metrics.width,
+        actualLeft: Math.max(Number(metrics.actualBoundingBoxLeft) || 0, 0),
+        actualRight: Math.max(
+          Number(metrics.actualBoundingBoxRight) || 0,
+          metrics.width,
+          0,
+        ),
+        ascent: Math.max(
+          Number(metrics.actualBoundingBoxAscent) || 0,
+          fallbackMetrics.ascent,
+        ),
+        descent: Math.max(
+          Number(metrics.actualBoundingBoxDescent) || 0,
+          fallbackMetrics.descent,
+        ),
+        strokePadding: run.style.strokeWidth / 2,
         startIndex,
         endIndex,
       })
@@ -655,11 +675,15 @@ function finalizeLayoutLine(characters, fallbackStyle, context, metricsCache) {
   const lineCharacters = Array.isArray(characters) ? characters : []
   const fallbackMetrics = getTextStyleMetrics(context, fallbackStyle, metricsCache)
   const lineMetrics = lineCharacters.reduce((largestMetrics, character) => {
-    const characterMetrics = getTextStyleMetrics(context, character.style, metricsCache)
-
     return {
-      ascent: Math.max(largestMetrics.ascent, characterMetrics.ascent),
-      descent: Math.max(largestMetrics.descent, characterMetrics.descent),
+      ascent: Math.max(
+        largestMetrics.ascent,
+        character.ascent + character.strokePadding + TEXT_GLYPH_EDGE_BUFFER,
+      ),
+      descent: Math.max(
+        largestMetrics.descent,
+        character.descent + character.strokePadding + TEXT_GLYPH_EDGE_BUFFER,
+      ),
       lineHeight: Math.max(
         largestMetrics.lineHeight,
         character.style.fontSize * character.style.lineHeight,
@@ -673,6 +697,25 @@ function finalizeLayoutLine(characters, fallbackStyle, context, metricsCache) {
   const contentHeight = lineMetrics.ascent + lineMetrics.descent
   const lineHeight = Math.max(lineMetrics.lineHeight, contentHeight)
   const baselineOffset = ((lineHeight - contentHeight) / 2) + lineMetrics.ascent
+  const lineBounds = lineCharacters.reduce((bounds, character, index) => {
+    const left = bounds.currentX - character.actualLeft - character.strokePadding
+    const right = bounds.currentX + character.actualRight + character.strokePadding
+    const nextX = bounds.currentX + character.width + (
+      index < lineCharacters.length - 1
+        ? character.style.letterSpacing
+        : 0
+    )
+
+    return {
+      minX: Math.min(bounds.minX, left),
+      maxX: Math.max(bounds.maxX, right),
+      currentX: nextX,
+    }
+  }, {
+    minX: 0,
+    maxX: 0,
+    currentX: 0,
+  })
 
   return {
     text: lineCharacters.map((character) => character.char).join(''),
@@ -683,6 +726,8 @@ function finalizeLayoutLine(characters, fallbackStyle, context, metricsCache) {
     ascent: lineMetrics.ascent,
     descent: lineMetrics.descent,
     baselineOffset,
+    visualLeft: lineBounds.minX,
+    visualRight: lineBounds.maxX,
   }
 }
 
@@ -776,7 +821,7 @@ function createTextLayout(layer) {
   const fallbackStyle = getResolvedTextStyle(layer)
   const mode = layer.mode ?? DEFAULT_TEXT_MODE
   const maxWidth = mode === 'box' ? Math.max(layer.boxWidth ?? 0, 1) : null
-  const allCharacters = createStyledCharacters(layer, context)
+  const allCharacters = createStyledCharacters(layer, context, metricsCache)
   const paragraphs = []
   let currentParagraph = []
 
@@ -798,14 +843,37 @@ function createTextLayout(layer) {
     ))
     : paragraphs.map((paragraph) => finalizeLayoutLine(paragraph, fallbackStyle, context, metricsCache))
   const measuredLineWidth = lines.reduce((largestWidth, line) => Math.max(largestWidth, line.width), 0)
-  const measuredWidth = mode === 'box'
+  const visualOverflowLeft = lines.reduce((largestOverflow, line) => (
+    Math.max(largestOverflow, Math.max(0, -(line.visualLeft ?? 0)))
+  ), 0)
+  const visualOverflowRight = lines.reduce((largestOverflow, line) => (
+    Math.max(largestOverflow, Math.max(0, (line.visualRight ?? line.width) - line.width))
+  ), 0)
+  const measuredContentWidth = mode === 'box'
     ? Math.max(maxWidth ?? measuredLineWidth, 1)
     : measuredLineWidth
   const measuredHeight = lines.reduce((totalHeight, line) => totalHeight + line.lineHeight, 0)
+  const paddingLeft = Math.ceil(
+    (mode === 'point' ? POINT_TEXT_HORIZONTAL_PADDING_LEFT : 0) + visualOverflowLeft,
+  )
+  const paddingRight = Math.ceil(
+    (mode === 'point' ? POINT_TEXT_HORIZONTAL_PADDING_RIGHT : 0) + visualOverflowRight,
+  )
+  const measuredWidth = Math.ceil(measuredContentWidth + visualOverflowLeft + visualOverflowRight)
 
   return {
-    width: Math.ceil(measuredWidth + POINT_TEXT_HORIZONTAL_PADDING),
+    width: Math.max(measuredWidth + (
+      mode === 'point'
+        ? POINT_TEXT_HORIZONTAL_PADDING_LEFT + POINT_TEXT_HORIZONTAL_PADDING_RIGHT
+        : 0
+    ), 1),
     height: Math.ceil(measuredHeight + TEXT_VERTICAL_PADDING_TOP + TEXT_VERTICAL_PADDING_BOTTOM),
+    contentWidth: measuredContentWidth,
+    contentHeight: measuredHeight,
+    paddingLeft,
+    paddingRight,
+    paddingTop: TEXT_VERTICAL_PADDING_TOP,
+    paddingBottom: TEXT_VERTICAL_PADDING_BOTTOM,
     lines: lines.map((line) => line.text),
     layoutLines: lines,
   }
@@ -844,13 +912,20 @@ function drawStyledRun(context, run, x, y) {
 
 export function measureTextLayer(layer) {
   const layout = createTextLayout(layer)
+  const resolvedStyle = getResolvedTextStyle(layer)
 
   return {
     width: layout.width,
     height: layout.height,
+    contentWidth: layout.contentWidth,
+    contentHeight: layout.contentHeight,
+    paddingLeft: layout.paddingLeft,
+    paddingRight: layout.paddingRight,
+    paddingTop: layout.paddingTop,
+    paddingBottom: layout.paddingBottom,
     lines: layout.lines,
     lineHeight: layout.layoutLines[0]?.lineHeight ?? (
-      getResolvedTextStyle(layer).fontSize * getResolvedTextStyle(layer).lineHeight
+      resolvedStyle.fontSize * resolvedStyle.lineHeight
     ),
     layoutLines: layout.layoutLines,
   }
@@ -859,21 +934,24 @@ export function measureTextLayer(layer) {
 export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd) {
   const measurement = measureTextLayer(layer)
   const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
-  const availableWidth = layer.mode === 'box'
-    ? layer.width
-    : Math.max(measurement.width - POINT_TEXT_HORIZONTAL_PADDING, 0)
+  const availableWidth = Math.max(
+    (layer.width ?? measurement.width) - measurement.paddingLeft - measurement.paddingRight,
+    0,
+  )
   const normalizedStart = Math.max(0, Math.floor(Number(selectionStart) || 0))
   const normalizedEnd = Math.max(0, Math.floor(Number(selectionEnd) || 0))
   const selectionRects = []
   let caretRect = null
-  let currentY = TEXT_VERTICAL_PADDING_TOP
+  let currentY = measurement.paddingTop
 
   function getLineDrawX(line) {
-    return textAlign === 'center'
+    const alignedOffset = textAlign === 'center'
       ? (availableWidth - line.width) / 2
       : textAlign === 'right'
         ? availableWidth - line.width
         : 0
+
+    return measurement.paddingLeft + alignedOffset
   }
 
   for (const line of measurement.layoutLines ?? []) {
@@ -968,12 +1046,19 @@ export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd
   return {
     selectionRects,
     caretRect,
+    paddingLeft: measurement.paddingLeft,
+    paddingRight: measurement.paddingRight,
+    paddingTop: measurement.paddingTop,
+    paddingBottom: measurement.paddingBottom,
   }
 }
 
 function getPointTextAnchorX(layer) {
   const layerTopLeft = centerToTopLeft(layer.x, layer.y, layer.width, layer.height)
-  const contentWidth = Math.max((layer.width ?? 0) - POINT_TEXT_HORIZONTAL_PADDING, 0)
+  const contentWidth = Math.max(
+    (layer.width ?? 0) - POINT_TEXT_HORIZONTAL_PADDING_LEFT - POINT_TEXT_HORIZONTAL_PADDING_RIGHT,
+    0,
+  )
   const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
 
   if (textAlign === 'center') {
@@ -988,7 +1073,10 @@ function getPointTextAnchorX(layer) {
 }
 
 function getPointTextXFromAnchor(anchorX, width, textAlign) {
-  const contentWidth = Math.max((width ?? 0) - POINT_TEXT_HORIZONTAL_PADDING, 0)
+  const contentWidth = Math.max(
+    (width ?? 0) - POINT_TEXT_HORIZONTAL_PADDING_LEFT - POINT_TEXT_HORIZONTAL_PADDING_RIGHT,
+    0,
+  )
 
   if (textAlign === 'center') {
     return anchorX - (contentWidth / 2)
@@ -1022,14 +1110,16 @@ function preservePointTextAnchor(previousLayer, nextLayer) {
 export function syncTextLayerLayout(layer, previousLayer = null) {
   const measurement = measureTextLayer(layer)
   const preserveExactJsonBoxSize = layer.mode === 'box' && layer.preserveExactJsonBoxSize === true
+  const requestedBoxWidth = Math.max(Number(layer.boxWidth ?? layer.width ?? measurement.width) || 0, 1)
+  const requestedBoxHeight = Math.max(Number(layer.boxHeight ?? layer.height ?? measurement.height) || 0, 1)
   const normalizedBoxWidth = layer.mode === 'box'
     ? preserveExactJsonBoxSize
-      ? Math.max(Number(layer.boxWidth ?? layer.width ?? measurement.width) || 0, 1)
-      : Math.max(layer.boxWidth ?? measurement.width, 1)
+      ? Math.max(requestedBoxWidth, measurement.width, 1)
+      : Math.max(layer.boxWidth ?? measurement.width, measurement.width, 1)
     : null
   const normalizedBoxHeight = layer.mode === 'box'
     ? preserveExactJsonBoxSize
-      ? Math.max(Number(layer.boxHeight ?? layer.height ?? measurement.height) || 0, 1)
+      ? Math.max(requestedBoxHeight, measurement.height, 1)
       : Math.max(layer.boxHeight ?? measurement.height, measurement.height, 1)
     : null
 
@@ -1098,23 +1188,26 @@ export function getTextBounds(layer) {
 export function renderTextLayer(context, layer) {
   const measurement = measureTextLayer(layer)
   const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
-  const availableWidth = layer.mode === 'box'
-    ? layer.width
-    : Math.max(measurement.width - POINT_TEXT_HORIZONTAL_PADDING, 0)
+  const availableWidth = Math.max(
+    (layer.width ?? measurement.width) - measurement.paddingLeft - measurement.paddingRight,
+    0,
+  )
 
   context.save()
   context.clearRect(0, 0, layer.width, layer.height)
   context.textBaseline = 'alphabetic'
   context.textAlign = 'left'
 
-  let currentY = TEXT_VERTICAL_PADDING_TOP
+  let currentY = measurement.paddingTop
 
   for (const line of measurement.layoutLines ?? []) {
-    const drawX = textAlign === 'center'
-      ? (availableWidth - line.width) / 2
-      : textAlign === 'right'
-        ? availableWidth - line.width
-        : 0
+    const drawX = measurement.paddingLeft + (
+      textAlign === 'center'
+        ? (availableWidth - line.width) / 2
+        : textAlign === 'right'
+          ? availableWidth - line.width
+          : 0
+    )
     let currentX = drawX
     const baselineY = currentY + line.baselineOffset
 
