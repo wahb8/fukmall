@@ -179,6 +179,7 @@ This document describes what each tracked file in the repo currently does.
 
 - presentational layer stack panel
 - renders layer rows, selection interactions, reorder drag/drop wiring, visibility toggles, rename fields, row actions, and add-drawing action
+- uses a split panel layout with a dedicated `.layer-list-scroller` region for the rows and a fixed `.layer-panel-footer` for the add-drawing action
 
 ### `src/components/editor/PromptShell.jsx`
 
@@ -217,6 +218,7 @@ This document describes what each tracked file in the repo currently does.
 - current coverage includes the toolbar, file menu, prompt shell, and modal components
 - `FileMenu.test.jsx` includes basic prop-surface coverage for the theme-aware file menu
 - `AddLayerPanel.test.jsx` covers panel rendering and basic callback wiring for text/image modes
+- `LayerPanel.test.jsx` covers the dedicated scroll container, fixed footer add button, and preserved row callback wiring after the panel layout split
 
 ### `src/App.addLayerJson.test.jsx`
 
@@ -238,6 +240,7 @@ This document describes what each tracked file in the repo currently does.
 
 - primary styling file for the entire editor
 - defines colors, layout, panels, stage, controls, selection frames, responsive behavior, and visual language
+- includes the capped layer-panel scroller so the layer rows scroll internally while the footer action remains fixed
 - defines both the default light-theme CSS variables and the dark-theme overrides applied through `.app-shell[data-theme='dark']`
 - styles the new-file and unsaved-changes modal surfaces
 - constrains the asset library panel height and makes the thumbnail region scroll independently from the header

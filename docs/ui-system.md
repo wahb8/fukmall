@@ -171,6 +171,17 @@ Asset cards now use a masonry-like layout:
 
 While an asset is being dragged over the stage, the canvas receives an accent-colored active-drop outline.
 
+### Layer Panel
+
+The layer panel now follows the same split-panel idea as the asset library:
+
+- a scrollable layer-row region
+- a fixed footer region for the add-drawing action
+
+The visible row region is intentionally capped to about six normal layer rows, so the right sidebar does not keep growing taller as layers are added.
+
+Only the layer rows scroll. The footer action stays visible and stationary.
+
 ## Stage and Canvas
 
 The visible stage is styled as a phone-like artboard container:

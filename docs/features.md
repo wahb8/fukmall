@@ -229,6 +229,8 @@ The layer panel currently supports:
 - merge down
 - delete
 - drag-reorder behavior hooks in the main app
+- a dedicated scrollable row region once the stack grows beyond roughly six visible rows
+- a fixed footer action area so the add-drawing button stays visible instead of being pushed downward by a tall stack
 
 Merge down flattens the current layer and the layer below into a new raster layer.
 

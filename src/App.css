@@ -58,6 +58,11 @@
   --asset-delete-bg: rgba(255, 250, 242, 0.94);
   --asset-delete-shadow: 0 10px 24px rgba(68, 43, 15, 0.16);
   --asset-delete-hover-bg: #fffaf2;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb-warm: rgba(0, 0, 0, 0.42);
+  --scrollbar-thumb-warm-hover: rgba(0, 0, 0, 0.66);
+  --scrollbar-thumb-teal: rgba(0, 0, 0, 0.42);
+  --scrollbar-thumb-teal-hover: rgba(0, 0, 0, 0.66);
 }
 
 .app-shell[data-theme='dark'] {
@@ -120,6 +125,11 @@
   --asset-delete-bg: #1b2740;
   --asset-delete-shadow: 0 14px 30px rgba(2, 6, 23, 0.34);
   --asset-delete-hover-bg: #243654;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb-warm: rgba(255, 255, 255, 0.3);
+  --scrollbar-thumb-warm-hover: rgba(255, 255, 255, 0.46);
+  --scrollbar-thumb-teal: rgba(255, 255, 255, 0.3);
+  --scrollbar-thumb-teal-hover: rgba(255, 255, 255, 0.46);
 }
 
 .app-shell {
@@ -979,6 +989,62 @@
   min-height: 0;
 }
 
+.asset-panel-body,
+.add-layer-panel-body,
+.inspector-panel-body,
+.layer-list-scroller {
+  --panel-scrollbar-thumb: var(--scrollbar-thumb-warm);
+  --panel-scrollbar-thumb-hover: var(--scrollbar-thumb-warm-hover);
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-gutter: stable;
+}
+
+.layer-list-scroller {
+  --panel-scrollbar-thumb: var(--scrollbar-thumb-teal);
+  --panel-scrollbar-thumb-hover: var(--scrollbar-thumb-teal-hover);
+}
+
+.asset-panel-body::-webkit-scrollbar,
+.add-layer-panel-body::-webkit-scrollbar,
+.inspector-panel-body::-webkit-scrollbar,
+.layer-list-scroller::-webkit-scrollbar {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.asset-panel-body::-webkit-scrollbar-track,
+.add-layer-panel-body::-webkit-scrollbar-track,
+.inspector-panel-body::-webkit-scrollbar-track,
+.layer-list-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.asset-panel-body::-webkit-scrollbar-thumb,
+.add-layer-panel-body::-webkit-scrollbar-thumb,
+.inspector-panel-body::-webkit-scrollbar-thumb,
+.layer-list-scroller::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--panel-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+.asset-panel-body:hover::-webkit-scrollbar-thumb,
+.add-layer-panel-body:hover::-webkit-scrollbar-thumb,
+.inspector-panel-body:hover::-webkit-scrollbar-thumb,
+.layer-list-scroller:hover::-webkit-scrollbar-thumb {
+  background: var(--panel-scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.asset-panel-body::-webkit-scrollbar-corner,
+.add-layer-panel-body::-webkit-scrollbar-corner,
+.inspector-panel-body::-webkit-scrollbar-corner,
+.layer-list-scroller::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .asset-panel {
   display: flex;
   flex-direction: column;
@@ -1168,6 +1234,23 @@
   padding-right: 0.2rem;
 }
 
+.layer-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(415px, calc(100vh - 24rem));
+  overflow: hidden;
+}
+
+.layer-list-scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc((6 * 3.9rem) + (5 * 0.45rem));
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.2rem;
+}
+
 .layer-list {
   display: flex;
   flex-direction: column;
@@ -1175,6 +1258,7 @@
 }
 
 .layer-panel-footer {
+  flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
   padding-top: 0.9rem;
