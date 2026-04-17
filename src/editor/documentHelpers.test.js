@@ -11,6 +11,7 @@ import {
   getImportedImageDimensions,
   normalizeNewFileDimensionInput,
   normalizeNewFileNameInput,
+  shouldTrimTransparentImport,
 } from './documentHelpers'
 
 describe('document helpers', () => {
@@ -64,6 +65,27 @@ describe('document helpers', () => {
     expect(layer.height).toBe(180)
     expect(layer.x).toBe(180)
     expect(layer.y).toBe(110)
+  })
+
+  it('only enables transparent-edge trimming for eligible raster imports', () => {
+    expect(shouldTrimTransparentImport({
+      enabled: true,
+      sourceKind: 'svg',
+      formatHint: 'svg',
+      src: 'data:image/svg+xml,<svg />',
+    })).toBe(false)
+    expect(shouldTrimTransparentImport({
+      enabled: true,
+      sourceKind: 'bitmap',
+      formatHint: 'jpeg',
+      src: 'data:image/jpeg;base64,abc',
+    })).toBe(false)
+    expect(shouldTrimTransparentImport({
+      enabled: true,
+      sourceKind: 'bitmap',
+      formatHint: 'png',
+      src: 'data:image/png;base64,abc',
+    })).toBe(true)
   })
 
   it('creates deterministic bitmap-backed layer patches', () => {

@@ -42,7 +42,6 @@ function getCanvasLayers(container) {
 }
 
 describe('App resize handle routing', () => {
-  let getBoundingClientRectSpy
   const originalGetContext = HTMLCanvasElement.prototype.getContext
 
   beforeEach(() => {
@@ -58,14 +57,16 @@ describe('App resize handle routing', () => {
         }
 
         return Object.assign(context, {
-          getImageData: (_x = 0, _y = 0, width = 1, height = 1) => ({
+          getImageData: (x = 0, y = 0, width = 1, height = 1) => ({
+            x,
+            y,
             data: new Uint8ClampedArray(Math.max(1, width * height * 4)).fill(255),
           }),
           putImageData: () => {},
         })
       })
 
-    getBoundingClientRectSpy = vi
+    vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockImplementation(() => ({
         x: 0,
@@ -203,5 +204,23 @@ describe('App resize handle routing', () => {
     expect(container.querySelector('.selection-frame.interactive')).not.toBeNull()
 
     fireEvent.pointerUp(window)
+  })
+
+  it('keeps selection chrome outside the opacity-applied artwork wrapper', () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    const selectionFrame = container.querySelector('.selection-frame.interactive')
+    const artworkWrapper = container.querySelector('.canvas-layer .layer-artwork')
+
+    expect(selectionFrame).not.toBeNull()
+    expect(artworkWrapper).not.toBeNull()
+    expect(artworkWrapper.style.opacity).toBe('1')
+    expect(selectionFrame.closest('.canvas-layer')).toBeNull()
+    expect(selectionFrame.closest('.layer-artwork')).toBeNull()
+    expect(selectionFrame.parentElement?.className).toContain('canvas-surface')
   })
 })

@@ -12,6 +12,9 @@ import { topLeftToCenter } from '../lib/layerGeometry'
 import { inferImageSourceKindFromSrc } from '../lib/raster'
 import { MIN_DOCUMENT_DIMENSION, MIN_LAYER_HEIGHT, MIN_LAYER_WIDTH } from './constants'
 
+export const DEFAULT_IMPORT_TRIM_ALPHA_THRESHOLD = 8
+export const DEFAULT_IMPORT_TRIM_PADDING = 1
+
 export function createInitialDocument(
   width = DEFAULT_DOCUMENT_WIDTH,
   height = DEFAULT_DOCUMENT_HEIGHT,
@@ -169,6 +172,31 @@ export function normalizeImportedImageSourceKind(sourceKind, src) {
   return sourceKind === 'svg' && inferredSourceKind === 'svg'
     ? 'svg'
     : inferredSourceKind
+}
+
+export function shouldTrimTransparentImport({
+  enabled,
+  sourceKind,
+  formatHint,
+  src,
+}) {
+  if (!enabled) {
+    return false
+  }
+
+  if (normalizeImportedImageSourceKind(sourceKind, src) === 'svg') {
+    return false
+  }
+
+  const normalizedFormatHint = typeof formatHint === 'string'
+    ? formatHint.trim().toLowerCase()
+    : ''
+
+  if (normalizedFormatHint === 'jpg' || normalizedFormatHint === 'jpeg') {
+    return false
+  }
+
+  return true
 }
 
 export function createValidatedImportedImageLayer({

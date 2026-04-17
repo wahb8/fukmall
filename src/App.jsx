@@ -49,10 +49,13 @@ import {
   createBitmapEditableLayerPatch,
   createImageLayerBitmapPatch,
   createInitialDocument,
+  DEFAULT_IMPORT_TRIM_ALPHA_THRESHOLD,
+  DEFAULT_IMPORT_TRIM_PADDING,
   getDocumentFilenameBase,
   getImportedImageDimensions,
   normalizeNewFileDimensionInput,
   normalizeNewFileNameInput,
+  shouldTrimTransparentImport,
 } from './editor/documentHelpers'
 import { getEditorIcons } from './editor/iconAssets'
 import { useHistory } from './hooks/useHistory'
@@ -140,6 +143,7 @@ import {
   paintCanvas,
   readFileAsDataUrl,
   renderTextLayerToCanvas,
+  trimImageSourceTransparentBounds,
 } from './lib/raster'
 import { screenToWorld, worldToScreen, zoomAtPoint } from './lib/viewport'
 import {
@@ -185,6 +189,7 @@ function isSupportedAssetFile(file) {
 const PIXEL_HIT_PADDING = 4
 const VISIBLE_PIXEL_ALPHA_THRESHOLD = 8
 const THEME_STORAGE_KEY = 'fukmall.theme'
+const TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY = 'fukmall.trim-transparent-imports'
 
 function createStartupDocument() {
   return loadCurrentDocumentFromStorage()
@@ -198,6 +203,14 @@ function loadThemeFromStorage() {
 
   const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
   return savedTheme === 'dark' ? 'dark' : 'light'
+}
+
+function loadTrimTransparentImportsFromStorage() {
+  if (typeof window === 'undefined') {
+    return true
+  }
+
+  return window.localStorage.getItem(TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY) !== 'false'
 }
 
 function getSupportedImageFiles(files) {
@@ -997,6 +1010,9 @@ function App() {
   })
   const [activeTool, setActiveTool] = useState('select')
   const [theme, setTheme] = useState(() => loadThemeFromStorage())
+  const [trimTransparentImports, setTrimTransparentImports] = useState(
+    () => loadTrimTransparentImportsFromStorage(),
+  )
   const [globalColors, setGlobalColors] = useState(() => loadColorsFromStorage())
   const [penSize, setPenSize] = useState(DEFAULT_PEN_SIZE)
   const [eraserSize, setEraserSize] = useState(DEFAULT_ERASER_SIZE)
@@ -1676,6 +1692,17 @@ function App() {
 
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.localStorage.setItem(
+      TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY,
+      trimTransparentImports ? 'true' : 'false',
+    )
+  }, [trimTransparentImports])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -3980,6 +4007,7 @@ function App() {
     name,
     src,
     sourceKind,
+    formatHint = '',
     width = null,
     height = null,
     topLeftX = null,
@@ -4004,18 +4032,39 @@ function App() {
       throw new Error('Image source could not be loaded.')
     }
 
+    let finalSource = normalizedSource
+    let finalDimensions = dimensions
+
+    if (shouldTrimTransparentImport({
+      enabled: trimTransparentImports,
+      sourceKind,
+      formatHint,
+      src: normalizedSource,
+    })) {
+      const trimmedSource = await trimImageSourceTransparentBounds(normalizedSource, {
+        alphaThreshold: DEFAULT_IMPORT_TRIM_ALPHA_THRESHOLD,
+        padding: DEFAULT_IMPORT_TRIM_PADDING,
+      })
+      const trimmedDimensions = getImportedImageDimensions(trimmedSource.width, trimmedSource.height)
+
+      if (trimmedSource.didTrim && trimmedDimensions) {
+        finalSource = trimmedSource.src
+        finalDimensions = trimmedDimensions
+      }
+    }
+
     const resolvedTopLeftX = Number.isFinite(Number(centerX))
-      ? Number(centerX) - (dimensions.width / 2)
+      ? Number(centerX) - (finalDimensions.width / 2)
       : topLeftX
     const resolvedTopLeftY = Number.isFinite(Number(centerY))
-      ? Number(centerY) - (dimensions.height / 2)
+      ? Number(centerY) - (finalDimensions.height / 2)
       : topLeftY
 
     return createValidatedImportedImageLayer({
       name,
-      src: normalizedSource,
-      width: dimensions.width,
-      height: dimensions.height,
+      src: finalSource,
+      width: finalDimensions.width,
+      height: finalDimensions.height,
       documentWidth,
       documentHeight,
       topLeftX: resolvedTopLeftX,
@@ -4030,6 +4079,7 @@ function App() {
       name: file.name.replace(/\.[^.]+$/, '') || 'Imported Image',
       src: imageDataUrl,
       sourceKind: getImportedSourceKind(file, imageDataUrl),
+      formatHint: getAssetKind(file),
     })
 
     addLayer(() => nextLayer)
@@ -4095,6 +4145,7 @@ function App() {
     return createImportedImageLayerFromSource({
       name: asset.name,
       src: asset.src,
+      formatHint: asset.kind,
       width: dimensions?.width ?? null,
       height: dimensions?.height ?? null,
       centerX: x,
@@ -6413,7 +6464,6 @@ function App() {
       return null
     }
 
-    const isSelected = isLayerSelected(documentState, layer.id)
     const isEditingText = layer.type === 'text' && layer.id === editingTextLayerId
     const showEraserCursor = currentTool === 'eraser' && isErasableLayer(layer)
     const showBucketCursor = currentTool === 'bucket' && canFillLayerWithBucket(layer)
@@ -6447,194 +6497,244 @@ function App() {
           width: `${layer.width}px`,
           height: `${layer.height}px`,
           transform: `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
-          opacity: layer.opacity,
           zIndex: index + 1,
         }}
         onPointerDown={(event) => handleLayerPointerDown(event, layer)}
       >
-        {layer.type === 'text' && (
-          isEditingText ? (
-            <div className="layer-body text-layer-edit-shell">
+        <div className="layer-artwork" style={{ opacity: layer.opacity }}>
+          {layer.type === 'text' && (
+            isEditingText ? (
+              <div className="layer-body text-layer-edit-shell">
+                <canvas
+                  ref={(node) => registerVisibleCanvas(layer.id, node)}
+                  className="layer-body text-layer-canvas text-layer-edit-preview"
+                  aria-hidden="true"
+                />
+                <div className="text-layer-edit-overlay" aria-hidden="true">
+                  {textEditorOverlay?.selectionRects.map((rect, rectIndex) => (
+                    <div
+                      key={`${layer.id}-selection-${rectIndex}`}
+                      className="text-layer-selection-rect"
+                      style={{
+                        left: `${rect.x}px`,
+                        top: `${rect.y}px`,
+                        width: `${rect.width}px`,
+                        height: `${rect.height}px`,
+                      }}
+                    />
+                  ))}
+                  {textEditorOverlay?.caretRect && textEditorSelection.start === textEditorSelection.end && (
+                    <div
+                      className="text-layer-caret"
+                      style={{
+                        left: `${textEditorOverlay.caretRect.x}px`,
+                        top: `${textEditorOverlay.caretRect.y}px`,
+                        height: `${textEditorOverlay.caretRect.height}px`,
+                      }}
+                    />
+                  )}
+                </div>
+                <textarea
+                  ref={textEditorRef}
+                  className="layer-body text-layer-body text-layer-editor"
+                  value={textDraft}
+                  style={{
+                    fontFamily: layer.fontFamily,
+                    fontSize: `${layer.fontSize}px`,
+                    fontStyle: layer.fontStyle,
+                    fontWeight: layer.fontWeight,
+                    lineHeight: layer.lineHeight,
+                    color: layer.color,
+                    textAlign: layer.textAlign ?? 'left',
+                  }}
+                  onChange={(event) => {
+                    setTextDraft(event.target.value)
+                    updateTextLayerContent(layer.id, event.target.value, true)
+                    syncTextEditorSelection(event.target)
+                  }}
+                  onSelect={(event) => syncTextEditorSelection(event.target)}
+                  onKeyUp={(event) => syncTextEditorSelection(event.target)}
+                  onPointerUp={(event) => syncTextEditorSelection(event.target)}
+                  onBlur={(event) => {
+                    const relatedTarget = event.relatedTarget instanceof HTMLElement
+                      ? event.relatedTarget
+                      : null
+
+                    if (
+                      preserveTextEditingBlurRef.current ||
+                      relatedTarget?.closest('[data-text-style-control="true"]')
+                    ) {
+                      textSelectionRestoreRef.current = {
+                        ...textSelectionRef.current,
+                      }
+                      return
+                    }
+
+                    commitTextEditing(layer.id)
+                  }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      cancelTextEditing()
+                    }
+
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                      event.preventDefault()
+                      commitTextEditing(layer.id)
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+            ) : (
               <canvas
                 ref={(node) => registerVisibleCanvas(layer.id, node)}
-                className="layer-body text-layer-canvas text-layer-edit-preview"
-                aria-hidden="true"
+                className="layer-body text-layer-canvas"
               />
-              <div className="text-layer-edit-overlay" aria-hidden="true">
-                {textEditorOverlay?.selectionRects.map((rect, rectIndex) => (
-                  <div
-                    key={`${layer.id}-selection-${rectIndex}`}
-                    className="text-layer-selection-rect"
-                    style={{
-                      left: `${rect.x}px`,
-                      top: `${rect.y}px`,
-                      width: `${rect.width}px`,
-                      height: `${rect.height}px`,
-                    }}
-                  />
-                ))}
-                {textEditorOverlay?.caretRect && textEditorSelection.start === textEditorSelection.end && (
-                  <div
-                    className="text-layer-caret"
-                    style={{
-                      left: `${textEditorOverlay.caretRect.x}px`,
-                      top: `${textEditorOverlay.caretRect.y}px`,
-                      height: `${textEditorOverlay.caretRect.height}px`,
-                    }}
-                  />
-                )}
-              </div>
-              <textarea
-                ref={textEditorRef}
-                className="layer-body text-layer-body text-layer-editor"
-                value={textDraft}
-                style={{
-                  fontFamily: layer.fontFamily,
-                  fontSize: `${layer.fontSize}px`,
-                  fontStyle: layer.fontStyle,
-                  fontWeight: layer.fontWeight,
-                  lineHeight: layer.lineHeight,
-                  color: layer.color,
-                  textAlign: layer.textAlign ?? 'left',
-                }}
-                onChange={(event) => {
-                  setTextDraft(event.target.value)
-                  updateTextLayerContent(layer.id, event.target.value, true)
-                  syncTextEditorSelection(event.target)
-                }}
-                onSelect={(event) => syncTextEditorSelection(event.target)}
-                onKeyUp={(event) => syncTextEditorSelection(event.target)}
-                onPointerUp={(event) => syncTextEditorSelection(event.target)}
-                onBlur={(event) => {
-                  const relatedTarget = event.relatedTarget instanceof HTMLElement
-                    ? event.relatedTarget
-                    : null
-
-                  if (
-                    preserveTextEditingBlurRef.current ||
-                    relatedTarget?.closest('[data-text-style-control="true"]')
-                  ) {
-                    textSelectionRestoreRef.current = {
-                      ...textSelectionRef.current,
-                    }
-                    return
-                  }
-
-                  commitTextEditing(layer.id)
-                }}
-                onPointerDown={(event) => event.stopPropagation()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    event.preventDefault()
-                    cancelTextEditing()
-                  }
-
-                  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                    event.preventDefault()
-                    commitTextEditing(layer.id)
-                  }
-                }}
-                autoFocus
-              />
-            </div>
-          ) : (
-            <canvas
-              ref={(node) => registerVisibleCanvas(layer.id, node)}
-              className="layer-body text-layer-canvas"
+            )
+          )}
+          {layer.type === 'shape' && (
+            <div
+              className="layer-body shape-layer-body"
+              style={{
+                background: layer.fill,
+                borderRadius: `${layer.radius}px`,
+              }}
             />
-          )
-        )}
-        {layer.type === 'shape' && (
-          <div
-            className="layer-body shape-layer-body"
-            style={{
-              background: layer.fill,
-              borderRadius: `${layer.radius}px`,
-            }}
-          />
-        )}
-        {layer.type === 'image' &&
-        layer.sourceKind === 'svg' &&
-        activeSvgToolLayerId !== layer.id ? (
-          <div
-            className="layer-body image-layer-body"
-            style={{
-              borderRadius: `${clampLayerCornerRadius(
-                layer.width,
-                layer.height,
-                layer.cornerRadius ?? 0,
-              )}px`,
-            }}
-          >
-            <img
-              className="layer-image"
-              src={layer.src}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-            />
-          </div>
-        ) : isRasterLayer(layer) && (
-          <div
-            className="layer-body image-layer-body"
-            style={layer.type === 'image'
-              ? {
+          )}
+          {layer.type === 'image' &&
+          layer.sourceKind === 'svg' &&
+          activeSvgToolLayerId !== layer.id ? (
+            <div
+              className="layer-body image-layer-body"
+              style={{
                 borderRadius: `${clampLayerCornerRadius(
                   layer.width,
                   layer.height,
                   layer.cornerRadius ?? 0,
                 )}px`,
-              }
-              : undefined}
-          >
-            <canvas
-              ref={(node) => registerVisibleCanvas(layer.id, node)}
-              className="layer-image raster-layer-canvas"
-            />
-          </div>
-        )}
-        {isSelected && currentTool === 'select' && !hasMultiSelection && !isEditingText && (
-          <div
-            className="selection-frame interactive"
-            style={selectedResizeHandleStyleVars}
-            onPointerDown={(event) => {
-              if (isResizeHandleTarget(event.target)) {
-                return
-              }
-
-              const documentPoint = toDocumentCoordinates(
-                event,
-                canvasRef.current,
-                viewport,
-                documentScale,
-              )
-              const targetLayer = documentPoint
-                ? resolveTopLayerAtPoint(documentPoint, layer, {
-                  requireDefinitePreferredHit: true,
-                  disallowInconclusiveLayerIds: [layer.id],
-                })
-                : layer
-
-              startMove(event, targetLayer ?? layer)
-            }}
-            aria-hidden="true"
-          >
-            {HANDLE_DIRECTIONS.map((handle) => (
-              <button
-                key={handle.key}
-                className={`resize-handle handle-${handle.key}`}
-                type="button"
-                data-handle-direction={handle.key}
-                onPointerDown={(event) => startResize(event, layer, handle)}
+              }}
+            >
+              <img
+                className="layer-image"
+                src={layer.src}
+                alt=""
+                aria-hidden="true"
+                draggable={false}
               />
-            ))}
-          </div>
-        )}
-        {isSelected && currentTool === 'select' && hasMultiSelection && !isEditingText && (
-          <div className="selection-frame passive" aria-hidden="true" />
-        )}
+            </div>
+          ) : isRasterLayer(layer) && (
+            <div
+              className="layer-body image-layer-body"
+              style={layer.type === 'image'
+                ? {
+                  borderRadius: `${clampLayerCornerRadius(
+                    layer.width,
+                    layer.height,
+                    layer.cornerRadius ?? 0,
+                  )}px`,
+                }
+                : undefined}
+            >
+              <canvas
+                ref={(node) => registerVisibleCanvas(layer.id, node)}
+                className="layer-image raster-layer-canvas"
+              />
+            </div>
+          )}
+        </div>
       </div>
     )
+  }
+
+  function renderLayerSelectionOverlay(layer, overlayType = 'passive', order = 0) {
+    if (!layer || currentTool !== 'select') {
+      return null
+    }
+
+    const isEditingText = layer.type === 'text' && layer.id === editingTextLayerId
+
+    if (isEditingText) {
+      return null
+    }
+
+    const layerTopLeft = getLayerTopLeft(layer)
+    const sharedStyle = {
+      left: `${layerTopLeft.x}px`,
+      top: `${layerTopLeft.y}px`,
+      width: `${layer.width}px`,
+      height: `${layer.height}px`,
+      transform: `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
+      zIndex: documentState.layers.length + 20 + order,
+      ...(overlayType === 'interactive' ? selectedResizeHandleStyleVars : {}),
+    }
+
+    if (overlayType === 'interactive') {
+      return (
+        <div
+          key={`selection-overlay-${layer.id}`}
+          className="layer-selection-overlay selection-frame interactive"
+          style={sharedStyle}
+          onPointerDown={(event) => {
+            if (isResizeHandleTarget(event.target)) {
+              return
+            }
+
+            const documentPoint = toDocumentCoordinates(
+              event,
+              canvasRef.current,
+              viewport,
+              documentScale,
+            )
+            const targetLayer = documentPoint
+              ? resolveTopLayerAtPoint(documentPoint, layer, {
+                requireDefinitePreferredHit: true,
+                disallowInconclusiveLayerIds: [layer.id],
+              })
+              : layer
+
+            startMove(event, targetLayer ?? layer)
+          }}
+          aria-hidden="true"
+        >
+          {HANDLE_DIRECTIONS.map((handle) => (
+            <button
+              key={handle.key}
+              className={`resize-handle handle-${handle.key}`}
+              type="button"
+              data-handle-direction={handle.key}
+              onPointerDown={(event) => startResize(event, layer, handle)}
+            />
+          ))}
+        </div>
+      )
+    }
+
+    return (
+      <div
+        key={`selection-overlay-${layer.id}`}
+        className="layer-selection-overlay selection-frame passive"
+        style={sharedStyle}
+        aria-hidden="true"
+      />
+    )
+  }
+
+  function renderLayerSelectionOverlays() {
+    if (currentTool !== 'select' || selectedLayers.length === 0) {
+      return null
+    }
+
+    if (hasMultiSelection) {
+      return selectedLayers.map((layer, index) => renderLayerSelectionOverlay(layer, 'passive', index))
+    }
+
+    if (!selectedLayer) {
+      return null
+    }
+
+    return renderLayerSelectionOverlay(selectedLayer, 'interactive')
   }
 
   function renderSharedSelectionOverlay() {
@@ -6728,10 +6828,12 @@ function App() {
         isOpeningFile={isOpeningFile}
         isExporting={isExporting}
         theme={theme}
+        trimTransparentImports={trimTransparentImports}
         onToggle={() => setIsFileMenuOpen((currentValue) => !currentValue)}
         onToggleTheme={() => setTheme((currentTheme) => (
           currentTheme === 'dark' ? 'light' : 'dark'
         ))}
+        onToggleTrimTransparentImports={() => setTrimTransparentImports((currentValue) => !currentValue)}
         onNewFile={handleNewFile}
         onOpenFile={handleOpenFileClick}
         onSaveFile={handleSaveFile}
@@ -6852,6 +6954,7 @@ function App() {
                     }}
                   >
                     {documentState.layers.map(renderLayer)}
+                    {renderLayerSelectionOverlays()}
                     {renderSharedSelectionOverlay()}
                     <canvas ref={overlayCanvasRef} className="canvas-overlay" aria-hidden="true" />
                   </div>

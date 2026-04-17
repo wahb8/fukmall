@@ -449,6 +449,73 @@ export function getCanvasAlphaBounds(canvas) {
   }
 }
 
+export function findVisibleAlphaBounds(
+  imageData,
+  width,
+  height,
+  {
+    alphaThreshold = 8,
+    padding = 1,
+  } = {},
+) {
+  const data = imageData?.data ?? imageData
+  const resolvedWidth = Math.max(1, Math.round(Number(width) || 0))
+  const resolvedHeight = Math.max(1, Math.round(Number(height) || 0))
+  const resolvedThreshold = Math.max(0, Math.min(255, Math.round(Number(alphaThreshold) || 0)))
+  const resolvedPadding = Math.max(0, Math.round(Number(padding) || 0))
+
+  if (!data || data.length < resolvedWidth * resolvedHeight * 4) {
+    return null
+  }
+
+  let minX = resolvedWidth
+  let minY = resolvedHeight
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < resolvedHeight; y += 1) {
+    for (let x = 0; x < resolvedWidth; x += 1) {
+      const alphaIndex = ((y * resolvedWidth) + x) * 4 + 3
+
+      if (data[alphaIndex] <= resolvedThreshold) {
+        continue
+      }
+
+      if (x < minX) {
+        minX = x
+      }
+
+      if (y < minY) {
+        minY = y
+      }
+
+      if (x > maxX) {
+        maxX = x
+      }
+
+      if (y > maxY) {
+        maxY = y
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return null
+  }
+
+  const paddedMinX = Math.max(0, minX - resolvedPadding)
+  const paddedMinY = Math.max(0, minY - resolvedPadding)
+  const paddedMaxX = Math.min(resolvedWidth - 1, maxX + resolvedPadding)
+  const paddedMaxY = Math.min(resolvedHeight - 1, maxY + resolvedPadding)
+
+  return {
+    x: paddedMinX,
+    y: paddedMinY,
+    width: paddedMaxX - paddedMinX + 1,
+    height: paddedMaxY - paddedMinY + 1,
+  }
+}
+
 export function cropCanvasToBounds(sourceCanvas, bounds) {
   if (!bounds) {
     return createTransparentCanvas(1, 1)
@@ -474,8 +541,117 @@ export function cropCanvasToBounds(sourceCanvas, bounds) {
   return canvas
 }
 
+export function trimCanvasTransparentBounds(
+  canvas,
+  {
+    alphaThreshold = 8,
+    padding = 1,
+  } = {},
+) {
+  const context = canvas?.getContext?.('2d', { willReadFrequently: true })
+
+  if (!canvas || !context) {
+    return {
+      canvas,
+      width: canvas?.width ?? 0,
+      height: canvas?.height ?? 0,
+      offsetX: 0,
+      offsetY: 0,
+      didTrim: false,
+      isEmpty: false,
+    }
+  }
+
+  const bounds = findVisibleAlphaBounds(
+    context.getImageData(0, 0, canvas.width, canvas.height),
+    canvas.width,
+    canvas.height,
+    {
+      alphaThreshold,
+      padding,
+    },
+  )
+
+  if (!bounds) {
+    return {
+      canvas,
+      width: canvas.width,
+      height: canvas.height,
+      offsetX: 0,
+      offsetY: 0,
+      didTrim: false,
+      isEmpty: true,
+    }
+  }
+
+  if (
+    bounds.x === 0 &&
+    bounds.y === 0 &&
+    bounds.width === canvas.width &&
+    bounds.height === canvas.height
+  ) {
+    return {
+      canvas,
+      width: canvas.width,
+      height: canvas.height,
+      offsetX: 0,
+      offsetY: 0,
+      didTrim: false,
+      isEmpty: false,
+    }
+  }
+
+  const trimmedCanvas = cropCanvasToBounds(canvas, bounds)
+
+  return {
+    canvas: trimmedCanvas,
+    width: trimmedCanvas.width,
+    height: trimmedCanvas.height,
+    offsetX: bounds.x,
+    offsetY: bounds.y,
+    didTrim: true,
+    isEmpty: false,
+  }
+}
+
 export function canvasToBitmap(canvas) {
   return canvas.toDataURL('image/png')
+}
+
+export async function trimImageSourceTransparentBounds(
+  src,
+  {
+    alphaThreshold = 8,
+    padding = 1,
+  } = {},
+) {
+  const { canvas, width, height } = await createCanvasFromSource(src)
+  const trimmedResult = trimCanvasTransparentBounds(canvas, {
+    alphaThreshold,
+    padding,
+  })
+
+  if (!trimmedResult.didTrim || trimmedResult.isEmpty) {
+    return {
+      src,
+      width,
+      height,
+      offsetX: 0,
+      offsetY: 0,
+      didTrim: false,
+      isEmpty: Boolean(trimmedResult.isEmpty),
+    }
+  }
+
+  return {
+    src: canvasToBitmap(trimmedResult.canvas),
+    width: trimmedResult.width,
+    height: trimmedResult.height,
+    offsetX: trimmedResult.offsetX,
+    offsetY: trimmedResult.offsetY,
+    didTrim: true,
+    isEmpty: false,
+  }
 }
 
 export function paintCanvas(targetCanvas, sourceCanvas) {

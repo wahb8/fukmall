@@ -4,8 +4,10 @@ export function FileMenu({
   isOpeningFile,
   isExporting,
   theme,
+  trimTransparentImports,
   onToggle,
   onToggleTheme,
+  onToggleTrimTransparentImports,
   onNewFile,
   onOpenFile,
   onSaveFile,
@@ -51,6 +53,15 @@ export function FileMenu({
             role="menuitem"
           >
             Save File
+          </button>
+          <button
+            className="topbar-menu-item"
+            type="button"
+            onClick={onToggleTrimTransparentImports}
+            role="menuitemcheckbox"
+            aria-checked={trimTransparentImports}
+          >
+            {trimTransparentImports ? 'Trim Transparent Imports: On' : 'Trim Transparent Imports: Off'}
           </button>
           <button
             className="topbar-menu-item"

@@ -5,6 +5,7 @@ import { FileMenu } from './FileMenu'
 describe('FileMenu', () => {
   it('renders menu actions and calls the provided callbacks', () => {
     const onToggle = vi.fn()
+    const onToggleTrimTransparentImports = vi.fn()
     const onNewFile = vi.fn()
     const onOpenFile = vi.fn()
     const onSaveFile = vi.fn()
@@ -17,8 +18,10 @@ describe('FileMenu', () => {
         isOpeningFile={false}
         isExporting={false}
         theme="light"
+        trimTransparentImports
         onToggle={onToggle}
         onToggleTheme={vi.fn()}
+        onToggleTrimTransparentImports={onToggleTrimTransparentImports}
         onNewFile={onNewFile}
         onOpenFile={onOpenFile}
         onSaveFile={onSaveFile}
@@ -30,6 +33,7 @@ describe('FileMenu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'New File' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Open File' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Save File' }))
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Trim Transparent Imports: On' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Export PNG' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Export JPEG' }))
 
@@ -37,6 +41,7 @@ describe('FileMenu', () => {
     expect(onNewFile).toHaveBeenCalledTimes(1)
     expect(onOpenFile).toHaveBeenCalledTimes(1)
     expect(onSaveFile).toHaveBeenCalledTimes(1)
+    expect(onToggleTrimTransparentImports).toHaveBeenCalledTimes(1)
     expect(onExport).toHaveBeenNthCalledWith(1, 'png')
     expect(onExport).toHaveBeenNthCalledWith(2, 'jpeg')
   })
