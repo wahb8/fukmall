@@ -72,6 +72,7 @@ import {
   clearSelectionFromCanvas,
   extractSelectionToCanvas,
   finalizeLassoSelection,
+  getFloatingSelectionSourceOffset,
   isPointInsideFloatingSelection,
   isPointInsidePolygon,
   renderFloatingSelection,
@@ -1034,6 +1035,7 @@ function App() {
   const [newFileHeightInput, setNewFileHeightInput] = useState(String(DEFAULT_DOCUMENT_HEIGHT))
   const [toolPanelError, setToolPanelError] = useState({
     message: '',
+    isRendered: false,
     isVisible: false,
     isFading: false,
   })
@@ -1262,27 +1264,10 @@ function App() {
     clearToolPanelErrorTimers()
     setToolPanelError({
       message,
+      isRendered: true,
       isVisible: true,
       isFading: false,
     })
-
-    toolPanelErrorFadeTimeoutRef.current = window.setTimeout(() => {
-      setToolPanelError((currentValue) => (
-        currentValue.isVisible
-          ? { ...currentValue, isFading: true }
-          : currentValue
-      ))
-      toolPanelErrorFadeTimeoutRef.current = null
-    }, TOOL_PANEL_ERROR_FADE_DELAY_MS)
-
-    toolPanelErrorClearTimeoutRef.current = window.setTimeout(() => {
-      setToolPanelError({
-        message: '',
-        isVisible: false,
-        isFading: false,
-      })
-      toolPanelErrorClearTimeoutRef.current = null
-    }, TOOL_PANEL_ERROR_DURATION_MS)
   }, [clearToolPanelErrorTimers])
 
   const clearFontSizeRepeatTimers = useCallback((finalizeAdjustment = true) => {
@@ -1303,11 +1288,48 @@ function App() {
 
   useEffect(() => (
     () => {
-      clearToolPanelErrorTimers()
       clearAddLayerPanelStatusTimer()
       clearFontSizeRepeatTimers(false)
     }
-  ), [clearAddLayerPanelStatusTimer, clearFontSizeRepeatTimers, clearToolPanelErrorTimers])
+  ), [clearAddLayerPanelStatusTimer, clearFontSizeRepeatTimers])
+
+  useEffect(() => {
+    if (!toolPanelError.isRendered) {
+      clearToolPanelErrorTimers()
+      return undefined
+    }
+
+    if (toolPanelError.isFading) {
+      toolPanelErrorClearTimeoutRef.current = window.setTimeout(() => {
+        setToolPanelError({
+          message: '',
+          isRendered: false,
+          isVisible: false,
+          isFading: false,
+        })
+        toolPanelErrorClearTimeoutRef.current = null
+      }, TOOL_PANEL_ERROR_DURATION_MS - TOOL_PANEL_ERROR_FADE_DELAY_MS)
+    } else {
+      toolPanelErrorFadeTimeoutRef.current = window.setTimeout(() => {
+        setToolPanelError((currentValue) => (
+          currentValue.isRendered
+            ? {
+              ...currentValue,
+              isVisible: false,
+              isFading: true,
+            }
+            : currentValue
+        ))
+        toolPanelErrorFadeTimeoutRef.current = null
+      }, TOOL_PANEL_ERROR_FADE_DELAY_MS)
+    }
+
+    return clearToolPanelErrorTimers
+  }, [
+    clearToolPanelErrorTimers,
+    toolPanelError.isFading,
+    toolPanelError.isRendered,
+  ])
 
   useEffect(() => {
     function stopFontSizeRepeat() {
@@ -4867,6 +4889,91 @@ function App() {
     }
   }
 
+  function resolveSelectToolTarget(documentPoint, fallbackLayer = null) {
+    if (!documentPoint) {
+      return fallbackLayer
+    }
+
+    return resolveTopLayerAtPoint(documentPoint) ?? fallbackLayer
+  }
+
+  function handleSelectToolPointerDown(event, fallbackLayer = null) {
+    if (isResizeHandleTarget(event.target)) {
+      return
+    }
+
+    const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
+    const hitLayer = resolveSelectToolTarget(documentPoint, fallbackLayer)
+
+    event.stopPropagation()
+    event.preventDefault()
+
+    if (event.shiftKey) {
+      if (hitLayer) {
+        toggleDocumentLayerSelection(hitLayer.id)
+      }
+      return
+    }
+
+    if (!hitLayer) {
+      clearDocumentSelectionExplicitly()
+      return
+    }
+
+    if (!isLayerSelected(documentState, hitLayer.id)) {
+      selectDocumentLayer(hitLayer.id)
+      return
+    }
+
+    startMove(event, hitLayer)
+  }
+
+  function doesSingleSelectionFrameCoverDocument(layer) {
+    if (!layer) {
+      return false
+    }
+
+    const bounds = getLayerTransformBounds(layer)
+
+    return (
+      bounds.minX <= 0 &&
+      bounds.minY <= 0 &&
+      bounds.maxX >= documentState.width &&
+      bounds.maxY >= documentState.height
+    )
+  }
+
+  function handleSingleSelectionFramePointerDown(event, layer) {
+    if (isResizeHandleTarget(event.target)) {
+      return
+    }
+
+    const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
+    const shouldYieldToTopLayer = (
+      doesSingleSelectionFrameCoverDocument(layer) &&
+      documentPoint
+    )
+    const topLayer = shouldYieldToTopLayer ? resolveTopLayerAtPoint(documentPoint) : null
+
+    if (event.shiftKey) {
+      if (topLayer && !isLayerSelected(documentState, topLayer.id)) {
+        event.stopPropagation()
+        event.preventDefault()
+        toggleDocumentLayerSelection(topLayer.id)
+      }
+      return
+    }
+
+    if (topLayer && topLayer.id !== layer.id) {
+      event.stopPropagation()
+      event.preventDefault()
+      selectDocumentLayer(topLayer.id)
+      return
+    }
+
+    startMove(event, layer)
+  }
+
   function startMove(event, layer) {
     if (editingTextLayerId === layer.id) {
       return
@@ -5705,8 +5812,14 @@ function App() {
       return
     }
 
-    const destinationX = (floatingSelection.x - sourceLayer.x) / floatingSelection.scaleX
-    const destinationY = (floatingSelection.y - sourceLayer.y) / floatingSelection.scaleY
+    const destinationOffset = getFloatingSelectionSourceOffset(sourceLayer, floatingSelection)
+
+    if (!destinationOffset) {
+      return
+    }
+
+    const destinationX = destinationOffset.x
+    const destinationY = destinationOffset.y
     const currentCanvas = surfaceEntry.offscreenCanvas
     const minimumX = Math.min(0, destinationX)
     const minimumY = Math.min(0, destinationY)
@@ -6070,29 +6183,7 @@ function App() {
     }
 
     if (currentTool === 'select') {
-      if (isResizeHandleTarget(event.target)) {
-        return
-      }
-
-      const documentPoint = toDocumentCoordinates(event, canvasRef.current, viewport, documentScale)
-      const hitLayer = documentPoint ? resolveTopLayerAtPoint(documentPoint, layer) : layer
-
-      event.stopPropagation()
-      event.preventDefault()
-
-      if (event.shiftKey) {
-        if (hitLayer) {
-          toggleDocumentLayerSelection(hitLayer.id)
-        }
-        return
-      }
-
-      if (!hitLayer) {
-        clearDocumentSelectionExplicitly()
-        return
-      }
-
-      startMove(event, hitLayer)
+      handleSelectToolPointerDown(event, layer)
       return
     }
 
@@ -6800,26 +6891,7 @@ function App() {
           key={`selection-overlay-${layer.id}`}
           className="layer-selection-overlay selection-frame interactive"
           style={sharedStyle}
-          onPointerDown={(event) => {
-            if (isResizeHandleTarget(event.target)) {
-              return
-            }
-
-            const documentPoint = toDocumentCoordinates(
-              event,
-              canvasRef.current,
-              viewport,
-              documentScale,
-            )
-            const targetLayer = documentPoint
-              ? resolveTopLayerAtPoint(documentPoint, layer, {
-                requireDefinitePreferredHit: true,
-                disallowInconclusiveLayerIds: [layer.id],
-              })
-              : layer
-
-            startMove(event, targetLayer ?? layer)
-          }}
+          onPointerDown={(event) => handleSingleSelectionFramePointerDown(event, layer)}
           aria-hidden="true"
         >
           {HANDLE_DIRECTIONS.map((handle) => (

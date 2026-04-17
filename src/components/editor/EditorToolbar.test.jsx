@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EditorToolbar } from './EditorToolbar'
 
 function createToolbarProps(overrides = {}) {
@@ -15,7 +15,7 @@ function createToolbarProps(overrides = {}) {
     hasActiveRectSelection: false,
     canUndo: true,
     canRedo: false,
-    toolPanelError: { message: '', isVisible: false, isFading: false },
+    toolPanelError: { message: '', isRendered: false, isVisible: false, isFading: false },
     globalColors: { foreground: '#111111', background: '#ffffff' },
     onActivateTool: vi.fn(),
     onResetViewport: vi.fn(),
@@ -37,6 +37,10 @@ function createToolbarProps(overrides = {}) {
 }
 
 describe('EditorToolbar', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
   it('renders tool controls and invokes key callbacks', () => {
     const props = createToolbarProps()
 
@@ -86,5 +90,67 @@ describe('EditorToolbar', () => {
 
     expect(props.onActivateTool).toHaveBeenCalledWith('rectSelect')
     expect(screen.getByRole('button', { name: 'Sel to Layer' })).toBeEnabled()
+  })
+
+  it('renders the transient tool-panel error only while it is active or fading', () => {
+    const { rerender } = render(
+      <EditorToolbar
+        {...createToolbarProps({
+          toolPanelError: {
+            message: '',
+            isRendered: false,
+            isVisible: false,
+            isFading: false,
+          },
+        })}
+      />,
+    )
+
+    expect(screen.queryByRole('status')).toBeNull()
+
+    rerender(
+      <EditorToolbar
+        {...createToolbarProps({
+          toolPanelError: {
+            message: 'Test error',
+            isRendered: true,
+            isVisible: true,
+            isFading: false,
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveClass('tool-panel-error', 'visible')
+
+    rerender(
+      <EditorToolbar
+        {...createToolbarProps({
+          toolPanelError: {
+            message: 'Test error',
+            isRendered: true,
+            isVisible: false,
+            isFading: true,
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveClass('tool-panel-error', 'fading')
+
+    rerender(
+      <EditorToolbar
+        {...createToolbarProps({
+          toolPanelError: {
+            message: '',
+            isRendered: false,
+            isVisible: false,
+            isFading: false,
+          },
+        })}
+      />,
+    )
+
+    expect(screen.queryByRole('status')).toBeNull()
   })
 })

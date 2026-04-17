@@ -200,13 +200,15 @@ export function EditorToolbar({
         onActivateTool={onActivateTool}
         onResetViewport={onResetViewport}
       />
-      <div
-        className={`tool-panel-error${toolPanelError.isVisible ? ' visible' : ''}${toolPanelError.isFading ? ' fading' : ''}`}
-        role="status"
-        aria-live="polite"
-      >
-        {toolPanelError.message}
-      </div>
+      {toolPanelError.isRendered && (
+        <div
+          className={`tool-panel-error${toolPanelError.isVisible ? ' visible' : ''}${toolPanelError.isFading ? ' fading' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {toolPanelError.message}
+        </div>
+      )}
       <div className="toolbar-actions">
         {(currentTool === 'pen' || currentTool === 'eraser') && (
           <BrushControl

@@ -153,6 +153,21 @@ export function createFloatingSelection(layer, sourceCanvas, selection, mode, re
   }
 }
 
+export function getFloatingSelectionSourceOffset(layer, floatingSelection) {
+  if (!layer || !floatingSelection) {
+    return null
+  }
+
+  const layerTopLeft = getLayerTopLeft(layer)
+  const scaleX = Math.max(Math.abs(floatingSelection.scaleX) || 0, Number.EPSILON)
+  const scaleY = Math.max(Math.abs(floatingSelection.scaleY) || 0, Number.EPSILON)
+
+  return {
+    x: (floatingSelection.x - layerTopLeft.x) / scaleX,
+    y: (floatingSelection.y - layerTopLeft.y) / scaleY,
+  }
+}
+
 export function renderLassoSelection(context, selection) {
   if (!context || !selection?.points?.length) {
     return
