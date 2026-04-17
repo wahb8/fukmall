@@ -731,28 +731,14 @@ function finalizeLayoutLine(characters, fallbackStyle, context, metricsCache) {
   }
 }
 
-function splitTokenToFitWidth(token, maxWidth) {
-  const fragments = []
-  let currentCharacters = []
+function trimTrailingWhitespaceCharacters(characters) {
+  const lineCharacters = Array.isArray(characters) ? [...characters] : []
 
-  for (const character of token.characters) {
-    const nextCharacters = [...currentCharacters, character]
-    const nextWidth = getCharacterSequenceWidth(nextCharacters)
-
-    if (currentCharacters.length > 0 && nextWidth > maxWidth) {
-      fragments.push(createTokenFromCharacters(currentCharacters))
-      currentCharacters = [character]
-      continue
-    }
-
-    currentCharacters = nextCharacters
+  while (lineCharacters.length > 0 && /\s/.test(lineCharacters.at(-1)?.char ?? '')) {
+    lineCharacters.pop()
   }
 
-  if (currentCharacters.length > 0) {
-    fragments.push(createTokenFromCharacters(currentCharacters))
-  }
-
-  return fragments
+  return lineCharacters
 }
 
 function layoutParagraphTokens(tokens, maxWidth, fallbackStyle, context, metricsCache) {
@@ -767,8 +753,15 @@ function layoutParagraphTokens(tokens, maxWidth, fallbackStyle, context, metrics
   const lines = []
   let currentCharacters = []
 
-  function pushCurrentLine() {
-    lines.push(finalizeLayoutLine(currentCharacters, fallbackStyle, context, metricsCache))
+  function pushCurrentLine(trimTrailingWhitespace = false) {
+    lines.push(finalizeLayoutLine(
+      trimTrailingWhitespace
+        ? trimTrailingWhitespaceCharacters(currentCharacters)
+        : currentCharacters,
+      fallbackStyle,
+      context,
+      metricsCache,
+    ))
     currentCharacters = []
   }
 
@@ -781,27 +774,16 @@ function layoutParagraphTokens(tokens, maxWidth, fallbackStyle, context, metrics
     const nextWidth = getCharacterSequenceWidth(nextCharacters)
 
     if (token.type === 'word' && currentCharacters.length > 0 && nextWidth > maxWidth) {
-      pushCurrentLine()
+      pushCurrentLine(true)
     }
 
     if (token.width > maxWidth) {
-      const fragments = splitTokenToFitWidth(token, maxWidth)
-
-      for (const fragment of fragments) {
-        const candidateCharacters = [...currentCharacters, ...fragment.characters]
-        const candidateWidth = getCharacterSequenceWidth(candidateCharacters)
-
-        if (currentCharacters.length > 0 && candidateWidth > maxWidth) {
-          pushCurrentLine()
-        }
-
-        currentCharacters = [...currentCharacters, ...fragment.characters]
-
-        if (getCharacterSequenceWidth(currentCharacters) >= maxWidth) {
-          pushCurrentLine()
-        }
+      if (currentCharacters.length > 0) {
+        pushCurrentLine(true)
       }
 
+      currentCharacters = [...token.characters]
+      pushCurrentLine()
       continue
     }
 
@@ -850,7 +832,7 @@ function createTextLayout(layer) {
     Math.max(largestOverflow, Math.max(0, (line.visualRight ?? line.width) - line.width))
   ), 0)
   const measuredContentWidth = mode === 'box'
-    ? Math.max(maxWidth ?? measuredLineWidth, 1)
+    ? Math.max(maxWidth ?? 0, measuredLineWidth, 1)
     : measuredLineWidth
   const measuredHeight = lines.reduce((totalHeight, line) => totalHeight + line.lineHeight, 0)
   const paddingLeft = Math.ceil(
@@ -1108,20 +1090,47 @@ function preservePointTextAnchor(previousLayer, nextLayer) {
 }
 
 export function syncTextLayerLayout(layer, previousLayer = null) {
-  const measurement = measureTextLayer(layer)
   const preserveExactJsonBoxSize = layer.mode === 'box' && layer.preserveExactJsonBoxSize === true
+  let measurement = measureTextLayer(layer)
   const requestedBoxWidth = Math.max(Number(layer.boxWidth ?? layer.width ?? measurement.width) || 0, 1)
   const requestedBoxHeight = Math.max(Number(layer.boxHeight ?? layer.height ?? measurement.height) || 0, 1)
-  const normalizedBoxWidth = layer.mode === 'box'
-    ? preserveExactJsonBoxSize
-      ? Math.max(requestedBoxWidth, measurement.width, 1)
-      : Math.max(layer.boxWidth ?? measurement.width, measurement.width, 1)
-    : null
-  const normalizedBoxHeight = layer.mode === 'box'
-    ? preserveExactJsonBoxSize
-      ? Math.max(requestedBoxHeight, measurement.height, 1)
-      : Math.max(layer.boxHeight ?? measurement.height, measurement.height, 1)
-    : null
+  let normalizedBoxWidth = null
+  let normalizedBoxHeight = null
+
+  if (layer.mode === 'box') {
+    let workingLayer = {
+      ...layer,
+      boxWidth: requestedBoxWidth,
+      boxHeight: requestedBoxHeight,
+      width: requestedBoxWidth,
+      height: requestedBoxHeight,
+    }
+
+    for (let iteration = 0; iteration < 3; iteration += 1) {
+      measurement = measureTextLayer(workingLayer)
+      normalizedBoxWidth = preserveExactJsonBoxSize
+        ? Math.max(requestedBoxWidth, measurement.width, 1)
+        : Math.max(requestedBoxWidth, measurement.width, 1)
+      normalizedBoxHeight = preserveExactJsonBoxSize
+        ? Math.max(requestedBoxHeight, measurement.height, 1)
+        : Math.max(requestedBoxHeight, measurement.height, 1)
+
+      if (
+        normalizedBoxWidth === (workingLayer.boxWidth ?? workingLayer.width) &&
+        normalizedBoxHeight === (workingLayer.boxHeight ?? workingLayer.height)
+      ) {
+        break
+      }
+
+      workingLayer = {
+        ...workingLayer,
+        boxWidth: normalizedBoxWidth,
+        boxHeight: normalizedBoxHeight,
+        width: normalizedBoxWidth,
+        height: normalizedBoxHeight,
+      }
+    }
+  }
 
   const nextLayer = {
     ...layer,

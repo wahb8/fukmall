@@ -496,6 +496,29 @@ describe('addLayerPanel helpers', () => {
     expect(layer.height).toBeGreaterThanOrEqual(layer.measuredHeight)
   })
 
+  it('creates JSON text with the same converged layout it would have after a later sync', () => {
+    const layer = createExactTextLayerFromJsonSpec({
+      text: 'I love big mcchicken sandwiches',
+      color: '#123456',
+      bolded: true,
+      font: 'Arial, sans-serif',
+      size: 72,
+      alignment: 'left',
+      x: 320,
+      y: 640,
+      width: 140,
+      height: 72,
+      addShadow: false,
+      layerPlacement: 0,
+    })
+    const syncedAgain = syncTextLayerLayout(layer, layer)
+
+    expect(layer.width).toBe(syncedAgain.width)
+    expect(layer.height).toBe(syncedAgain.height)
+    expect(layer.measuredWidth).toBe(syncedAgain.measuredWidth)
+    expect(layer.measuredHeight).toBe(syncedAgain.measuredHeight)
+  })
+
   it('keeps already-safe JSON text sizes exact on initial creation', () => {
     const layer = createExactTextLayerFromJsonSpec({
       text: 'Hello world',

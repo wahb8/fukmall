@@ -27,7 +27,7 @@ describe('text layer helpers', () => {
     const measurement = measureTextLayer(layer)
 
     expect(measurement.lines.length).toBeGreaterThan(1)
-    expect(measurement.width).toBe(60)
+    expect(measurement.width).toBe(126)
   })
 
   it('preserves point-text horizontal anchor across alignment changes', () => {
