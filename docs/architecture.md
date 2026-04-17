@@ -31,6 +31,8 @@ responsive without committing every intermediate step into React history.
 - layer selection, move, resize, and snapping behavior
 - import/export and project-file flows
 - theme state, current-document autosave, and unsaved-change tracking
+- the shared validated image-import path, including trim-on-import preference wiring and import failure surfacing
+- the selection-overlay render path that keeps editor chrome separate from artwork opacity
 
 Several stable UI sections have been extracted into presentational components, but `App.jsx`
 remains the control center for editor orchestration.

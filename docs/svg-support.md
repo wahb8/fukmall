@@ -55,6 +55,7 @@ When an SVG is imported:
 3. the layer is tagged with `sourceKind: 'svg'`
 4. intrinsic dimensions are resolved from the SVG when possible
 5. the layer is created with `scaleX: 1` and `scaleY: 1`
+6. raster-only transparent-edge trimming is skipped, so the SVG remains vector-backed for normal display
 
 Dimension detection currently tries:
 

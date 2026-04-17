@@ -79,6 +79,8 @@ This document describes what each tracked file in the repo currently does.
 - now delegates several stable render sections into `src/components/editor/`
 - creates the default document, including the full-canvas white background layer used for new files
 - no longer exposes group layers in the seeded document or inspector UI
+- contains the unified validated image import path used by direct imports, external desktop drops, and asset-library canvas drops
+- contains the trim-transparent-imports runtime preference, persists it separately in `localStorage`, and applies it only to eligible raster imports
 - contains the image import sizing and placement logic for both direct imports and asset-library drops
 - contains text-shadow creation and shadow-property editing for text layers
 - contains generic linked-layer creation/unlinking behavior and the coupled move/resize handling for linked pairs
@@ -95,6 +97,7 @@ This document describes what each tracked file in the repo currently does.
 - contains a currently unwired prompt-style input below the canvas
 - contains move interaction behavior such as snapping and temporary Shift axis locking
 - contains the selected-frame move behavior so already-selected layers can be dragged from their transformed selection frame without another opaque-pixel hit
+- renders selected-layer chrome outside the per-layer artwork subtree so selection frames and resize handles do not inherit layer artwork opacity
 - contains the shared topmost-layer resolver used by single-click selection and as the fallback path for text double-click edit entry after selected-text priority checks
 - contains pixel-aware layer picking for raster, image, and text layers, including the current click-through and hit-padding behavior
 - contains the outside-canvas deselect behavior that allows an explicit empty selection on pointer down outside the stage
@@ -121,6 +124,8 @@ This document describes what each tracked file in the repo currently does.
 - normalizes new-file modal inputs
 - sanitizes save/export filename bases
 - contains imported-image placement helpers
+- contains import-path guards for deciding when transparent-edge trimming is allowed
+- contains validated imported-image layer creation so bad sources or dimensions are rejected before a layer is committed
 - contains bitmap-patch helpers used when converting editable layers into bitmap-backed variants
 
 ### `src/editor/addLayerPanelHelpers.js`
@@ -152,6 +157,7 @@ This document describes what each tracked file in the repo currently does.
 - presentational file-menu dropdown
 - renders the existing new/open/save/export actions through props
 - also renders the top-level light/dark UI theme toggle next to the file button
+- includes the `Trim Transparent Imports` toggle used by the shared raster import flow
 
 ### `src/components/editor/AssetLibraryPanel.jsx`
 
@@ -218,6 +224,16 @@ This document describes what each tracked file in the repo currently does.
 - verifies both `Create From JSON` and `Apply JSON -> Create Layer` runtime paths
 - verifies inspector-preserving selection behavior inside the right-side inspector panel
 
+### `src/App.imageImport.test.jsx`
+
+- App-level regression coverage for direct import, external desktop drop, asset-library drop, SVG import, and failed image import handling
+- verifies the shared validated import path and trim-aware image-layer creation behavior
+
+### `src/App.resizeHandles.test.jsx`
+
+- App-level regression coverage for selected-frame interaction and selection chrome structure
+- verifies that the visible single-layer selection frame is not rendered inside the opacity-applied artwork subtree
+
 ### `src/App.css`
 
 - primary styling file for the entire editor
@@ -229,6 +245,7 @@ This document describes what each tracked file in the repo currently does.
 - controls the masonry-like asset card layout and the asset delete button placement
 - styles the file menu dropdown, active asset-drop canvas state, shared multi-selection frame, inline text editor, and the prompt shell below the canvas
 - makes the single-layer selection frame interactive so it can act as the move region for already-selected layers
+- styles the selection overlay path so visible selection chrome stays independent from layer artwork opacity
 - styles the segmented alignment control and linked-layer controls in the inspector
 
 ## Hooks
@@ -267,6 +284,7 @@ This document describes what each tracked file in the repo currently does.
 - can rasterize image sources to an explicit target canvas size when the editor needs a higher-resolution working surface
 - clones/crops canvases
 - serializes canvases to data URLs
+- contains the transparent-edge trim helpers used by import flows, including alpha-bounds detection and padded canvas cropping
 - applies erase/mask composition
 - contains the linear gradient bitmap helper used by the gradient tool
 - contains the contiguous flood-fill helper used by the bucket tool

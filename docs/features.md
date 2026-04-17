@@ -118,6 +118,7 @@ loaded by `src/App.jsx`.
 - inspector edits operate on the selected layer
 - resize handles appear on selection
 - once a layer is already selected, dragging from anywhere inside its transformed selection frame starts move immediately, even over transparent pixels
+- selection bounds lines, handle circles, and the rest of the selected-layer chrome are editor-only overlay UI and stay visually independent from the selected layer's own `opacity`
 - moving a layer while holding `Shift` now constrains movement to either horizontal or vertical after drag direction is detected
 - as long as the document has layers, the editor now keeps at least one layer selected
 - clicking outside the canvas/stage explicitly clears selection, even though normal in-canvas selection behavior still prefers keeping a valid selection during editing
@@ -262,12 +263,13 @@ The left sidebar functions as a small asset library.
 
 It supports:
 
-- importing local PNG, JPG, SVG, and WEBP files
+- importing local PNG, JPG, JPEG, SVG, and WEBP files
 - storing imported assets in component state
 - dragging assets from the sidebar onto the canvas
 - creating image layers from dropped assets
 - removing imported assets through a small delete button on each asset card
 - showing a highlighted canvas drop state while an asset is dragged over the stage
+- asset-library drops now reuse the same validated image-layer creation rules as direct file import
 
 Layout behavior:
 
@@ -382,10 +384,22 @@ Image creation behavior:
 - if `width` and `height` are both omitted, the app tries to load intrinsic image dimensions
 - if only one dimension is omitted, the app currently uses the intrinsic value for the missing side
 - failed image loads show an inline transient error and skip only that image layer
+- imported-image validation now rejects empty `src` values and non-finite or non-positive resolved dimensions before a layer is committed
 - explicit `x` / `y` values bypass the normal centered-import placement path and are written directly to the created image layer's stored `x` / `y`
 - explicit `width` / `height` values are written directly to the created image layer's stored `width` / `height`
 - `scaleX` and `scaleY` remain separate transform fields; explicit `width` / `height` are not converted into post-scale display size
 - the normal centered import placement helper is only reused when image `x` and/or `y` is omitted
+
+Direct imported image files and dropped asset-library images now also support optional transparent-edge trimming:
+
+- the feature is controlled by `Trim Transparent Imports` in the `File` menu
+- default is `On`
+- when enabled, eligible raster imports are decoded, scanned for visible alpha bounds, padded slightly, and cropped before the image layer is created
+- trimmed imports still preserve intrinsic visible-art dimensions by default and still use the same centered/clamped placement rules
+- SVG-backed images are excluded from this path and stay vector-backed for normal display
+- JPEG imports effectively no-op because they are treated as opaque sources for this feature
+- if trimming finds no meaningful outer transparent border, the original image source is kept unchanged
+- if a raster import decodes but resolves to an empty transparent result, the app keeps the original image source instead of creating a broken zero-size layer
 
 ### Layer Placement And History
 
@@ -413,8 +427,13 @@ Current behavior:
 - dragging a PNG, JPG, JPEG, WEBP, or SVG file over the app shows a stage-centered import overlay
 - dropping a supported image file imports it through the same direct image import flow used by the normal file picker
 - the browser's default file-open navigation is prevented for supported image drops
-- internal asset-library drag/drop remains separate and continues to use the existing asset MIME path
+- internal asset-library drag/drop still uses the asset MIME path for drag transport, but layer creation now goes through the same validated image import helper path
 - unsupported file types are ignored and do not show the image import overlay
+
+Import failure handling is now intentionally defensive:
+
+- unreadable or invalid image files show the existing inline transient error instead of crashing render
+- autosave failures triggered immediately after import are also surfaced through the inline transient error state instead of blank-screening the app
 
 ## Viewport and Navigation
 

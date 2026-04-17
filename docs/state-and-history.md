@@ -195,6 +195,7 @@ There are several related selection concepts:
 - single and multi-selection stored in the document
 - when layers exist, the app now tries to keep a valid selected layer rather than allowing the editor to drift into an empty-selection state
 - project-file normalization also repairs invalid saved selection IDs by falling back to the last remaining layer when possible
+- visible selection frames, bounds lines, and resize handles are transient editor overlay chrome rather than persistent layer content
 
 ### Linked Layer State
 
@@ -256,5 +257,7 @@ Separate local UI persistence also exists outside the project-file format:
 
 - the current working document is also autosaved in `localStorage` under `fukmall.current-document`
 - UI theme is stored in `localStorage` under `fukmall.theme`
+- the raster-import trim preference is stored separately in `localStorage` under `fukmall.trim-transparent-imports`
 - foreground/background colors are stored separately from the document model
 - opening a project should not overwrite the current chrome theme
+- autosave failures are handled as transient runtime UI errors rather than mutating the document model or crashing the app

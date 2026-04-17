@@ -5,9 +5,8 @@
 At the time this documentation was written:
 
 - `npm run build` succeeds
-- `npm run lint` reports both warnings and errors
+- `npm run lint` reports warnings but no current errors
 - the warnings are React hook dependency warnings in `src/App.jsx`
-- the current lint errors are test-file unused-variable issues in `src/App.resizeHandles.test.jsx`
 - `npm run test:run` is currently not green; there are known failing tests in `textLayer`, `rectSelectTool`, and `EditorToolbar`
 
 ## Important Constraints
@@ -234,6 +233,7 @@ That means:
 
 - tool switches should not leave the document with no selected layer
 - once a layer is selected in select mode, move-start should come from the visible transformed selection frame rather than requiring another opaque-pixel hit
+- the visible selected-layer frame and resize handles should stay editor-only chrome rather than inheriting the selected layer's own artwork opacity
 - lasso startup should preserve the current selected target layer
 - opening or creating a new file should rebuild selection from the loaded document state
 - invalid saved selection IDs should be treated as recoverable and normalized to a valid fallback layer when possible

@@ -250,6 +250,7 @@ Selected layers use:
 - teal borders
 - shared selection frames
 - resize handles with white fill and teal outline
+- selection chrome is rendered as editor UI, not artwork, so lowering a layer's opacity should not fade the visible bounds or handle styling
 
 Passive selections use dashed outlines.
 

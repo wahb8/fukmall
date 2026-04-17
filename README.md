@@ -2,6 +2,12 @@
 
 Fukmall is a client-side React + Vite layered composition editor prototype. It behaves like a compact design tool for a mobile-sized document, with layered artwork editing, text editing, raster painting, erasing, bucket fill, gradients, lasso selection, snapping, asset import, project-file save/open, and flattened PNG/JPEG export.
 
+Current image import behavior includes:
+
+- validated PNG, JPG, JPEG, WEBP, and SVG import from the file picker, external desktop drop, and asset-library canvas drop
+- default-on transparent-edge trimming for eligible raster imports, with a toggle in the `File` menu
+- SVG-backed imports that stay vector-backed for normal display instead of being silently rasterized
+
 ## Getting Started
 
 ```bash
@@ -62,3 +68,4 @@ Start with:
 - On startup, the app first tries to restore the last current document from `localStorage`.
 - If no saved current document exists, it falls back to the seeded demo composition.
 - The current document autosaves locally, while explicit `.kryop` project files remain the portable save/open format.
+- If local autosave fails, the app now shows an inline transient error instead of throwing and blank-screening the editor.

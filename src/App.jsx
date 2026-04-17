@@ -58,6 +58,7 @@ import {
   shouldTrimTransparentImport,
 } from './editor/documentHelpers'
 import { getEditorIcons } from './editor/iconAssets'
+import { useCoalescedHistorySession } from './hooks/useCoalescedHistorySession'
 import { useHistory } from './hooks/useHistory'
 import { eraseDot, eraseStroke, paintMaskDot, paintMaskStroke } from './lib/eraserTool'
 import {
@@ -190,6 +191,7 @@ const PIXEL_HIT_PADDING = 4
 const VISIBLE_PIXEL_ALPHA_THRESHOLD = 8
 const THEME_STORAGE_KEY = 'fukmall.theme'
 const TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY = 'fukmall.trim-transparent-imports'
+const INSPECTOR_ADJUSTMENT_IDLE_MS = 450
 
 function createStartupDocument() {
   return loadCurrentDocumentFromStorage()
@@ -980,17 +982,44 @@ function App() {
   const fontSizeRepeatIntervalRef = useRef(null)
   const {
     present: documentState,
-    commit,
+    commit: commitHistory,
     setTransient,
     commitTransientChange,
-    undo,
-    redo,
-    reset,
+    undo: undoHistory,
+    redo: redoHistory,
+    reset: resetHistory,
     canUndo,
     canRedo,
   } = useHistory(createStartupDocument())
   const documentStateRef = useRef(documentState)
   documentStateRef.current = documentState
+  const {
+    applyCoalescedUpdate,
+    finishSession: finishCoalescedInspectorAdjustment,
+    hasActiveSession,
+  } = useCoalescedHistorySession({
+    commitTransientChange,
+    inactivityTimeoutMs: INSPECTOR_ADJUSTMENT_IDLE_MS,
+  })
+  const commit = useCallback((updater) => {
+    finishCoalescedInspectorAdjustment()
+    commitHistory((currentDocument) => updater(currentDocument))
+  }, [commitHistory, finishCoalescedInspectorAdjustment])
+  const applyDocumentChange = useCallback((updater) => {
+    commit((currentDocument) => updater(currentDocument))
+  }, [commit])
+  const undo = useCallback(() => {
+    finishCoalescedInspectorAdjustment()
+    undoHistory()
+  }, [finishCoalescedInspectorAdjustment, undoHistory])
+  const redo = useCallback(() => {
+    finishCoalescedInspectorAdjustment()
+    redoHistory()
+  }, [finishCoalescedInspectorAdjustment, redoHistory])
+  const reset = useCallback((nextState) => {
+    finishCoalescedInspectorAdjustment()
+    resetHistory(nextState)
+  }, [finishCoalescedInspectorAdjustment, resetHistory])
   const [savedDocumentSignature, setSavedDocumentSignature] = useState(() => (
     serializeProjectFile(documentState)
   ))
@@ -1085,6 +1114,7 @@ function App() {
   )
   const selectionBounds = getSelectionBoundsFromLayers(selectedLayers)
   const hasMultiSelection = selectedLayerIds.length > 1
+  const hasActiveInspectorAdjustment = hasActiveSession()
   const currentTool = activeTool
   const activeBrushTool = currentTool === 'eraser' ? 'eraser' : 'pen'
   const hasActiveLassoSelection = Boolean(lassoSelection?.isClosed)
@@ -1255,7 +1285,7 @@ function App() {
     }, TOOL_PANEL_ERROR_DURATION_MS)
   }, [clearToolPanelErrorTimers])
 
-  const clearFontSizeRepeatTimers = useCallback(() => {
+  const clearFontSizeRepeatTimers = useCallback((finalizeAdjustment = true) => {
     if (fontSizeRepeatTimeoutRef.current) {
       window.clearTimeout(fontSizeRepeatTimeoutRef.current)
       fontSizeRepeatTimeoutRef.current = null
@@ -1265,13 +1295,17 @@ function App() {
       window.clearInterval(fontSizeRepeatIntervalRef.current)
       fontSizeRepeatIntervalRef.current = null
     }
-  }, [])
+
+    if (finalizeAdjustment) {
+      finishCoalescedInspectorAdjustment()
+    }
+  }, [finishCoalescedInspectorAdjustment])
 
   useEffect(() => (
     () => {
       clearToolPanelErrorTimers()
       clearAddLayerPanelStatusTimer()
-      clearFontSizeRepeatTimers()
+      clearFontSizeRepeatTimers(false)
     }
   ), [clearAddLayerPanelStatusTimer, clearFontSizeRepeatTimers, clearToolPanelErrorTimers])
 
@@ -3282,8 +3316,46 @@ function App() {
     }
   }, [setTransient])
 
-  function applyDocumentChange(updater) {
-    commit((currentDocument) => updater(currentDocument))
+  function applyLayerDocumentUpdate(currentDocument, layerId, updater) {
+    const sourceLayer = findLayer(currentDocument, layerId)
+
+    if (!sourceLayer) {
+      return currentDocument
+    }
+
+    const nextDocument = updateLayer(currentDocument, layerId, updater)
+    const nextLayer = findLayer(nextDocument, layerId)
+
+    if (nextLayer?.type === 'text' && !nextLayer.isTextShadow) {
+      return syncShadowLayerForTextSource(nextDocument, layerId)
+    }
+
+    return nextDocument
+  }
+
+  function applyCoalescedLayerAdjustment({
+    layerId,
+    propertyKey,
+    controlSource = 'inspector-input',
+    startValue,
+    nextValue,
+    updater,
+    useInactivityTimeout = true,
+  }) {
+    if (!layerId) {
+      return
+    }
+
+    applyCoalescedUpdate({
+      key: `layer:${layerId}:property:${propertyKey}:source:${controlSource}`,
+      previousState: documentStateRef.current,
+      startValue,
+      nextValue,
+      applyUpdate: () => {
+        setTransient((currentDocument) => applyLayerDocumentUpdate(currentDocument, layerId, updater))
+      },
+      useInactivityTimeout,
+    })
   }
 
   function applyRasterizedLayerUpdate(currentDocument, layerId, bitmap, overrides = {}) {
@@ -3449,17 +3521,20 @@ function App() {
   }
 
   const selectDocumentLayer = useCallback((layerId) => {
+    finishCoalescedInspectorAdjustment()
     setTransient((currentDocument) => {
       const nextLayerId = layerId ?? getFallbackSelectedLayerId(currentDocument, currentDocument.selectedLayerId)
       return selectSingleLayer(currentDocument, nextLayerId)
     })
-  }, [setTransient])
+  }, [finishCoalescedInspectorAdjustment, setTransient])
 
   const toggleDocumentLayerSelection = useCallback((layerId) => {
+    finishCoalescedInspectorAdjustment()
     setTransient((currentDocument) => toggleLayerInSelection(currentDocument, layerId))
-  }, [setTransient])
+  }, [finishCoalescedInspectorAdjustment, setTransient])
 
   const clearDocumentSelection = useCallback(() => {
+    finishCoalescedInspectorAdjustment()
     setTransient((currentDocument) => {
       const fallbackSelectedLayerId = getFallbackSelectedLayerId(
         currentDocument,
@@ -3472,11 +3547,12 @@ function App() {
 
       return selectSingleLayer(currentDocument, fallbackSelectedLayerId)
     })
-  }, [setTransient])
+  }, [finishCoalescedInspectorAdjustment, setTransient])
 
   const clearDocumentSelectionExplicitly = useCallback(() => {
+    finishCoalescedInspectorAdjustment()
     setTransient((currentDocument) => clearSelection(currentDocument))
-  }, [setTransient])
+  }, [finishCoalescedInspectorAdjustment, setTransient])
 
   function addLayer(factory) {
     const nextLayer = factory()
@@ -4290,31 +4366,22 @@ function App() {
       return
     }
 
-    applyDocumentChange((currentDocument) => {
-      const nextDocument = updateLayer(currentDocument, selectedLayer.id, patch)
-
-      if (selectedLayer.type === 'text' && !selectedLayer.isTextShadow) {
-        return syncShadowLayerForTextSource(nextDocument, selectedLayer.id)
-      }
-
-      return nextDocument
-    })
+    applyDocumentChange((currentDocument) => applyLayerDocumentUpdate(currentDocument, selectedLayer.id, patch))
   }
 
   function applyTextLayerUpdate(layerId, updater, applyTransient = false) {
     const runner = applyTransient ? setTransient : applyDocumentChange
 
     runner((currentDocument) => {
-      const nextDocument = updateLayer(currentDocument, layerId, (layer) => (
-        layer.type === 'text' ? updater(layer) : layer
-      ))
-      const nextLayer = findLayer(nextDocument, layerId)
+      const sourceLayer = findLayer(currentDocument, layerId)
 
-      if (nextLayer?.type === 'text' && !nextLayer.isTextShadow) {
-        return syncShadowLayerForTextSource(nextDocument, layerId)
+      if (sourceLayer?.type !== 'text') {
+        return currentDocument
       }
 
-      return nextDocument
+      return applyLayerDocumentUpdate(currentDocument, layerId, (layer) => (
+        layer.type === 'text' ? updater(layer) : layer
+      ))
     })
   }
 
@@ -4439,23 +4506,42 @@ function App() {
   }
 
   function stepTextFontSize(layerId, delta) {
-    setFontSizeInputDraft(null)
-    applyTextStyleChange(layerId, (layer) => {
-      const selection = getEditingTextSelectionRange(layer.id)
-      const currentFontSize = selection
-        ? (getUniformTextStyleValueForRange(layer, selection.start, selection.end, 'fontSize') ?? layer.fontSize)
-        : layer.fontSize
-      const nextFontSize = Math.max(8, Number(currentFontSize) + delta)
+    const layer = findLayer(documentStateRef.current, layerId)
 
-      if (selection) {
-        return applyTextStyleToRange(layer, selection.start, selection.end, {
+    if (!layer || layer.type !== 'text') {
+      return
+    }
+
+    setFontSizeInputDraft(null)
+    const selection = getEditingTextSelectionRange(layerId)
+    const currentFontSize = selection
+      ? (getUniformTextStyleValueForRange(layer, selection.start, selection.end, 'fontSize') ?? layer.fontSize)
+      : layer.fontSize
+    const nextFontSize = Math.max(8, Number(currentFontSize) + delta)
+    const sessionScope = selection ? `${selection.start}-${selection.end}` : 'layer'
+
+    applyCoalescedLayerAdjustment({
+      layerId,
+      propertyKey: `fontSize:${sessionScope}`,
+      controlSource: 'font-size-stepper',
+      startValue: Number(currentFontSize),
+      nextValue: nextFontSize,
+      useInactivityTimeout: false,
+      updater: (currentLayer) => {
+        if (currentLayer.type !== 'text') {
+          return currentLayer
+        }
+
+        if (selection) {
+          return applyTextStyleToRange(currentLayer, selection.start, selection.end, {
+            fontSize: nextFontSize,
+          })
+        }
+
+        return updateTextStyle(currentLayer, {
           fontSize: nextFontSize,
         })
-      }
-
-      return updateTextStyle(layer, {
-        fontSize: nextFontSize,
-      })
+      },
     })
   }
 
@@ -6219,43 +6305,81 @@ function App() {
     const resolvedValue = minimum === null ? numericValue : Math.max(minimum, numericValue)
 
     if (selectedLayer.type === 'image' && key === 'cornerRadius') {
-      updateSelectedLayer({
-        cornerRadius: clampLayerCornerRadius(
-          selectedLayer.width,
-          selectedLayer.height,
-          resolvedValue,
-        ),
+      const nextCornerRadius = clampLayerCornerRadius(
+        selectedLayer.width,
+        selectedLayer.height,
+        resolvedValue,
+      )
+
+      applyCoalescedLayerAdjustment({
+        layerId: selectedLayer.id,
+        propertyKey: 'cornerRadius',
+        startValue: selectedLayer.cornerRadius ?? 0,
+        nextValue: nextCornerRadius,
+        updater: {
+          cornerRadius: nextCornerRadius,
+        },
       })
       return
     }
 
     if (selectedLayer.type === 'text') {
       if (key === 'fontSize') {
-        applyTextLayerUpdate(selectedLayer.id, (layer) => updateTextStyle(layer, {
-          fontSize: resolvedValue,
-        }))
+        applyCoalescedLayerAdjustment({
+          layerId: selectedLayer.id,
+          propertyKey: 'fontSize',
+          startValue: selectedLayer.fontSize,
+          nextValue: resolvedValue,
+          updater: (layer) => (
+            layer.type === 'text'
+              ? updateTextStyle(layer, {
+                fontSize: resolvedValue,
+              })
+              : layer
+          ),
+        })
         return
       }
 
       if (key === 'width') {
-        applyTextLayerUpdate(
-          selectedLayer.id,
-          (layer) => applyInspectorSizeToLayer(layer, { width: resolvedValue }),
-        )
+        applyCoalescedLayerAdjustment({
+          layerId: selectedLayer.id,
+          propertyKey: 'width',
+          startValue: selectedLayer.width,
+          nextValue: resolvedValue,
+          updater: (layer) => (
+            layer.type === 'text'
+              ? applyInspectorSizeToLayer(layer, { width: resolvedValue })
+              : layer
+          ),
+        })
         return
       }
 
       if (key === 'height') {
-        applyTextLayerUpdate(
-          selectedLayer.id,
-          (layer) => applyInspectorSizeToLayer(layer, { height: resolvedValue }),
-        )
+        applyCoalescedLayerAdjustment({
+          layerId: selectedLayer.id,
+          propertyKey: 'height',
+          startValue: selectedLayer.height,
+          nextValue: resolvedValue,
+          updater: (layer) => (
+            layer.type === 'text'
+              ? applyInspectorSizeToLayer(layer, { height: resolvedValue })
+              : layer
+          ),
+        })
         return
       }
     }
 
-    updateSelectedLayer({
-      [key]: resolvedValue,
+    applyCoalescedLayerAdjustment({
+      layerId: selectedLayer.id,
+      propertyKey: key,
+      startValue: selectedLayer[key],
+      nextValue: resolvedValue,
+      updater: {
+        [key]: resolvedValue,
+      },
     })
   }
 
@@ -6851,7 +6975,7 @@ function App() {
           hasFloatingSelection={hasFloatingSelection}
           hasActiveLassoSelection={hasActiveLassoSelection}
           hasActiveRectSelection={hasActiveRectSelection}
-          canUndo={canUndo}
+          canUndo={canUndo || hasActiveInspectorAdjustment}
           canRedo={canRedo}
           toolPanelError={toolPanelError}
           globalColors={globalColors}
@@ -7077,6 +7201,7 @@ function App() {
                               onBlur={(event) => {
                                 event.stopPropagation()
                                 commitFontSizeInputDraft(selectedLayer.id)
+                                finishCoalescedInspectorAdjustment()
                               }}
                               onKeyDown={(event) => {
                                 event.stopPropagation()
@@ -7205,11 +7330,35 @@ function App() {
                             value={selectedLayer.letterSpacing ?? 0}
                             data-text-style-control="true"
                             onPointerDown={markTextStyleControlInteraction}
-                            onChange={(event) =>
-                              applyTextStyleChange(selectedLayer.id, {
-                                letterSpacing: Number(event.target.value) || 0,
+                            onChange={(event) => {
+                              const nextLetterSpacing = Number(event.target.value) || 0
+                              const selection = getEditingTextSelectionRange(selectedLayer.id)
+
+                              applyCoalescedLayerAdjustment({
+                                layerId: selectedLayer.id,
+                                propertyKey: selection
+                                  ? `letterSpacing:${selection.start}-${selection.end}`
+                                  : 'letterSpacing',
+                                startValue: getEditingSelectionStyleValue(selectedLayer, 'letterSpacing') ?? 0,
+                                nextValue: nextLetterSpacing,
+                                updater: (layer) => {
+                                  if (layer.type !== 'text') {
+                                    return layer
+                                  }
+
+                                  if (selection) {
+                                    return applyTextStyleToRange(layer, selection.start, selection.end, {
+                                      letterSpacing: nextLetterSpacing,
+                                    })
+                                  }
+
+                                  return updateTextStyle(layer, {
+                                    letterSpacing: nextLetterSpacing,
+                                  })
+                                },
                               })
-                            }
+                            }}
+                            onBlur={finishCoalescedInspectorAdjustment}
                           />
                         </label>
                         <label className="property-field">
@@ -7221,11 +7370,35 @@ function App() {
                             value={selectedLayer.lineHeight ?? 1.15}
                             data-text-style-control="true"
                             onPointerDown={markTextStyleControlInteraction}
-                            onChange={(event) =>
-                              applyTextStyleChange(selectedLayer.id, {
-                                lineHeight: Math.max(0.5, Number(event.target.value) || 1.15),
+                            onChange={(event) => {
+                              const nextLineHeight = Math.max(0.5, Number(event.target.value) || 1.15)
+                              const selection = getEditingTextSelectionRange(selectedLayer.id)
+
+                              applyCoalescedLayerAdjustment({
+                                layerId: selectedLayer.id,
+                                propertyKey: selection
+                                  ? `lineHeight:${selection.start}-${selection.end}`
+                                  : 'lineHeight',
+                                startValue: getEditingSelectionStyleValue(selectedLayer, 'lineHeight') ?? 1.15,
+                                nextValue: nextLineHeight,
+                                updater: (layer) => {
+                                  if (layer.type !== 'text') {
+                                    return layer
+                                  }
+
+                                  if (selection) {
+                                    return applyTextStyleToRange(layer, selection.start, selection.end, {
+                                      lineHeight: nextLineHeight,
+                                    })
+                                  }
+
+                                  return updateTextStyle(layer, {
+                                    lineHeight: nextLineHeight,
+                                  })
+                                },
                               })
-                            }
+                            }}
+                            onBlur={finishCoalescedInspectorAdjustment}
                           />
                         </label>
                         <label className="property-field">
@@ -7249,13 +7422,20 @@ function App() {
                               <input
                                 type="number"
                                 value={selectedLayerShadow.x - selectedLayer.x}
-                                onChange={(event) =>
-                                  applyDocumentChange((currentDocument) =>
-                                    updateLayer(currentDocument, selectedLayerShadow.id, {
-                                      x: selectedLayer.x + (Number(event.target.value) || 0),
-                                    }),
-                                  )
-                                }
+                                onChange={(event) => {
+                                  const nextOffset = Number(event.target.value) || 0
+
+                                  applyCoalescedLayerAdjustment({
+                                    layerId: selectedLayerShadow.id,
+                                    propertyKey: 'x',
+                                    startValue: selectedLayerShadow.x,
+                                    nextValue: selectedLayer.x + nextOffset,
+                                    updater: {
+                                      x: selectedLayer.x + nextOffset,
+                                    },
+                                  })
+                                }}
+                                onBlur={finishCoalescedInspectorAdjustment}
                               />
                             </label>
                             <label className="property-field">
@@ -7263,13 +7443,20 @@ function App() {
                               <input
                                 type="number"
                                 value={selectedLayerShadow.y - selectedLayer.y}
-                                onChange={(event) =>
-                                  applyDocumentChange((currentDocument) =>
-                                    updateLayer(currentDocument, selectedLayerShadow.id, {
-                                      y: selectedLayer.y + (Number(event.target.value) || 0),
-                                    }),
-                                  )
-                                }
+                                onChange={(event) => {
+                                  const nextOffset = Number(event.target.value) || 0
+
+                                  applyCoalescedLayerAdjustment({
+                                    layerId: selectedLayerShadow.id,
+                                    propertyKey: 'y',
+                                    startValue: selectedLayerShadow.y,
+                                    nextValue: selectedLayer.y + nextOffset,
+                                    updater: {
+                                      y: selectedLayer.y + nextOffset,
+                                    },
+                                  })
+                                }}
+                                onBlur={finishCoalescedInspectorAdjustment}
                               />
                             </label>
                             <label className="property-field">
@@ -7280,13 +7467,20 @@ function App() {
                                 max="1"
                                 step="0.05"
                                 value={selectedLayerShadow.opacity}
-                                onChange={(event) =>
-                                  applyDocumentChange((currentDocument) =>
-                                    updateLayer(currentDocument, selectedLayerShadow.id, {
-                                      opacity: Math.max(0, Math.min(1, Number(event.target.value) || 0)),
-                                    }),
-                                  )
-                                }
+                                onChange={(event) => {
+                                  const nextOpacity = Math.max(0, Math.min(1, Number(event.target.value) || 0))
+
+                                  applyCoalescedLayerAdjustment({
+                                    layerId: selectedLayerShadow.id,
+                                    propertyKey: 'opacity',
+                                    startValue: selectedLayerShadow.opacity,
+                                    nextValue: nextOpacity,
+                                    updater: {
+                                      opacity: nextOpacity,
+                                    },
+                                  })
+                                }}
+                                onBlur={finishCoalescedInspectorAdjustment}
                               />
                             </label>
                           </>
@@ -7311,6 +7505,7 @@ function App() {
                         type="number"
                         value={selectedLayer.x}
                         onChange={(event) => handleNumericChange('x', event.target.value)}
+                        onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
                     <label className="property-field">
@@ -7319,6 +7514,7 @@ function App() {
                         type="number"
                         value={selectedLayer.y}
                         onChange={(event) => handleNumericChange('y', event.target.value)}
+                        onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
                     <label className="property-field">
@@ -7330,6 +7526,7 @@ function App() {
                         onChange={(event) =>
                           handleNumericChange('width', event.target.value, MIN_LAYER_WIDTH)
                         }
+                        onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
                     <label className="property-field">
@@ -7341,6 +7538,7 @@ function App() {
                         onChange={(event) =>
                           handleNumericChange('height', event.target.value, MIN_LAYER_HEIGHT)
                         }
+                        onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
                     <label className="property-field">
@@ -7349,6 +7547,7 @@ function App() {
                         type="number"
                         value={selectedLayer.rotation}
                         onChange={(event) => handleNumericChange('rotation', event.target.value)}
+                        onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
                     <label className="property-field">
@@ -7360,6 +7559,7 @@ function App() {
                         step="0.1"
                         value={selectedLayer.opacity}
                         onChange={(event) => handleNumericChange('opacity', event.target.value, 0)}
+                        onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
                     <label className="property-field">
@@ -7370,6 +7570,7 @@ function App() {
                         step="0.1"
                         value={selectedLayer.scaleX}
                         onChange={(event) => handleNumericChange('scaleX', event.target.value, 0.1)}
+                        onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
                     <label className="property-field">
@@ -7380,6 +7581,7 @@ function App() {
                         step="0.1"
                         value={selectedLayer.scaleY}
                         onChange={(event) => handleNumericChange('scaleY', event.target.value, 0.1)}
+                        onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
                     <label className="property-field full-width">
@@ -7437,21 +7639,34 @@ function App() {
                         {selectedLayer.mode === 'box' && (
                           <label className="property-field">
                             <span>Box Width</span>
-                            <input
-                              type="number"
-                              min={MIN_LAYER_WIDTH}
-                              value={selectedLayer.boxWidth ?? selectedLayer.width}
-                              onChange={(event) =>
-                                applyTextLayerUpdate(
-                                  selectedLayer.id,
-                                  (layer) => resizeBoxText(
-                                    layer,
-                                    Math.max(MIN_LAYER_WIDTH, Number(event.target.value) || layer.width),
-                                    layer.boxHeight ?? layer.height,
-                                  ),
-                                )
-                              }
-                            />
+                          <input
+                            type="number"
+                            min={MIN_LAYER_WIDTH}
+                            value={selectedLayer.boxWidth ?? selectedLayer.width}
+                            onChange={(event) => {
+                              const nextBoxWidth = Math.max(
+                                MIN_LAYER_WIDTH,
+                                Number(event.target.value) || selectedLayer.width,
+                              )
+
+                              applyCoalescedLayerAdjustment({
+                                layerId: selectedLayer.id,
+                                propertyKey: 'boxWidth',
+                                startValue: selectedLayer.boxWidth ?? selectedLayer.width,
+                                nextValue: nextBoxWidth,
+                                updater: (layer) => (
+                                  layer.type === 'text'
+                                    ? resizeBoxText(
+                                      layer,
+                                      nextBoxWidth,
+                                      layer.boxHeight ?? layer.height,
+                                    )
+                                    : layer
+                                ),
+                              })
+                            }}
+                            onBlur={finishCoalescedInspectorAdjustment}
+                          />
                           </label>
                         )}
                       </>
@@ -7474,6 +7689,7 @@ function App() {
                             min="0"
                             value={selectedLayer.radius}
                             onChange={(event) => handleNumericChange('radius', event.target.value, 0)}
+                            onBlur={finishCoalescedInspectorAdjustment}
                           />
                         </label>
                       </>
@@ -7509,6 +7725,7 @@ function App() {
                             max={Math.floor(Math.min(selectedLayer.width, selectedLayer.height) / 2)}
                             value={selectedLayer.cornerRadius ?? 0}
                             onChange={(event) => handleNumericChange('cornerRadius', event.target.value, 0)}
+                            onBlur={finishCoalescedInspectorAdjustment}
                           />
                         </label>
                       </>
