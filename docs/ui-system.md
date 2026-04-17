@@ -182,6 +182,23 @@ The visible row region is intentionally capped to about six normal layer rows, s
 
 Only the layer rows scroll. The footer action stays visible and stationary.
 
+These intentional scroll regions now use scoped native custom scrollbars instead of default browser chrome:
+
+- asset library body
+- Add Layer panel body
+- inspector body
+- layer-list scroller
+
+The scrollbar treatment stays native and CSS-only:
+
+- Firefox uses `scrollbar-width: thin` and `scrollbar-color`
+- Chromium/WebKit browsers use scoped `::-webkit-scrollbar` styling
+- width stays thin and layout-safe
+- tracks remain effectively transparent
+- thumbs stay rounded and minimal
+
+The current color direction is a clean dark neutral scrollbar in light UI and a subtle light-on-dark variant in dark UI.
+
 ## Stage and Canvas
 
 The visible stage is styled as a phone-like artboard container:
@@ -243,6 +260,8 @@ This means the app feels responsive, but it is not currently a motion-heavy inte
 
 Theme switching also benefits from the existing variable-driven transitions on controls and surfaces,
 but it is still a straightforward palette swap rather than a dedicated animated mode change.
+
+Scrollbar colors follow the same theme-variable approach rather than introducing a separate theming system.
 
 ## Cursor System
 

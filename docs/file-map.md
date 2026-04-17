@@ -242,6 +242,8 @@ This document describes what each tracked file in the repo currently does.
 - defines colors, layout, panels, stage, controls, selection frames, responsive behavior, and visual language
 - includes the capped layer-panel scroller so the layer rows scroll internally while the footer action remains fixed
 - defines both the default light-theme CSS variables and the dark-theme overrides applied through `.app-shell[data-theme='dark']`
+- contains the scoped native custom scrollbar styling for `.asset-panel-body`, `.add-layer-panel-body`, `.inspector-panel-body`, and `.layer-list-scroller`
+- keeps scrollbar customization CSS-only through `scrollbar-width` / `scrollbar-color` plus `::-webkit-scrollbar` rules instead of replacing native scrolling
 - styles the new-file and unsaved-changes modal surfaces
 - constrains the asset library panel height and makes the thumbnail region scroll independently from the header
 - constrains the Add Layer panel height and gives it its own internal scroll region below the asset library

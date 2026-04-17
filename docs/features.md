@@ -284,6 +284,17 @@ Layout behavior:
 
 This asset library is session-local. There is no persistence beyond the current page state.
 
+The main scrollable editor side panels now use custom native scrollbar styling instead of default browser scrollbars.
+
+This currently applies to:
+
+- the asset library body
+- the Add Layer panel body
+- the inspector body
+- the layer stack scroller
+
+This is a visual-only CSS change. Scrolling behavior, drag/drop, and panel interactions still use native browser scrolling.
+
 ## Add Layer Panel
 
 Below the asset library, the left sidebar now also includes a manual `Add Layer` panel.
