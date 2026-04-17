@@ -1,4 +1,4 @@
-# Fukmall
+# Fukmall (will proabably change the name later)
 
 Fukmall is a client-side React + Vite layered composition editor prototype. It behaves like a compact design tool for a mobile-sized document, with layered artwork editing, text editing, raster painting, erasing, bucket fill, gradients, lasso selection, snapping, asset import, project-file save/open, and flattened PNG/JPEG export.
 
