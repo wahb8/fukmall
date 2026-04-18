@@ -69,6 +69,11 @@ function coerceNonEmptyStringExact(value) {
   return value.length > 0 ? value : null
 }
 
+function coerceLayerName(value) {
+  const stringValue = coerceOptionalString(value)
+  return stringValue ? stringValue : null
+}
+
 function coerceTextAlignment(value) {
   const stringValue = coerceOptionalString(value)
 
@@ -214,6 +219,7 @@ export function applyInspectorSizeToLayer(layer, sizeInput, minimumSize = {}) {
 export function createTextLayerFromAddSpec(spec) {
   const normalizedSpec = spec ?? {}
   const baseLayer = createTextLayer({
+    ...(normalizedSpec.name ? { name: normalizedSpec.name } : {}),
     ...(Object.prototype.hasOwnProperty.call(normalizedSpec, 'text')
       ? { text: normalizedSpec.text }
       : {}),
@@ -254,6 +260,7 @@ export function createExactTextLayerFromJsonSpec(spec) {
     },
   )
   const seedLayer = createTextLayer({
+    ...(normalizedSpec.name ? { name: normalizedSpec.name } : {}),
     ...(Object.prototype.hasOwnProperty.call(normalizedSpec, 'text')
       ? { text: normalizedSpec.text }
       : {}),
@@ -325,6 +332,7 @@ export async function createImageLayerFromAddSpec(
   )
 
   return createImageLayer({
+    ...(spec.name ? { name: spec.name } : {}),
     x: storedPosition.x,
     y: storedPosition.y,
     width,
@@ -370,6 +378,14 @@ export function normalizeTextLayerSpec(input) {
   }
 
   const nextSpec = {}
+
+  if (hasOwn(input, 'Layer name')) {
+    const name = coerceLayerName(input['Layer name'])
+
+    if (name) {
+      nextSpec.name = name
+    }
+  }
 
   if (hasOwn(input, 'text')) {
     const text = coerceString(input.text)
@@ -476,6 +492,14 @@ export function normalizeJsonTextLayerSpec(input) {
   }
 
   const nextSpec = {}
+
+  if (hasOwn(input, 'Layer name')) {
+    const name = coerceLayerName(input['Layer name'])
+
+    if (name) {
+      nextSpec.name = name
+    }
+  }
 
   if (hasOwn(input, 'text')) {
     const text = coerceString(input.text)
@@ -589,6 +613,14 @@ export function normalizeImageLayerSpec(input) {
   }
 
   nextSpec.src = src
+
+  if (hasOwn(input, 'Layer name')) {
+    const name = coerceLayerName(input['Layer name'])
+
+    if (name) {
+      nextSpec.name = name
+    }
+  }
 
   if (hasOwn(input, 'x')) {
     const x = coerceNumber(input.x)

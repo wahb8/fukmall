@@ -6,6 +6,7 @@ import App from './App'
 const JSON_TEXT_PAYLOAD = `{
   "texts": [
     {
+      "Layer name": "JSON Hero Title",
       "text": "Hello world",
       "color": "#123456",
       "bolded": true,
@@ -47,6 +48,7 @@ describe('App Add Layer JSON flow', () => {
       expect(within(inspectorPanel).getByLabelText('Width')).toHaveValue(500)
       expect(within(inspectorPanel).getByLabelText('Height')).toHaveValue(200)
     })
+    expect(screen.getByDisplayValue('JSON Hero Title')).toBeInTheDocument()
   })
 
   it('preserves the final runtime text layer width and height after Apply JSON then Create Layer', async () => {
@@ -70,6 +72,7 @@ describe('App Add Layer JSON flow', () => {
       expect(within(inspectorPanel).getByLabelText('Width')).toHaveValue(500)
       expect(within(inspectorPanel).getByLabelText('Height')).toHaveValue(200)
     })
+    expect(screen.getByDisplayValue('JSON Hero Title')).toBeInTheDocument()
   })
 
   it('does not clear selection when clicking inside the inspector panel body', async () => {

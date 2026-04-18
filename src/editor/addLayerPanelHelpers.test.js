@@ -23,6 +23,7 @@ describe('addLayerPanel helpers', () => {
   it('parses valid JSON payloads and populates form values from the first specs', () => {
     const parsed = parseAddLayerJson(JSON.stringify({
       texts: [{
+        'Layer name': 'Hero Headline',
         text: 'Hello',
         color: '#111111',
         bolded: true,
@@ -37,6 +38,7 @@ describe('addLayerPanel helpers', () => {
         layerPlacement: '2',
       }],
       images: [{
+        'Layer name': 'Product Photo',
         src: 'https://example.com/image.png',
         x: 100,
         y: '200',
@@ -52,6 +54,7 @@ describe('addLayerPanel helpers', () => {
 
     expect(parsed.error).toBeNull()
     expect(parsed.textSpecs).toEqual([{
+      name: 'Hero Headline',
       text: 'Hello',
       color: '#111111',
       bolded: true,
@@ -66,6 +69,7 @@ describe('addLayerPanel helpers', () => {
       layerPlacement: 2,
     }])
     expect(parsed.imageSpecs).toEqual([{
+      name: 'Product Photo',
       src: 'https://example.com/image.png',
       x: 100,
       y: 200,
@@ -85,6 +89,7 @@ describe('addLayerPanel helpers', () => {
     const jsonPayload = `{
       "texts": [
         {
+          "Layer name": "Headline Layer",
           "text": "Hello world",
           "color": "#123456",
           "bolded": true,
@@ -106,6 +111,7 @@ describe('addLayerPanel helpers', () => {
     const layer = createExactTextLayerFromJsonSpec(parsed.textSpecs[0])
 
     expect(normalizedSpec).toEqual({
+      name: 'Headline Layer',
       text: 'Hello world',
       color: '#123456',
       bolded: true,
@@ -121,6 +127,7 @@ describe('addLayerPanel helpers', () => {
     })
     expect(parsed.error).toBeNull()
     expect(parsed.textSpecs).toEqual([normalizedSpec])
+    expect(layer.name).toBe('Headline Layer')
     expect(layer.text).toBe('Hello world')
     expect(layer.color).toBe('#123456')
     expect(layer.fontFamily).toBe('Arial, sans-serif')
@@ -153,6 +160,7 @@ describe('addLayerPanel helpers', () => {
 
   it('normalizes text specs conservatively and ignores unsupported values', () => {
     expect(normalizeTextLayerSpec({
+      'Layer name': 'Marketing Title',
       text: '',
       color: '#ff0000',
       bolded: false,
@@ -167,6 +175,7 @@ describe('addLayerPanel helpers', () => {
       layerPlacement: '3',
       language: 'ar',
     })).toEqual({
+      name: 'Marketing Title',
       text: '',
       color: '#ff0000',
       bolded: false,
@@ -204,8 +213,42 @@ describe('addLayerPanel helpers', () => {
     })
   })
 
+  it('falls back to existing text naming when JSON Layer name is missing, empty, whitespace-only, or invalid', () => {
+    expect(normalizeJsonTextLayerSpec({
+      text: 'Hello world',
+    })).toEqual({
+      text: 'Hello world',
+    })
+
+    expect(normalizeJsonTextLayerSpec({
+      'Layer name': '',
+      text: 'Hello world',
+    })).toEqual({
+      text: 'Hello world',
+    })
+
+    expect(normalizeJsonTextLayerSpec({
+      'Layer name': '   ',
+      text: 'Hello world',
+    })).toEqual({
+      text: 'Hello world',
+    })
+
+    expect(normalizeJsonTextLayerSpec({
+      'Layer name': 123,
+      text: 'Hello world',
+    })).toEqual({
+      text: 'Hello world',
+    })
+
+    expect(createExactTextLayerFromJsonSpec({
+      text: 'Hello world',
+    }).name).toBe('New Text')
+  })
+
   it('normalizes image specs and rejects missing image sources', () => {
     expect(normalizeImageLayerSpec({
+      'Layer name': 'Promo Image',
       src: ' https://example.com/test.png ',
       x: '12',
       y: 20,
@@ -217,6 +260,7 @@ describe('addLayerPanel helpers', () => {
       scaleY: 'bad',
       layerPlacement: '5',
     })).toEqual({
+      name: 'Promo Image',
       src: 'https://example.com/test.png',
       x: 12,
       y: 20,
@@ -240,6 +284,35 @@ describe('addLayerPanel helpers', () => {
       scaleY: '1',
       layerPlacement: '',
     })).toBeNull()
+  })
+
+  it('falls back to existing image naming when JSON Layer name is missing, empty, whitespace-only, or invalid', () => {
+    expect(normalizeImageLayerSpec({
+      src: 'https://example.com/test.png',
+    })).toEqual({
+      src: 'https://example.com/test.png',
+    })
+
+    expect(normalizeImageLayerSpec({
+      'Layer name': '',
+      src: 'https://example.com/test.png',
+    })).toEqual({
+      src: 'https://example.com/test.png',
+    })
+
+    expect(normalizeImageLayerSpec({
+      'Layer name': '   ',
+      src: 'https://example.com/test.png',
+    })).toEqual({
+      src: 'https://example.com/test.png',
+    })
+
+    expect(normalizeImageLayerSpec({
+      'Layer name': false,
+      src: 'https://example.com/test.png',
+    })).toEqual({
+      src: 'https://example.com/test.png',
+    })
   })
 
   it('keeps explicit image document coordinates instead of centering them', () => {
@@ -352,6 +425,7 @@ describe('addLayerPanel helpers', () => {
   it('creates an image layer with explicit stored width/height and separate scale fields', async () => {
     const layer = await createImageLayerFromAddSpec(
       {
+        name: 'Catalog Image',
         src: 'https://example.com/image.png',
         x: 400,
         y: 1000,
@@ -367,6 +441,7 @@ describe('addLayerPanel helpers', () => {
       },
     )
 
+    expect(layer.name).toBe('Catalog Image')
     expect(layer.x).toBe(400)
     expect(layer.y).toBe(1000)
     expect(layer.width).toBe(400)
@@ -423,6 +498,7 @@ describe('addLayerPanel helpers', () => {
 
   it('creates JSON text layers with exact final fields from the JSON spec', () => {
     const layer = createExactTextLayerFromJsonSpec({
+      name: 'Centered Greeting',
       text: 'Hello',
       x: 400,
       y: 1000,
@@ -435,6 +511,7 @@ describe('addLayerPanel helpers', () => {
       color: '#111111',
     })
 
+    expect(layer.name).toBe('Centered Greeting')
     expect(layer.text).toBe('Hello')
     expect(layer.x).toBe(400)
     expect(layer.y).toBe(1000)
