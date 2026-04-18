@@ -26,7 +26,7 @@ describe('AssetLibraryPanel', () => {
     expect(screen.getByText(/Import PNG, JPG, SVG, or WEBP assets/i)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Import Images' }))
-    fireEvent.change(screen.getByRole('textbox', { hidden: true }), {
+    fireEvent.change(screen.getByLabelText('Import asset library images'), {
       target: { files: [new File(['asset'], 'poster.png', { type: 'image/png' })] },
     })
 
@@ -45,7 +45,7 @@ describe('AssetLibraryPanel', () => {
 
     render(<AssetLibraryPanel {...props} />)
 
-    const posterCard = screen.getByRole('button', { name: /Poster/i })
+    const posterCard = screen.getByRole('button', { name: 'Poster' })
     expect(posterCard.className).toContain('dragging')
 
     fireEvent.dragStart(posterCard)

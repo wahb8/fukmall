@@ -181,10 +181,13 @@ export function remapTextStyleRangesForTextChange(previousText, nextText, styleR
   const previousChangedEnd = previousValue.length - suffixLength
   const nextChangedEnd = nextValue.length - suffixLength
   const lengthDelta = nextChangedEnd - previousChangedEnd
+  const isPureInsertion = previousChangedEnd === prefixLength && nextChangedEnd > prefixLength
   const nextRanges = []
 
   for (const range of normalizedRanges) {
-    if (range.end <= prefixLength) {
+    const insertionTouchesRangeBoundary = isPureInsertion && range.end === prefixLength
+
+    if (range.end < prefixLength || (range.end === prefixLength && !insertionTouchesRangeBoundary)) {
       nextRanges.push(range)
       continue
     }
@@ -206,13 +209,13 @@ export function remapTextStyleRangesForTextChange(previousText, nextText, styleR
       })
     }
 
-    const insertionTouchesRange = (
-      nextChangedEnd > prefixLength &&
-      (
-        (range.start < previousChangedEnd && range.end > prefixLength) ||
-        (previousChangedEnd === prefixLength && range.start < prefixLength && range.end > prefixLength)
+    const insertionTouchesRange = isPureInsertion
+      ? range.start <= prefixLength && range.end >= prefixLength
+      : (
+        nextChangedEnd > prefixLength &&
+        range.start < previousChangedEnd &&
+        range.end > prefixLength
       )
-    )
 
     if (insertionTouchesRange) {
       nextRanges.push({
@@ -249,6 +252,20 @@ export function applyTextStyleToRange(layer, start, end, stylesOrUpdater) {
 
   if (nextStyles && Object.keys(nextStyles).length === 0) {
     return layer
+  }
+
+  if (nextStyles) {
+    return syncTextLayerLayout({
+      ...layer,
+      styleRanges: normalizeTextStyleRanges([
+        ...normalizeTextStyleRanges(layer?.styleRanges, textLength),
+        {
+          start: normalizedStart,
+          end: normalizedEnd,
+          styles: nextStyles,
+        },
+      ], textLength),
+    }, layer)
   }
 
   const nextSegments = getEffectiveTextStyleSegments(layer, [normalizedStart, normalizedEnd]).map((segment) => {
@@ -646,8 +663,9 @@ function createRunsFromCharacters(characters) {
   for (const [index, character] of characters.slice(1).entries()) {
     const actualIndex = index + 1
     const previousCharacter = characters[actualIndex - 1]
+    const isWhitespaceBoundary = /\s/.test(character.char) !== /\s/.test(previousCharacter.char)
 
-    if (getRunStyleKey(character.style) === getRunStyleKey(currentRun.style)) {
+    if (!isWhitespaceBoundary && getRunStyleKey(character.style) === getRunStyleKey(currentRun.style)) {
       currentRun.text += character.char
       currentRun.characters.push(character)
       currentRun.width += previousCharacter.style.letterSpacing + character.width
@@ -1036,12 +1054,17 @@ export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd
 }
 
 function getPointTextAnchorX(layer) {
+  const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
+
+  if (textAlign === 'left') {
+    return (layer.x ?? 0) - POINT_TEXT_HORIZONTAL_PADDING_LEFT
+  }
+
   const layerTopLeft = centerToTopLeft(layer.x, layer.y, layer.width, layer.height)
   const contentWidth = Math.max(
     (layer.width ?? 0) - POINT_TEXT_HORIZONTAL_PADDING_LEFT - POINT_TEXT_HORIZONTAL_PADDING_RIGHT,
     0,
   )
-  const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
 
   if (textAlign === 'center') {
     return layerTopLeft.x + (contentWidth / 2)

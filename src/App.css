@@ -1124,13 +1124,18 @@
   column-gap: 0.8rem;
 }
 
-.asset-card {
+.asset-card-shell {
   position: relative;
+  width: 100%;
+  margin: 0 0 0.8rem;
+  break-inside: avoid;
+}
+
+.asset-card {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
   width: 100%;
-  margin: 0 0 0.8rem;
   padding: 0.7rem;
   padding-bottom: 2.6rem;
   border: 1px solid var(--line);
@@ -1146,8 +1151,12 @@
   border-color: var(--line-strong);
 }
 
-.asset-card.dragging {
+.asset-card-shell.dragging {
   opacity: 0.55;
+}
+
+.asset-card.dragging {
+  opacity: 1;
 }
 
 .asset-thumbnail {

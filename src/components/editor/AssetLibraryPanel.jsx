@@ -17,6 +17,7 @@ export function AssetLibraryPanel({
         ref={assetLibraryInputRef}
         className="sr-only"
         type="file"
+        aria-label="Import asset library images"
         accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
         multiple
         onChange={onInputChange}
@@ -42,35 +43,40 @@ export function AssetLibraryPanel({
           ) : (
             <div className="asset-grid">
               {assetLibrary.map((asset) => (
-                <button
+                <div
                   key={asset.id}
-                  className={draggedAssetId === asset.id ? 'asset-card dragging' : 'asset-card'}
-                  type="button"
-                  draggable
-                  onDragStart={(event) => onAssetDragStart(event, asset)}
-                  onDragEnd={onAssetDragEnd}
+                  className={draggedAssetId === asset.id ? 'asset-card-shell dragging' : 'asset-card-shell'}
                 >
-                  <img className="asset-thumbnail" src={asset.src} alt="" aria-hidden="true" />
-                  <div className="asset-card-footer">
-                    <span className="asset-name">{asset.name}</span>
-                    <button
-                      className="asset-delete-button"
-                      type="button"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        onDeleteAsset(asset.id)
-                      }}
-                      onPointerDown={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                      }}
-                      aria-label={`Delete ${asset.name} from asset library`}
-                    >
-                      <img className="button-icon" src={icons.close} alt="" aria-hidden="true" />
-                    </button>
-                  </div>
-                </button>
+                  <button
+                    className={draggedAssetId === asset.id ? 'asset-card dragging' : 'asset-card'}
+                    type="button"
+                    draggable
+                    onDragStart={(event) => onAssetDragStart(event, asset)}
+                    onDragEnd={onAssetDragEnd}
+                    aria-label={asset.name}
+                  >
+                    <img className="asset-thumbnail" src={asset.src} alt="" aria-hidden="true" />
+                    <div className="asset-card-footer">
+                      <span className="asset-name">{asset.name}</span>
+                    </div>
+                  </button>
+                  <button
+                    className="asset-delete-button"
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onDeleteAsset(asset.id)
+                    }}
+                    onPointerDown={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                    }}
+                    aria-label={`Delete ${asset.name} from asset library`}
+                  >
+                    <img className="button-icon" src={icons.close} alt="" aria-hidden="true" />
+                  </button>
+                </div>
               ))}
             </div>
           )}
