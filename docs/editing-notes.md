@@ -5,9 +5,9 @@
 At the time this documentation was written:
 
 - `npm run build` succeeds
+- `npm run test:run` succeeds
 - `npm run lint` reports warnings but no current errors
 - the warnings are React hook dependency warnings in `src/App.jsx`
-- `npm run test:run` is currently not green; there are known failing tests in `textLayer`, `rectSelectTool`, and `EditorToolbar`
 
 ## Important Constraints
 
@@ -119,6 +119,7 @@ Current behavior:
 - `left`, `center`, and `right` alignment are rendered through the shared text layout/render helpers
 - box text alignment affects per-line placement inside the box while preserving wrapping/reflow
 - point text alignment preserves the layer's intended horizontal anchor when content or alignment changes
+- point-text anchor preservation now respects the renderer's actual left-anchor semantics instead of drifting when alignment changes
 - the selected-layer selection frame now forwards double-click into text editing for text layers
 - text double-click edit entry is now resolved at the canvas-stage level, so an already-selected text layer can still enter edit mode from its own transformed frame even when a higher layer overlaps it
 - when inline editing opens, the textarea caret is moved to the end of the current text
@@ -135,6 +136,8 @@ Current behavior:
 - when there is no highlighted range, those controls still use the existing whole-layer style path
 - range data is part of the document model, so it survives undo/redo and project-file save/load
 - the shared text renderer now resolves `styleRanges` into styled runs so wrapping, alignment, bounds, editor rendering, and export stay aligned
+- inserting text at the boundary of a styled range now extends that range correctly
+- applying a selected-range style value that matches a base-looking layer value can still persist as an explicit subrange override when that is needed to counteract a broader inherited style
 - text-layer surface cache invalidation must include `styleRanges`, otherwise partial-style edits can appear stale until some unrelated geometry change forces a redraw
 - edit mode now relies on the same styled canvas preview as normal rendering, with the textarea acting as the input/caret layer rather than replacing the styled visual output
 
@@ -180,6 +183,19 @@ Current behavior:
 - external image drops reuse the direct file-import placement path rather than the asset-library drop path
 - the drop overlay is transient UI only and should not interfere with internal asset-library drags
 - detection should stay conservative so unsupported file drags do not trigger the import affordance
+
+### Add Layer JSON Naming
+
+The Add Layer JSON flow now supports an exact case-sensitive `"Layer name"` field.
+
+Current behavior:
+
+- JSON-created text layers accept `"Layer name"` and use it as the created layer name when it trims to a non-empty string
+- JSON-created image layers accept the same `"Layer name"` field with the same fallback rule
+- missing, empty, whitespace-only, or invalid `"Layer name"` values are ignored safely and fall back to the existing default naming behavior
+- this naming support lives in `src/editor/addLayerPanelHelpers.js` and stays part of the existing JSON normalization/creation pipeline instead of adding a separate naming-only UI path
+
+If future work expands the Add Layer schema again, keep new JSON-only fields normalized in the helper layer first and avoid pushing schema parsing into `App.jsx`.
 
 ### Simple SVG Support
 
@@ -308,6 +324,10 @@ Current automated test scope is intentionally conservative:
 - strong coverage around `src/lib/history.js`, `src/hooks/useHistory.js`, `src/lib/layers.js`, `src/lib/documentFiles.js`, `src/lib/textLayer.js`, `src/lib/moveSnapping.js`, `src/lib/viewport.js`, and `src/editor/documentHelpers.js`
 - light component coverage around extracted presentational editor components
 - no deep tests yet for the pointer lifecycle, raster surface cache behavior, or full `App.jsx` interaction orchestration
+
+Recent test-foundation note:
+
+- the shared canvas mock in `src/test/setup.js` now supports lazy pixel-aware `getImageData` behavior, so bitmap helper tests can assert actual sampled output without making the larger App-level suite slow or timeout
 
 Future work on complex editing behavior should assume manual regression risk is real.
 

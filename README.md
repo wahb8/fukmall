@@ -2,6 +2,8 @@
 
 Fukmall is a client-side React + Vite layered composition editor prototype. It behaves like a compact design tool for a mobile-sized document, with layered artwork editing, text editing, raster painting, erasing, bucket fill, gradients, lasso selection, snapping, asset import, project-file save/open, and flattened PNG/JPEG export.
 
+The Add Layer JSON flow now also supports an exact case-sensitive `"Layer name"` field for both JSON-created text and image layers. When that field is present and non-empty after trimming, the created layer uses that name; otherwise the existing default naming behavior is preserved.
+
 Current image import behavior includes:
 
 - validated PNG, JPG, JPEG, WEBP, and SVG import from the file picker, external desktop drop, and asset-library canvas drop
@@ -45,6 +47,12 @@ Current automated coverage is intentionally focused on the safest seams:
 - pure helper/domain modules in `src/lib/`
 - app-level helper logic in `src/editor/`
 - a few stable presentational components in `src/components/editor/`
+
+The current baseline is green:
+
+- `npm run build` passes
+- `npm run test:run` passes
+- `npm run lint` passes with the existing React hook dependency warnings in `src/App.jsx`
 
 Current automated tests intentionally do not try to deeply cover the highest-risk interaction engine in `src/App.jsx`, including the full pointer lifecycle, raster surface cache coordination, and canvas gesture integration. Those areas still rely primarily on careful manual regression testing.
 

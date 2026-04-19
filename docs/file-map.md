@@ -42,7 +42,8 @@ This document describes what each tracked file in the repo currently does.
 
 - shared Vitest setup file
 - registers `@testing-library/jest-dom` matchers
-- provides the minimal canvas/text measurement stubs needed by current helper and component tests
+- provides the shared canvas/text measurement stubs needed by current helper and component tests
+- now includes a lazy pixel-aware canvas mock for `fillRect`, `clearRect`, `drawImage`, and `getImageData` so bitmap-oriented tests can assert real sampled pixel results without slowing down the larger App suite
 
 ## Public Assets
 
@@ -136,6 +137,7 @@ This document describes what each tracked file in the repo currently does.
 - converts normalized specs back into controlled form values
 - keeps panel-specific coercion and defaulting out of `App.jsx`
 - contains the dedicated exact JSON text-layer creation helper used when JSON text layers must preserve final requested `width` and `height`
+- now also recognizes the exact JSON key `"Layer name"` and passes it through as the final created layer name for both JSON-created text and image layers when the provided value is a non-empty trimmed string
 
 ### `src/editor/iconAssets.js`
 
@@ -163,6 +165,7 @@ This document describes what each tracked file in the repo currently does.
 
 - presentational asset library sidebar
 - renders asset import UI, empty state, drag-start/drag-end wiring, and delete buttons
+- now uses valid accessible sibling action buttons for the draggable asset card and its delete control instead of nesting a button inside another button
 
 ### `src/components/editor/AddLayerPanel.jsx`
 
@@ -210,7 +213,7 @@ This document describes what each tracked file in the repo currently does.
 
 ### `src/editor/addLayerPanelHelpers.test.js`
 
-- unit tests for Add Layer JSON parsing, invalid JSON handling, default fallbacks, and text/image spec normalization
+- unit tests for Add Layer JSON parsing, invalid JSON handling, default fallbacks, text/image spec normalization, and JSON `"Layer name"` behavior for both text and image specs
 
 ### `src/components/editor/*.test.jsx`
 
@@ -225,6 +228,7 @@ This document describes what each tracked file in the repo currently does.
 - App-level integration coverage for the live Add Layer JSON flow
 - verifies both `Create From JSON` and `Apply JSON -> Create Layer` runtime paths
 - verifies inspector-preserving selection behavior inside the right-side inspector panel
+- now also verifies that JSON-created text layers surface the provided `"Layer name"` at runtime
 
 ### `src/App.imageImport.test.jsx`
 
@@ -324,6 +328,10 @@ This document describes what each tracked file in the repo currently does.
 - now owns the `styleRanges` normalization and text-change remapping helpers used by partial text styling
 - now resolves partial-style text into styled runs so measurement, wrapping, alignment, and canvas rendering stay in sync
 - preserves point-text horizontal anchors across content/alignment updates
+- now preserves the correct left/center/right point-text anchor semantics when alignment changes
+- now extends style ranges correctly when text is inserted at a styled boundary
+- now keeps explicit selected-range style resets when a subrange intentionally overrides a broader parent style with a base-looking value
+- now splits mixed-style render runs at whitespace boundaries as well as style boundaries so run-based rendering matches the current expectations more closely
 - applies left/center/right alignment in both normal line rendering and letter-spaced glyph rendering
 - now also supports an exact JSON box-size preservation flag used by JSON-created text layers so later layout sync does not overwrite requested final `width` and `height`
 

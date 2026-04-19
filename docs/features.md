@@ -77,10 +77,12 @@ loaded by `src/App.jsx`.
 - when text is actively being edited and a non-empty text selection exists, supported style changes apply only to that selected range
 - when no text range is selected, text styling still uses the existing whole-layer behavior
 - mixed-style text now renders visually per styled run instead of collapsing back to one uniform style
+- explicit partial-style resets now survive selected-range edits, so applying a base-looking value such as normal weight to a subrange can still override a broader inherited style
 - support `left`, `center`, and `right` alignment as a real text-layer property
 - for box text, alignment positions each wrapped line inside the text box
 - for point text, alignment changes the horizontal anchor behavior:
   left extends rightward from the anchor, center stays centered on the anchor, and right extends leftward from the anchor
+- point text now preserves the correct horizontal anchor when alignment changes, including the left-aligned anchor semantics used by the current point-text renderer
 - erasing is stored as a mask bitmap
 - painting is stored in a separate overlay bitmap so text content can still be edited later
 - export uses the same run-based text rendering path, so mixed styles now match between the editor canvas and flattened export
@@ -272,6 +274,7 @@ It supports:
 - removing imported assets through a small delete button on each asset card
 - showing a highlighted canvas drop state while an asset is dragged over the stage
 - asset-library drops now reuse the same validated image-layer creation rules as direct file import
+- asset cards now use valid separate action targets for drag/open behavior versus delete behavior instead of nesting one button inside another button
 
 Layout behavior:
 
@@ -330,12 +333,16 @@ Current parsing behavior:
 - text alignment accepts only `left`, `center`, or `right`
 - image specs require a valid non-empty `src`
 - text specs can omit all fields and fall back to current text defaults
+- JSON-created text and image specs now also support an exact case-sensitive `"Layer name"` field
+- when `"Layer name"` is present and trims to a non-empty string, the created layer uses that exact name
+- when `"Layer name"` is missing, empty, whitespace-only, or invalid, the existing layer-name fallback behavior is preserved
 - if valid specs exist, the first valid text/image entries also populate the manual form fields so the user can tweak them before creating
 - `x` and `y` for JSON-created layers use the same raw stored layer fields that the existing inspector shows and edits
 - `width` and `height` for JSON-created layers also use the same raw stored layer fields that the existing inspector shows and edits
 - the Add Layer panel and JSON flow do not apply preview/stage scaling or viewport transforms to these values
 - JSON-created text layers now use an exact-spec creation path that preserves the requested final `x`, `y`, `width`, `height`, typography, alignment, and text content values directly on the created layer
 - JSON field names are case-sensitive; supported text size keys are lowercase `width` and `height`
+- the layer-name key is also case-sensitive and must be written exactly as `"Layer name"`
 - the optional `language` field is currently ignored
 - text `font` values work best when they use the app's stored font-family string, not only the display label
 - for example, the Inter option is stored as `Inter, "Segoe UI", sans-serif`
