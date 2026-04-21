@@ -160,6 +160,7 @@ import {
 import { FONT_FAMILY_OPTIONS } from './lib/fontOptions'
 import {
   applyTextStyleToRange,
+  detectTextDirection,
   getTextEditorOverlayGeometry,
   getUniformTextStyleValueForRange,
   isTextRangeFullyBold,
@@ -6752,6 +6753,7 @@ function App() {
                 <textarea
                   ref={textEditorRef}
                   className="layer-body text-layer-body text-layer-editor"
+                  dir={detectTextDirection(textDraft)}
                   value={textDraft}
                   style={{
                     fontFamily: layer.fontFamily,
@@ -6760,6 +6762,8 @@ function App() {
                     fontWeight: layer.fontWeight,
                     lineHeight: layer.lineHeight,
                     color: layer.color,
+                    direction: detectTextDirection(textDraft),
+                    unicodeBidi: 'plaintext',
                     textAlign: layer.textAlign ?? 'left',
                     paddingTop: `${textEditorOverlay?.paddingTop ?? 0}px`,
                     paddingRight: `${textEditorOverlay?.paddingRight ?? 0}px`,

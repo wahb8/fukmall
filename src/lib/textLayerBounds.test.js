@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { createExactTextLayerFromJsonSpec } from '../editor/addLayerPanelHelpers'
+import { centerToTopLeft } from './layerGeometry'
 import { createTextLayer } from './layers'
 import { renderTextLayerToCanvas } from './raster'
-import { measureTextLayer, syncTextLayerLayout, updateTextStyle } from './textLayer'
+import { measureTextLayer, syncTextLayerLayout, updateTextContent, updateTextStyle } from './textLayer'
+
+const POINT_TEXT_PADDING_EXPECTED = 4
 
 describe('text layer anti-clipping bounds', () => {
   it('grows box text height enough to keep wrapped lines visible', () => {
@@ -91,6 +94,35 @@ describe('text layer anti-clipping bounds', () => {
 
     expect(canvas.width).toBe(layer.width)
     expect(canvas.height).toBe(layer.height)
+  })
+
+  it('keeps Arabic point text padding tight instead of inflating horizontal bounds', () => {
+    const layer = createTextLayer({
+      mode: 'point',
+      text: '\u0645\u0631\u062d\u0628\u0627',
+      fontSize: 42,
+    })
+    const measurement = measureTextLayer(layer)
+
+    expect(measurement.paddingLeft).toBe(POINT_TEXT_PADDING_EXPECTED)
+    expect(measurement.paddingRight).toBe(POINT_TEXT_PADDING_EXPECTED)
+    expect(measurement.width - measurement.contentWidth).toBe(POINT_TEXT_PADDING_EXPECTED * 2)
+  })
+
+  it('keeps the visible Arabic point-text anchor stable when content changes', () => {
+    const layer = createTextLayer({
+      mode: 'point',
+      text: '\u0645\u0631\u062d\u0628\u0627',
+      x: 320,
+      y: 480,
+      textAlign: 'left',
+    })
+    const updated = updateTextContent(layer, '\u0645\u0631\u062d\u0628\u0627 \u0628\u0643\u0645')
+    const previousTopLeft = centerToTopLeft(layer.x, layer.y, layer.width, layer.height)
+    const updatedTopLeft = centerToTopLeft(updated.x, updated.y, updated.width, updated.height)
+
+    expect(updatedTopLeft.x).toBe(previousTopLeft.x)
+    expect(updated.y).toBe(layer.y)
   })
 
   it('keeps roomy exact JSON text boxes unchanged when they are already safe', () => {

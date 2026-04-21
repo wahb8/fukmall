@@ -207,6 +207,9 @@ class MockCanvasRenderingContext2D {
   strokeText() {}
   save() {}
   restore() {}
+  translate() {}
+  rotate() {}
+  scale() {}
   beginPath() {}
   moveTo() {}
   lineTo() {}

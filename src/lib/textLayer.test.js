@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   applyTextStyleToRange,
+  detectTextDirection,
   getUniformTextStyleValueForRange,
+  getTextEditorOverlayGeometry,
   isTextRangeFullyBold,
   measureTextLayer,
   normalizeTextStyleRanges,
@@ -16,6 +18,64 @@ import { centerToTopLeft } from './layerGeometry'
 import { createTextLayer } from './layers'
 
 describe('text layer helpers', () => {
+  function createRecordingContext() {
+    const fillCalls = []
+    const strokeCalls = []
+    const context = {
+      font: '16px sans-serif',
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+      direction: 'ltr',
+      fillStyle: '#000000',
+      strokeStyle: '#000000',
+      lineWidth: 1,
+      measureText(text) {
+        const fontSizeMatch = String(this.font).match(/(\d+(?:\.\d+)?)px/)
+        const fontSize = fontSizeMatch ? Number(fontSizeMatch[1]) : 16
+
+        return {
+          width: String(text ?? '').length * Math.max(fontSize * 0.6, 1),
+          actualBoundingBoxAscent: fontSize * 0.8,
+          actualBoundingBoxDescent: fontSize * 0.2,
+        }
+      },
+      clearRect() {},
+      save() {},
+      restore() {},
+      fillText(text, x, y) {
+        fillCalls.push({
+          text,
+          x,
+          y,
+          font: this.font,
+          fillStyle: this.fillStyle,
+          textAlign: this.textAlign,
+          direction: this.direction,
+        })
+      },
+      strokeText(text, x, y) {
+        strokeCalls.push({
+          text,
+          x,
+          y,
+          textAlign: this.textAlign,
+          direction: this.direction,
+        })
+      },
+    }
+
+    return {
+      context,
+      fillCalls,
+      strokeCalls,
+    }
+  }
+
+  it('detects Arabic-script text as rtl', () => {
+    expect(detectTextDirection('مرحبا بالعالم')).toBe('rtl')
+    expect(detectTextDirection('Hello world')).toBe('ltr')
+  })
+
   it('wraps box text into multiple lines when the box width is constrained', () => {
     const layer = createTextLayer({
       text: 'alpha beta gamma',
@@ -34,6 +94,28 @@ describe('text layer helpers', () => {
     const pointText = createTextLayer({
       mode: 'point',
       text: 'Hello',
+      x: 124,
+      textAlign: 'left',
+    })
+
+    const centered = updateTextStyle(pointText, { textAlign: 'center' })
+    const rightAligned = updateTextStyle(pointText, { textAlign: 'right' })
+    const centeredTopLeft = centerToTopLeft(centered.x, centered.y, centered.width, centered.height)
+    const rightAlignedTopLeft = centerToTopLeft(
+      rightAligned.x,
+      rightAligned.y,
+      rightAligned.width,
+      rightAligned.height,
+    )
+
+    expect(centeredTopLeft.x + ((centered.width - 8) / 2)).toBe(120)
+    expect(rightAlignedTopLeft.x + (rightAligned.width - 8)).toBe(120)
+  })
+
+  it('preserves point-text horizontal anchor for Arabic text across alignment changes', () => {
+    const pointText = createTextLayer({
+      mode: 'point',
+      text: 'مرحبا',
       x: 124,
       textAlign: 'left',
     })
@@ -188,39 +270,7 @@ describe('text layer helpers', () => {
   })
 
   it('renders separate runs for differently styled text', () => {
-    const fillCalls = []
-    const strokeText = vi.fn()
-    const context = {
-      font: '16px sans-serif',
-      textAlign: 'left',
-      textBaseline: 'alphabetic',
-      fillStyle: '#000000',
-      strokeStyle: '#000000',
-      lineWidth: 1,
-      measureText(text) {
-        const fontSizeMatch = String(this.font).match(/(\d+(?:\.\d+)?)px/)
-        const fontSize = fontSizeMatch ? Number(fontSizeMatch[1]) : 16
-
-        return {
-          width: String(text ?? '').length * Math.max(fontSize * 0.6, 1),
-          actualBoundingBoxAscent: fontSize * 0.8,
-          actualBoundingBoxDescent: fontSize * 0.2,
-        }
-      },
-      clearRect() {},
-      save() {},
-      restore() {},
-      fillText(text, x, y) {
-        fillCalls.push({
-          text,
-          x,
-          y,
-          font: this.font,
-          fillStyle: this.fillStyle,
-        })
-      },
-      strokeText,
-    }
+    const { context, fillCalls, strokeCalls } = createRecordingContext()
     const layer = createTextLayer({
       text: 'Hello world',
       mode: 'point',
@@ -236,7 +286,7 @@ describe('text layer helpers', () => {
     expect(fillCalls[2].text).toBe('world')
     expect(fillCalls[0].fillStyle).toBe('#111111')
     expect(fillCalls[2].fillStyle).toBe('#ff0000')
-    expect(strokeText).not.toHaveBeenCalled()
+    expect(strokeCalls).toHaveLength(0)
   })
 
   it('keeps box wrapping working with mixed-style runs', () => {
@@ -255,32 +305,7 @@ describe('text layer helpers', () => {
   })
 
   it('renders mixed-style runs on a shared line baseline', () => {
-    const fillCalls = []
-    const context = {
-      font: '16px sans-serif',
-      textAlign: 'left',
-      textBaseline: 'alphabetic',
-      fillStyle: '#000000',
-      strokeStyle: '#000000',
-      lineWidth: 1,
-      measureText(text) {
-        const fontSizeMatch = String(this.font).match(/(\d+(?:\.\d+)?)px/)
-        const fontSize = fontSizeMatch ? Number(fontSizeMatch[1]) : 16
-
-        return {
-          width: String(text ?? '').length * Math.max(fontSize * 0.6, 1),
-          actualBoundingBoxAscent: fontSize * 0.8,
-          actualBoundingBoxDescent: fontSize * 0.2,
-        }
-      },
-      clearRect() {},
-      save() {},
-      restore() {},
-      fillText(text, x, y) {
-        fillCalls.push({ text, x, y, font: this.font })
-      },
-      strokeText() {},
-    }
+    const { context, fillCalls } = createRecordingContext()
     const layer = createTextLayer({
       text: 'Hello world',
       mode: 'point',
@@ -292,5 +317,62 @@ describe('text layer helpers', () => {
     expect(fillCalls).toHaveLength(3)
     expect(fillCalls[0].y).toBe(fillCalls[1].y)
     expect(fillCalls[1].y).toBe(fillCalls[2].y)
+  })
+
+  it('renders Arabic runs in rtl visual order instead of reversed ltr word order', () => {
+    const { context, fillCalls } = createRecordingContext()
+    const layer = createTextLayer({
+      text: '\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645',
+      mode: 'point',
+    })
+
+    renderTextLayer(context, layer)
+
+    expect(fillCalls).toHaveLength(1)
+    expect(fillCalls[0].text).toBe('\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645')
+    expect(fillCalls[0].direction).toBe('rtl')
+    expect(fillCalls[0].textAlign).toBe('right')
+  })
+
+  it('does not fall back to per-character drawing for Arabic when letter spacing is set', () => {
+    const { context, fillCalls } = createRecordingContext()
+    const layer = createTextLayer({
+      text: '\u0645\u0631\u062d\u0628\u0627',
+      mode: 'point',
+      letterSpacing: 12,
+    })
+
+    renderTextLayer(context, layer)
+
+    expect(fillCalls).toHaveLength(1)
+    expect(fillCalls[0].text).toBe('\u0645\u0631\u062d\u0628\u0627')
+  })
+
+  it('keeps Arabic multiline overlay geometry in sync with explicit newline insertion', () => {
+    const layer = createTextLayer({
+      text: '\u0645\u0631\u062d\u0628\u0627\n\u0628\u0643\u0645',
+      mode: 'point',
+    })
+    const measurement = measureTextLayer(layer)
+    const overlay = getTextEditorOverlayGeometry(layer, layer.text.length, layer.text.length)
+
+    expect(measurement.lines).toEqual(['\u0645\u0631\u062d\u0628\u0627', '\u0628\u0643\u0645'])
+    expect(measurement.layoutLines[0].direction).toBe('rtl')
+    expect(measurement.layoutLines[1].direction).toBe('rtl')
+    expect(overlay.caretRect?.y).toBeGreaterThan(measurement.paddingTop)
+  })
+
+  it('keeps mixed Arabic and Latin runs renderable with per-run direction', () => {
+    const { context, fillCalls } = createRecordingContext()
+    const layer = createTextLayer({
+      text: '\u0645\u0631\u062d\u0628\u0627 test',
+      mode: 'point',
+      styleRanges: [{ start: 6, end: 10, styles: { fontWeight: 700 } }],
+    })
+
+    renderTextLayer(context, layer)
+
+    expect(fillCalls.some((call) => call.text === '\u0645\u0631\u062d\u0628\u0627 ' && call.direction === 'rtl')).toBe(true)
+    expect(fillCalls.some((call) => call.text === 'test' && call.direction === 'ltr')).toBe(true)
   })
 })

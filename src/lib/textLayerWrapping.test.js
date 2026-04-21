@@ -148,4 +148,52 @@ describe('text layer word-aware wrapping', () => {
 
     expect(measurement.lines).toEqual(['alpha beta gamma'])
   })
+
+  it('wraps Arabic box text without breaking the first line into separate word draws', () => {
+    const fillCalls = []
+    const context = {
+      font: '16px sans-serif',
+      textAlign: 'left',
+      textBaseline: 'alphabetic',
+      direction: 'ltr',
+      fillStyle: '#000000',
+      strokeStyle: '#000000',
+      lineWidth: 1,
+      measureText(text) {
+        const fontSizeMatch = String(this.font).match(/(\d+(?:\.\d+)?)px/)
+        const fontSize = fontSizeMatch ? Number(fontSizeMatch[1]) : 16
+
+        return {
+          width: String(text ?? '').length * Math.max(fontSize * 0.6, 1),
+          actualBoundingBoxAscent: fontSize * 0.8,
+          actualBoundingBoxDescent: fontSize * 0.2,
+        }
+      },
+      clearRect() {},
+      save() {},
+      restore() {},
+      fillText(text, x, y) {
+        fillCalls.push({ text, x, y, direction: this.direction })
+      },
+      strokeText() {},
+    }
+    const layer = createTextLayer({
+      mode: 'box',
+      text: '\u0645\u0631\u062d\u0628\u0627 \u0628\u0643\u0645 \u0647\u0646\u0627',
+      boxWidth: 140,
+      width: 140,
+      height: 160,
+      fontSize: 24,
+    })
+
+    const measurement = measureTextLayer(layer)
+
+    renderTextLayer(context, layer)
+
+    expect(measurement.lines.length).toBeGreaterThan(1)
+    expect(fillCalls.filter((call) => call.y === fillCalls[0].y).map((call) => call.text)).toEqual([
+      '\u0645\u0631\u062d\u0628\u0627 \u0628\u0643\u0645',
+    ])
+    expect(fillCalls[0].direction).toBe('rtl')
+  })
 })

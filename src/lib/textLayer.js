@@ -23,6 +23,9 @@ const POINT_TEXT_HORIZONTAL_PADDING_RIGHT = 4
 const TEXT_VERTICAL_PADDING_TOP = 4
 const TEXT_VERTICAL_PADDING_BOTTOM = 4
 const TEXT_GLYPH_EDGE_BUFFER = 2
+const RTL_TEXT_CHAR_REGEX = /[\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]/u
+const STRONG_LTR_TEXT_CHAR_REGEX = /\p{Letter}/u
+const COMPLEX_SHAPING_TEXT_CHAR_REGEX = /[\u0590-\u05FF\u0600-\u06FF\u0700-\u074F\u0750-\u077F\u0780-\u07BF\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]/u
 
 function compareStyleValues(firstValue, secondValue) {
   if (Number.isFinite(firstValue) || Number.isFinite(secondValue)) {
@@ -30,6 +33,30 @@ function compareStyleValues(firstValue, secondValue) {
   }
 
   return firstValue === secondValue
+}
+
+function resolveDetectedTextDirection(text, fallbackDirection = 'ltr') {
+  const normalizedFallbackDirection = fallbackDirection === 'rtl' ? 'rtl' : 'ltr'
+
+  for (const character of Array.from(String(text ?? ''))) {
+    if (RTL_TEXT_CHAR_REGEX.test(character)) {
+      return 'rtl'
+    }
+
+    if (STRONG_LTR_TEXT_CHAR_REGEX.test(character)) {
+      return 'ltr'
+    }
+  }
+
+  return normalizedFallbackDirection
+}
+
+export function detectTextDirection(text) {
+  return resolveDetectedTextDirection(text, 'ltr')
+}
+
+export function containsArabicOrRequiresComplexShaping(text) {
+  return COMPLEX_SHAPING_TEXT_CHAR_REGEX.test(String(text ?? ''))
 }
 
 function haveSameStyleOverrides(firstStyles, secondStyles) {
@@ -534,6 +561,10 @@ export function measureTextWidth(context, text, letterSpacing = 0) {
 
   const glyphs = Array.from(text)
   const baseWidth = context.measureText(glyphs.join('')).width
+  if (containsArabicOrRequiresComplexShaping(text)) {
+    return baseWidth
+  }
+
   const extraSpacing = Math.max(glyphs.length - 1, 0) * letterSpacing
   return baseWidth + extraSpacing
 }
@@ -550,6 +581,14 @@ function getRunStyleKey(style) {
     style.strokeColor ?? '',
     style.strokeWidth,
   ].join('|')
+}
+
+function getCharacterAdvanceWidth(character, index, characters) {
+  return character.width + (
+    index < characters.length - 1
+      ? character.style.letterSpacing
+      : 0
+  )
 }
 
 function createStyledTextRuns(layer) {
@@ -611,15 +650,24 @@ function getCharacterSequenceWidth(characters) {
   ), 0)
 }
 
-function createTokenFromCharacters(characters) {
+function measureCharacterSequenceWidth(context, characters) {
+  if (!characters.length) {
+    return 0
+  }
+
+  return createRunsFromCharacters(characters, context)
+    .reduce((totalWidth, run) => totalWidth + run.advanceWidth, 0)
+}
+
+function createTokenFromCharacters(characters, context) {
   return {
     characters,
     type: /\s/.test(characters[0]?.char ?? '') ? 'space' : 'word',
-    width: getCharacterSequenceWidth(characters),
+    width: measureCharacterSequenceWidth(context, characters),
   }
 }
 
-function tokenizeParagraphCharacters(characters) {
+function tokenizeParagraphCharacters(characters, context) {
   if (!characters.length) {
     return []
   }
@@ -636,61 +684,200 @@ function tokenizeParagraphCharacters(characters) {
       continue
     }
 
-    tokens.push(createTokenFromCharacters(currentCharacters))
+    tokens.push(createTokenFromCharacters(currentCharacters, context))
     currentCharacters = [character]
     currentIsWhitespace = isWhitespace
   }
 
-  tokens.push(createTokenFromCharacters(currentCharacters))
+  tokens.push(createTokenFromCharacters(currentCharacters, context))
 
   return tokens
 }
 
-function createRunsFromCharacters(characters) {
+function measureRunAdvanceWidth(context, text, style) {
+  context.font = getTextFontFromStyle(style)
+  return measureTextWidth(context, text, style.letterSpacing)
+}
+
+function getRunMetrics(context, text, style, metricsCache) {
+  context.font = getTextFontFromStyle(style)
+  const metrics = context.measureText(text)
+  const fallbackMetrics = getTextStyleMetrics(context, style, metricsCache)
+  const strokePadding = style.strokeWidth / 2
+
+  return {
+    actualLeft: Math.max(Number(metrics.actualBoundingBoxLeft) || 0, 0),
+    actualRight: Math.max(
+      Number(metrics.actualBoundingBoxRight) || 0,
+      Number(metrics.width) || 0,
+      0,
+    ),
+    ascent: Math.max(
+      Number(metrics.actualBoundingBoxAscent) || 0,
+      fallbackMetrics.ascent,
+    ),
+    descent: Math.max(
+      Number(metrics.actualBoundingBoxDescent) || 0,
+      fallbackMetrics.descent,
+    ),
+    strokePadding,
+  }
+}
+
+function shouldMergeCharactersIntoSameRun(currentRun, nextCharacter) {
+  if (!currentRun || !nextCharacter) {
+    return false
+  }
+
+  if (getRunStyleKey(nextCharacter.style) !== getRunStyleKey(currentRun.style)) {
+    return false
+  }
+
+  const currentIsWhitespace = /\s/.test(currentRun.characters.at(-1)?.char ?? '')
+  const nextIsWhitespace = /\s/.test(nextCharacter.char)
+
+  if (currentIsWhitespace === nextIsWhitespace) {
+    return true
+  }
+
+  return containsArabicOrRequiresComplexShaping(currentRun.text + nextCharacter.char)
+}
+
+function createRunsFromCharacters(characters, context, metricsCache = null) {
   if (!characters.length) {
     return []
   }
 
   const runs = []
+
+  function finalizeRun(run) {
+    const advanceWidth = measureRunAdvanceWidth(context, run.text, run.style)
+    const runMetrics = getRunMetrics(context, run.text, run.style, metricsCache)
+
+    return {
+      ...run,
+      containsComplexShaping: containsArabicOrRequiresComplexShaping(run.text),
+      width: advanceWidth,
+      advanceWidth,
+      ...runMetrics,
+    }
+  }
+
   let currentRun = {
     style: characters[0].style,
     text: characters[0].char,
     characters: [characters[0]],
-    width: characters[0].width,
-    advanceWidth: characters[0].width,
   }
 
-  for (const [index, character] of characters.slice(1).entries()) {
-    const actualIndex = index + 1
-    const previousCharacter = characters[actualIndex - 1]
-    const isWhitespaceBoundary = /\s/.test(character.char) !== /\s/.test(previousCharacter.char)
-
-    if (!isWhitespaceBoundary && getRunStyleKey(character.style) === getRunStyleKey(currentRun.style)) {
+  for (const character of characters.slice(1)) {
+    if (shouldMergeCharactersIntoSameRun(currentRun, character)) {
       currentRun.text += character.char
       currentRun.characters.push(character)
-      currentRun.width += previousCharacter.style.letterSpacing + character.width
-      currentRun.advanceWidth += previousCharacter.style.letterSpacing + character.width
       continue
     }
 
-    currentRun.advanceWidth += previousCharacter.style.letterSpacing
-    runs.push(currentRun)
+    runs.push(finalizeRun(currentRun))
     currentRun = {
       style: character.style,
       text: character.char,
       characters: [character],
-      width: character.width,
-      advanceWidth: character.width,
     }
   }
 
-  runs.push(currentRun)
+  runs.push(finalizeRun(currentRun))
 
   return runs
 }
 
-function finalizeLayoutLine(characters, fallbackStyle, context, metricsCache) {
+function createPositionedCharacters(characters, direction, totalWidth = null) {
+  if (!characters.length) {
+    return []
+  }
+
+  if (direction === 'rtl') {
+    const positionedCharactersByStartIndex = new Map()
+    let currentX = totalWidth ?? getCharacterSequenceWidth(characters)
+    const visualCharacters = [...characters].reverse()
+
+    for (const [index, character] of visualCharacters.entries()) {
+      const advanceWidth = getCharacterAdvanceWidth(character, index, visualCharacters)
+      const xStart = currentX - advanceWidth
+      const xEnd = currentX
+
+      positionedCharactersByStartIndex.set(character.startIndex, {
+        character,
+        xStart,
+        xEnd,
+      })
+
+      currentX = xStart
+    }
+
+    return characters.map((character) => (
+      positionedCharactersByStartIndex.get(character.startIndex)
+    ))
+  }
+
+  let currentX = 0
+
+  return characters.map((character, index) => {
+    const advanceWidth = getCharacterAdvanceWidth(character, index, characters)
+    const positionedCharacter = {
+      character,
+      xStart: currentX,
+      xEnd: currentX + advanceWidth,
+    }
+
+    currentX = positionedCharacter.xEnd
+
+    return positionedCharacter
+  })
+}
+
+function createPositionedRuns(logicalRuns, direction, totalWidth) {
+  if (logicalRuns.length === 0) {
+    return []
+  }
+
+  if (direction === 'rtl') {
+    let currentX = totalWidth
+
+    return [...logicalRuns].reverse().map((run) => {
+      const positionedRun = {
+        ...run,
+        direction: resolveDetectedTextDirection(run.text, direction),
+        drawX: currentX,
+      }
+
+      currentX -= run.advanceWidth
+
+      return positionedRun
+    })
+  }
+
+  let currentX = 0
+
+  return logicalRuns.map((run) => {
+    const positionedRun = {
+      ...run,
+      direction: resolveDetectedTextDirection(run.text, direction),
+      drawX: currentX,
+    }
+
+    currentX += run.advanceWidth
+
+    return positionedRun
+  })
+}
+
+function finalizeLayoutLine(characters, fallbackStyle, context, metricsCache, fallbackDirection = 'ltr') {
   const lineCharacters = Array.isArray(characters) ? characters : []
+  const direction = resolveDetectedTextDirection(
+    lineCharacters.map((character) => character.char).join(''),
+    fallbackDirection,
+  )
+  const logicalRuns = createRunsFromCharacters(lineCharacters, context, metricsCache)
+  const lineWidth = logicalRuns.reduce((totalWidth, run) => totalWidth + run.advanceWidth, 0)
   const fallbackMetrics = getTextStyleMetrics(context, fallbackStyle, metricsCache)
   const lineMetrics = lineCharacters.reduce((largestMetrics, character) => {
     return {
@@ -715,31 +902,37 @@ function finalizeLayoutLine(characters, fallbackStyle, context, metricsCache) {
   const contentHeight = lineMetrics.ascent + lineMetrics.descent
   const lineHeight = Math.max(lineMetrics.lineHeight, contentHeight)
   const baselineOffset = ((lineHeight - contentHeight) / 2) + lineMetrics.ascent
-  const lineBounds = lineCharacters.reduce((bounds, character, index) => {
-    const left = bounds.currentX - character.actualLeft - character.strokePadding
-    const right = bounds.currentX + character.actualRight + character.strokePadding
-    const nextX = bounds.currentX + character.width + (
-      index < lineCharacters.length - 1
-        ? character.style.letterSpacing
-        : 0
-    )
+  const positionedCharacters = createPositionedCharacters(lineCharacters, direction, lineWidth)
+  const positionedRuns = createPositionedRuns(logicalRuns, direction, lineWidth)
+  const lineBounds = positionedRuns.reduce((bounds, run) => {
+    if (!run) {
+      return bounds
+    }
+
+    const xAnchor = run.drawX
+    const left = direction === 'rtl'
+      ? xAnchor - run.actualRight - run.strokePadding
+      : xAnchor - run.actualLeft - run.strokePadding
+    const right = direction === 'rtl'
+      ? xAnchor + run.actualLeft + run.strokePadding
+      : xAnchor + run.actualRight + run.strokePadding
 
     return {
       minX: Math.min(bounds.minX, left),
       maxX: Math.max(bounds.maxX, right),
-      currentX: nextX,
     }
   }, {
     minX: 0,
     maxX: 0,
-    currentX: 0,
   })
 
   return {
     text: lineCharacters.map((character) => character.char).join(''),
     characters: lineCharacters,
-    runs: createRunsFromCharacters(lineCharacters),
-    width: getCharacterSequenceWidth(lineCharacters),
+    positionedCharacters,
+    runs: positionedRuns,
+    direction,
+    width: lineWidth,
     lineHeight,
     ascent: lineMetrics.ascent,
     descent: lineMetrics.descent,
@@ -759,13 +952,18 @@ function trimTrailingWhitespaceCharacters(characters) {
   return lineCharacters
 }
 
-function layoutParagraphTokens(tokens, maxWidth, fallbackStyle, context, metricsCache) {
+function layoutParagraphTokens(tokens, maxWidth, fallbackStyle, context, metricsCache, fallbackDirection = 'ltr') {
   if (!Number.isFinite(maxWidth) || maxWidth <= 0) {
-    return [finalizeLayoutLine(tokens.flatMap((token) => token.characters), fallbackStyle, context, metricsCache)]
+    const paragraphCharacters = tokens.flatMap((token) => token.characters)
+    const paragraphDirection = resolveDetectedTextDirection(
+      paragraphCharacters.map((character) => character.char).join(''),
+      fallbackDirection,
+    )
+    return [finalizeLayoutLine(paragraphCharacters, fallbackStyle, context, metricsCache, paragraphDirection)]
   }
 
   if (tokens.length === 0) {
-    return [finalizeLayoutLine([], fallbackStyle, context, metricsCache)]
+    return [finalizeLayoutLine([], fallbackStyle, context, metricsCache, fallbackDirection)]
   }
 
   const lines = []
@@ -779,6 +977,10 @@ function layoutParagraphTokens(tokens, maxWidth, fallbackStyle, context, metrics
       fallbackStyle,
       context,
       metricsCache,
+      resolveDetectedTextDirection(
+        currentCharacters.map((character) => character.char).join(''),
+        fallbackDirection,
+      ),
     ))
     currentCharacters = []
   }
@@ -789,7 +991,7 @@ function layoutParagraphTokens(tokens, maxWidth, fallbackStyle, context, metrics
     }
 
     const nextCharacters = [...currentCharacters, ...token.characters]
-    const nextWidth = getCharacterSequenceWidth(nextCharacters)
+    const nextWidth = measureCharacterSequenceWidth(context, nextCharacters)
 
     if (token.type === 'word' && currentCharacters.length > 0 && nextWidth > maxWidth) {
       pushCurrentLine(true)
@@ -821,6 +1023,7 @@ function createTextLayout(layer) {
   const fallbackStyle = getResolvedTextStyle(layer)
   const mode = layer.mode ?? DEFAULT_TEXT_MODE
   const maxWidth = mode === 'box' ? Math.max(layer.boxWidth ?? 0, 1) : null
+  const baseDirection = detectTextDirection(layer?.text ?? '')
   const allCharacters = createStyledCharacters(layer, context, metricsCache)
   const paragraphs = []
   let currentParagraph = []
@@ -839,9 +1042,22 @@ function createTextLayout(layer) {
 
   const lines = mode === 'box'
     ? paragraphs.flatMap((paragraph) => (
-      layoutParagraphTokens(tokenizeParagraphCharacters(paragraph), maxWidth, fallbackStyle, context, metricsCache)
+      layoutParagraphTokens(
+        tokenizeParagraphCharacters(paragraph, context),
+        maxWidth,
+        fallbackStyle,
+        context,
+        metricsCache,
+        baseDirection,
+      )
     ))
-    : paragraphs.map((paragraph) => finalizeLayoutLine(paragraph, fallbackStyle, context, metricsCache))
+    : paragraphs.map((paragraph) => finalizeLayoutLine(
+      paragraph,
+      fallbackStyle,
+      context,
+      metricsCache,
+      resolveDetectedTextDirection(paragraph.map((character) => character.char).join(''), baseDirection),
+    ))
   const measuredLineWidth = lines.reduce((largestWidth, line) => Math.max(largestWidth, line.width), 0)
   const visualOverflowLeft = lines.reduce((largestOverflow, line) => (
     Math.max(largestOverflow, Math.max(0, -(line.visualLeft ?? 0)))
@@ -882,13 +1098,15 @@ function createTextLayout(layer) {
 function drawStyledRun(context, run, x, y) {
   context.font = getTextFontFromStyle(run.style)
   context.fillStyle = run.style.color
+  context.direction = run.direction ?? 'ltr'
+  context.textAlign = (run.direction ?? 'ltr') === 'rtl' ? 'right' : 'left'
 
   if (run.style.strokeWidth > 0 && run.style.strokeColor) {
     context.lineWidth = run.style.strokeWidth
     context.strokeStyle = run.style.strokeColor
   }
 
-  if (run.style.letterSpacing === 0) {
+  if (run.style.letterSpacing === 0 || run.containsComplexShaping) {
     if (run.style.strokeWidth > 0 && run.style.strokeColor) {
       context.strokeText(run.text, x, y)
     }
@@ -906,7 +1124,9 @@ function drawStyledRun(context, run, x, y) {
     }
 
     context.fillText(glyph, glyphX, y)
-    glyphX += context.measureText(glyph).width + run.style.letterSpacing
+    glyphX += (run.direction ?? 'ltr') === 'rtl'
+      ? -(context.measureText(glyph).width + run.style.letterSpacing)
+      : context.measureText(glyph).width + run.style.letterSpacing
   }
 }
 
@@ -956,14 +1176,13 @@ export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd
 
   for (const line of measurement.layoutLines ?? []) {
     const drawX = getLineDrawX(line)
-    let currentX = drawX
     let lineSelectionStart = null
     let lineSelectionEnd = null
 
     if (line.characters.length === 0) {
       if (normalizedStart === normalizedEnd && caretRect === null) {
         caretRect = {
-          x: drawX,
+          x: drawX + (line.direction === 'rtl' ? line.width : 0),
           y: currentY,
           height: line.lineHeight,
         }
@@ -973,17 +1192,21 @@ export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd
       continue
     }
 
-    for (const [index, character] of line.characters.entries()) {
-      const advanceWidth = character.width + (
-        index < line.characters.length - 1 ? character.style.letterSpacing : 0
-      )
-      const charStartX = currentX
-      const charEndX = currentX + advanceWidth
+    for (const positionedCharacter of line.positionedCharacters ?? []) {
+      if (!positionedCharacter) {
+        continue
+      }
+
+      const { character, xStart, xEnd } = positionedCharacter
+      const charStartX = drawX + xStart
+      const charEndX = drawX + xEnd
 
       if (normalizedStart >= character.startIndex && normalizedStart <= character.endIndex) {
         caretRect = normalizedStart === normalizedEnd
           ? {
-            x: normalizedStart === character.endIndex ? charEndX : charStartX,
+            x: line.direction === 'rtl'
+              ? (normalizedStart === character.endIndex ? charStartX : charEndX)
+              : (normalizedStart === character.endIndex ? charEndX : charStartX),
             y: currentY,
             height: line.lineHeight,
           }
@@ -993,14 +1216,17 @@ export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd
       const overlapsSelection = normalizedEnd > character.startIndex && normalizedStart < character.endIndex
 
       if (overlapsSelection) {
-        lineSelectionStart = lineSelectionStart ?? charStartX
-        lineSelectionEnd = charEndX
+        lineSelectionStart = lineSelectionStart === null
+          ? Math.min(charStartX, charEndX)
+          : Math.min(lineSelectionStart, charStartX, charEndX)
+        lineSelectionEnd = lineSelectionEnd === null
+          ? Math.max(charStartX, charEndX)
+          : Math.max(lineSelectionEnd, charStartX, charEndX)
       }
-
-      currentX = charEndX
     }
 
-    const lastCharacter = line.characters.at(-1)
+    const lastPositionedCharacter = line.positionedCharacters?.at(-1)
+    const lastCharacter = lastPositionedCharacter?.character
 
     if (
       normalizedStart === normalizedEnd &&
@@ -1009,7 +1235,9 @@ export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd
       normalizedStart >= lastCharacter.endIndex
     ) {
       caretRect = {
-        x: drawX + line.width,
+        x: line.direction === 'rtl'
+          ? drawX + (lastPositionedCharacter?.xStart ?? 0)
+          : drawX + (lastPositionedCharacter?.xEnd ?? line.width),
         y: currentY,
         height: line.lineHeight,
       }
@@ -1036,7 +1264,9 @@ export function getTextEditorOverlayGeometry(layer, selectionStart, selectionEnd
 
     if (lastLine) {
       caretRect = {
-        x: getLineDrawX(lastLine) + lastLine.width,
+        x: lastLine.direction === 'rtl'
+          ? getLineDrawX(lastLine) + (lastLine.positionedCharacters?.at(-1)?.xStart ?? 0)
+          : getLineDrawX(lastLine) + (lastLine.positionedCharacters?.at(-1)?.xEnd ?? lastLine.width),
         y: currentY - lastLine.lineHeight,
         height: lastLine.lineHeight,
       }
@@ -1092,6 +1322,54 @@ function getPointTextXFromAnchor(anchorX, width, textAlign) {
   }
 
   return anchorX
+}
+
+function getPointTextVisualAnchorX(layer) {
+  const measurement = measureTextLayer(layer)
+  const topLeft = centerToTopLeft(layer.x, layer.y, layer.width, layer.height)
+  const textAlign = layer.textAlign ?? DEFAULT_TEXT_ALIGN
+  const contentLeft = topLeft.x + measurement.paddingLeft
+  const contentRight = topLeft.x + layer.width - measurement.paddingRight
+
+  if (textAlign === 'center') {
+    return contentLeft + ((contentRight - contentLeft) / 2)
+  }
+
+  if (textAlign === 'right') {
+    return contentRight
+  }
+
+  return contentLeft
+}
+
+function applyPointTextVisualAnchor(previousLayer, nextLayer) {
+  if (!previousLayer || previousLayer.mode !== 'point' || nextLayer.mode !== 'point') {
+    return nextLayer
+  }
+
+  const previousVisualAnchorX = getPointTextVisualAnchorX(previousLayer)
+  const nextMeasurement = measureTextLayer(nextLayer)
+  const nextTopLeft = centerToTopLeft(nextLayer.x, nextLayer.y, nextLayer.width, nextLayer.height)
+  const nextTextAlign = nextLayer.textAlign ?? DEFAULT_TEXT_ALIGN
+  const nextContentWidth = Math.max(
+    nextLayer.width - nextMeasurement.paddingLeft - nextMeasurement.paddingRight,
+    0,
+  )
+  const nextContentLeft = nextTextAlign === 'center'
+    ? previousVisualAnchorX - (nextContentWidth / 2)
+    : nextTextAlign === 'right'
+      ? previousVisualAnchorX - nextContentWidth
+      : previousVisualAnchorX
+
+  return {
+    ...nextLayer,
+    ...topLeftToCenter(
+      nextContentLeft - nextMeasurement.paddingLeft,
+      nextTopLeft.y,
+      nextLayer.width,
+      nextLayer.height,
+    ),
+  }
 }
 
 function preservePointTextAnchor(previousLayer, nextLayer) {
@@ -1170,12 +1448,14 @@ export function syncTextLayerLayout(layer, previousLayer = null) {
 }
 
 export function updateTextContent(layer, text) {
-  return syncTextLayerLayout({
+  const nextLayer = syncTextLayerLayout({
     ...layer,
     text,
     name: String(text ?? '').replace(/\s+/g, ' ').trim() || 'New Text',
     styleRanges: remapTextStyleRangesForTextChange(layer.text, text, layer.styleRanges),
   }, layer)
+
+  return applyPointTextVisualAnchor(layer, nextLayer)
 }
 
 export function updateTextStyle(layer, updates) {
@@ -1229,6 +1509,7 @@ export function renderTextLayer(context, layer) {
   context.clearRect(0, 0, layer.width, layer.height)
   context.textBaseline = 'alphabetic'
   context.textAlign = 'left'
+  context.direction = 'ltr'
 
   let currentY = measurement.paddingTop
 
@@ -1240,12 +1521,10 @@ export function renderTextLayer(context, layer) {
           ? availableWidth - line.width
           : 0
     )
-    let currentX = drawX
     const baselineY = currentY + line.baselineOffset
 
     for (const run of line.runs) {
-      drawStyledRun(context, run, currentX, baselineY)
-      currentX += run.advanceWidth
+      drawStyledRun(context, run, drawX + run.drawX, baselineY)
     }
 
     currentY += line.lineHeight
