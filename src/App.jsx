@@ -7,6 +7,7 @@ import { EditorToolbar } from './components/editor/EditorToolbar'
 import { ExternalImageDropOverlay } from './components/editor/ExternalImageDropOverlay'
 import { FileMenu } from './components/editor/FileMenu'
 import { FontSizeStepper } from './components/editor/FontSizeStepper'
+import { LayerFlipControls } from './components/editor/LayerFlipControls'
 import { LayerPanel } from './components/editor/LayerPanel'
 import { PromptShell } from './components/editor/PromptShell'
 import { NewFileModal } from './components/editor/modals/NewFileModal'
@@ -100,6 +101,8 @@ import {
   createTextShadowLayer,
   createTextLayer,
   findLayer,
+  flipLayerHorizontal,
+  flipLayerVertical,
   getLayerBelow,
   getSelectedLayers,
   isAlphaLocked,
@@ -434,6 +437,18 @@ function clampValue(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum)
 }
 
+function scaleSignedLayerAxis(scale, ratio, maximumMagnitude) {
+  const normalizedScale = Number(scale)
+  const scaleSign = normalizedScale < 0 ? -1 : 1
+  const magnitude = clampValue(
+    Math.abs(Number.isFinite(normalizedScale) ? normalizedScale : 1) * ratio,
+    0.1,
+    maximumMagnitude,
+  )
+
+  return scaleSign * magnitude
+}
+
 function scaleLayerAroundOwnCenter(layer, ratioX, ratioY) {
   if (!layer) {
     return layer
@@ -461,8 +476,8 @@ function scaleLayerAroundOwnCenter(layer, ratioX, ratioY) {
     return {
       ...resizePointTextTransform(
         layer,
-        clampValue(layer.scaleX * ratioX, 0.1, maximumScaleX),
-        clampValue(layer.scaleY * ratioY, 0.1, maximumScaleY),
+        scaleSignedLayerAxis(layer.scaleX, ratioX, maximumScaleX),
+        scaleSignedLayerAxis(layer.scaleY, ratioY, maximumScaleY),
       ),
       width: layer.measuredWidth ?? layer.width,
       height: layer.measuredHeight ?? layer.height,
@@ -2294,11 +2309,11 @@ function App() {
 
               const nextScaleX = Math.max(
                 0.1,
-                interaction.startScaleX * (nextWidth / Math.max(interaction.startWidth, 1)),
+                Math.abs(interaction.startScaleX) * (nextWidth / Math.max(interaction.startWidth, 1)),
               )
               const nextScaleY = Math.max(
                 0.1,
-                interaction.startScaleY * (nextHeight / Math.max(interaction.startHeight, 1)),
+                Math.abs(interaction.startScaleY) * (nextHeight / Math.max(interaction.startHeight, 1)),
               )
 
               nextPrimaryLayer = {
@@ -2308,15 +2323,15 @@ function App() {
                     x: nextX,
                     y: nextY,
                   },
-                  nextScaleX,
-                  nextScaleY,
+                  Math.sign(interaction.startScaleX || 1) * nextScaleX,
+                  Math.sign(interaction.startScaleY || 1) * nextScaleY,
                 ),
                 width: layer.measuredWidth ?? layer.width,
                 height: layer.measuredHeight ?? layer.height,
               }
 
-              linkedRatioX = nextScaleX / Math.max(interaction.startScaleX, 0.0001)
-              linkedRatioY = nextScaleY / Math.max(interaction.startScaleY, 0.0001)
+              linkedRatioX = nextScaleX / Math.max(Math.abs(interaction.startScaleX), 0.0001)
+              linkedRatioY = nextScaleY / Math.max(Math.abs(interaction.startScaleY), 0.0001)
 
               return nextPrimaryLayer
             }
@@ -2478,8 +2493,8 @@ function App() {
                       originalState.height,
                     ),
                   },
-                  clampValue(originalState.scaleX * ratioX, 0.1, maximumScaleX),
-                  clampValue(originalState.scaleY * ratioY, 0.1, maximumScaleY),
+                  scaleSignedLayerAxis(originalState.scaleX, ratioX, maximumScaleX),
+                  scaleSignedLayerAxis(originalState.scaleY, ratioY, maximumScaleY),
                 ),
                 width: layer.measuredWidth ?? layer.width,
                 height: layer.measuredHeight ?? layer.height,
@@ -7601,6 +7616,22 @@ function App() {
                         onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>
+                    <LayerFlipControls
+                      onFlipHorizontal={() =>
+                        applyDocumentChange((currentDocument) => applyLayerDocumentUpdate(
+                          currentDocument,
+                          selectedLayer.id,
+                          flipLayerHorizontal,
+                        ))
+                      }
+                      onFlipVertical={() =>
+                        applyDocumentChange((currentDocument) => applyLayerDocumentUpdate(
+                          currentDocument,
+                          selectedLayer.id,
+                          flipLayerVertical,
+                        ))
+                      }
+                    />
                     <label className="property-field full-width">
                       <span>Lock Transparent Pixels</span>
                       <button

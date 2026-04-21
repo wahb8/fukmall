@@ -1550,6 +1550,10 @@
   gap: 0.45rem;
 }
 
+.segmented-control-two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .segmented-control-button {
   padding: 0.72rem 0.8rem;
   border: 1px solid var(--line);

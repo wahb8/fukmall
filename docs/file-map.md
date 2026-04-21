@@ -85,6 +85,7 @@ This document describes what each tracked file in the repo currently does.
 - contains the image import sizing and placement logic for both direct imports and asset-library drops
 - contains text-shadow creation and shadow-property editing for text layers
 - contains generic linked-layer creation/unlinking behavior and the coupled move/resize handling for linked pairs
+- now also wires the single-layer inspector flip controls through the existing signed-scale transform model
 - contains the text inspector alignment control and the double-click-to-edit wiring for selected text layers
 - now resolves text double-click edit entry at the canvas-stage level so an already-selected text layer can enter edit mode from its own transformed frame even when a higher layer overlaps it
 - contains the simple SVG-backed image import/render flow, including the behavior that pen strokes on SVG layers create a new raster layer above the SVG
@@ -185,6 +186,11 @@ This document describes what each tracked file in the repo currently does.
 - renders layer rows, selection interactions, reorder drag/drop wiring, visibility toggles, rename fields, row actions, and add-drawing action
 - uses a split panel layout with a dedicated `.layer-list-scroller` region for the rows and a fixed `.layer-panel-footer` for the add-drawing action
 
+### `src/components/editor/LayerFlipControls.jsx`
+
+- presentational inspector control for `Flip Horizontal` and `Flip Vertical`
+- keeps the flip-button UI out of `App.jsx` while leaving document mutation and history wiring in `App`
+
 ### `src/components/editor/PromptShell.jsx`
 
 - presentational wrapper around the currently unwired prompt-style input below the canvas
@@ -203,6 +209,7 @@ This document describes what each tracked file in the repo currently does.
 
 - unit tests for the pure helper/domain modules
 - current coverage includes history, layers, document-file normalization, text helpers, snapping, and viewport math
+- `layers.test.js` now also covers the shared horizontal/vertical flip helpers
 
 ### `src/hooks/useHistory.test.jsx`
 

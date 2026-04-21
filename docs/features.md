@@ -40,6 +40,7 @@ loaded by `src/App.jsx`.
 - imported SVGs remain SVG-backed by default for normal viewing and transform operations
 - SVG-backed image layers render sharply through the browser image/SVG path instead of being flattened immediately for normal display
 - SVG-backed layers still support normal layer actions such as move, resize, duplicate, reorder, selection, snapping, and undo/redo
+- inspector flip actions also apply to SVG-backed image layers through the same signed transform model used for normal viewing and export
 - selecting a bitmap tool does not immediately force all SVG layers onto a temporary raster path
 - drawing with the pen tool on an SVG layer creates a new raster drawing layer above the SVG and paints there instead of converting the SVG layer itself
 - the bucket fill tool currently does not operate on SVG-backed image layers in v1
@@ -74,6 +75,7 @@ loaded by `src/App.jsx`.
 - new text layers default to `Arial, sans-serif`
 - support font family, size, weight, color, wrapping, letter spacing, line height, and text alignment
 - box text can now opt into automatic font fitting through the shared text-layout/render path
+- text layers can also be flipped horizontally or vertically from the inspector without flattening them
 - when auto-fit is active, changing a box text layer's width or height recomputes the largest fitting font size inside the current box instead of growing the box to keep the old font size
 - JSON-created text layers with explicit `width` and/or `height` use that same shared auto-fit path on creation
 - text layers now also store normalized partial-style ranges through `styleRanges`
@@ -122,6 +124,7 @@ loaded by `src/App.jsx`.
 
 - click a layer or layer row to select it
 - inspector edits operate on the selected layer
+- the single-layer inspector also exposes `Flip Horizontal` and `Flip Vertical` transform actions
 - resize handles appear on selection
 - once a layer is already selected, dragging from anywhere inside its transformed selection frame starts move immediately, even over transparent pixels
 - selection bounds lines, handle circles, and the rest of the selected-layer chrome are editor-only overlay UI and stay visually independent from the selected layer's own `opacity`

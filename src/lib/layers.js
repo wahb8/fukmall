@@ -12,6 +12,7 @@ const DEFAULT_LAYER_OPACITY = 1
 export const DEFAULT_DOCUMENT_WIDTH = 1080
 export const DEFAULT_DOCUMENT_HEIGHT = 1440
 export const DEFAULT_DOCUMENT_NAME = 'Untitled'
+const MIN_TRANSFORM_SCALE_MAGNITUDE = 0.0001
 
 function createBaseLayer(overrides) {
   const width = overrides?.width ?? 220
@@ -200,6 +201,42 @@ export function updateLayer(documentState, layerId, updater) {
       return typeof updater === 'function' ? updater(layer) : { ...layer, ...updater }
     }),
   }
+}
+
+function getStableLayerScaleValue(scale) {
+  const numericScale = Number(scale)
+
+  if (!Number.isFinite(numericScale) || Math.abs(numericScale) < MIN_TRANSFORM_SCALE_MAGNITUDE) {
+    return 1
+  }
+
+  return numericScale
+}
+
+function flipLayerScale(layer, axis) {
+  if (!layer) {
+    return layer
+  }
+
+  if (axis === 'horizontal') {
+    return {
+      ...layer,
+      scaleX: -getStableLayerScaleValue(layer.scaleX),
+    }
+  }
+
+  return {
+    ...layer,
+    scaleY: -getStableLayerScaleValue(layer.scaleY),
+  }
+}
+
+export function flipLayerHorizontal(layer) {
+  return flipLayerScale(layer, 'horizontal')
+}
+
+export function flipLayerVertical(layer) {
+  return flipLayerScale(layer, 'vertical')
 }
 
 export function normalizeLinkedLayerReferences(layers) {

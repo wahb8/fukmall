@@ -106,6 +106,17 @@ Current behavior:
 
 Fresh documents now start with a full-canvas white background layer at the bottom of the stack.
 
+### Layer Flips
+
+Layer flipping now uses the existing signed `scaleX` / `scaleY` transform model instead of a redraw-only path.
+
+Current behavior:
+
+- the single-layer inspector exposes `Flip Horizontal` and `Flip Vertical`
+- flips mirror the selected layer around its own center by inverting the sign of the chosen scale axis
+- export stays aligned because it already uses the same signed-scale transform path
+- point-text resize paths must preserve the existing sign of `scaleX` / `scaleY`; otherwise a later resize can accidentally undo a flip
+
 ### Text Paint Remapping
 
 Paint overlay on text layers does not intelligently remap when text content/font changes significantly.

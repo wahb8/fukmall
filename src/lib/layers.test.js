@@ -9,6 +9,8 @@ import {
   createShapeLayer,
   createTextLayer,
   duplicateLayer,
+  flipLayerHorizontal,
+  flipLayerVertical,
   insertLayer,
   linkLayerPair,
   normalizeLinkedLayerReferences,
@@ -51,6 +53,28 @@ describe('layer helpers', () => {
     expect(duplicated.layers[1].name).toBe('Card Copy')
     expect(duplicated.layers[1].id).not.toBe(source.id)
     expect(duplicated.selectedLayerId).toBe(duplicated.layers[1].id)
+  })
+
+  it('flips a layer horizontally without moving its center', () => {
+    const layer = createImageLayer({ x: 240, y: 380, scaleX: 1.75, scaleY: 0.8 })
+
+    const flipped = flipLayerHorizontal(layer)
+
+    expect(flipped.scaleX).toBe(-1.75)
+    expect(flipped.scaleY).toBe(0.8)
+    expect(flipped.x).toBe(layer.x)
+    expect(flipped.y).toBe(layer.y)
+  })
+
+  it('flips a layer vertically without moving its center', () => {
+    const layer = createTextLayer({ x: 160, y: 210, scaleX: -1.2, scaleY: 1.5 })
+
+    const flipped = flipLayerVertical(layer)
+
+    expect(flipped.scaleX).toBe(-1.2)
+    expect(flipped.scaleY).toBe(-1.5)
+    expect(flipped.x).toBe(layer.x)
+    expect(flipped.y).toBe(layer.y)
   })
 
   it('normalizes linked-layer references to reciprocal pairs only', () => {
