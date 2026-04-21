@@ -73,6 +73,9 @@ loaded by `src/App.jsx`.
 - new text layers default to box mode
 - new text layers default to `Arial, sans-serif`
 - support font family, size, weight, color, wrapping, letter spacing, line height, and text alignment
+- box text can now opt into automatic font fitting through the shared text-layout/render path
+- when auto-fit is active, changing a box text layer's width or height recomputes the largest fitting font size inside the current box instead of growing the box to keep the old font size
+- JSON-created text layers with explicit `width` and/or `height` use that same shared auto-fit path on creation
 - text layers now also store normalized partial-style ranges through `styleRanges`
 - when text is actively being edited and a non-empty text selection exists, supported style changes apply only to that selected range
 - when no text range is selected, text styling still uses the existing whole-layer behavior
@@ -80,6 +83,7 @@ loaded by `src/App.jsx`.
 - explicit partial-style resets now survive selected-range edits, so applying a base-looking value such as normal weight to a subrange can still override a broader inherited style
 - support `left`, `center`, and `right` alignment as a real text-layer property
 - for box text, alignment positions each wrapped line inside the text box
+- auto-fit box text keeps those same alignment rules and the same mixed-style run rendering path
 - for point text, alignment changes the horizontal anchor behavior:
   left extends rightward from the anchor, center stays centered on the anchor, and right extends leftward from the anchor
 - point text now preserves the correct horizontal anchor when alignment changes, including the left-aligned anchor semantics used by the current point-text renderer
@@ -245,6 +249,7 @@ Text layers support:
 - direct content editing
 - point mode and box mode
 - box resizing with reflow
+- auto-fit box resizing, using the same shared measurement/render helpers as normal display and export
 - font selection from a fixed list
 - bold toggle
 - color editing
@@ -341,6 +346,7 @@ Current parsing behavior:
 - `width` and `height` for JSON-created layers also use the same raw stored layer fields that the existing inspector shows and edits
 - the Add Layer panel and JSON flow do not apply preview/stage scaling or viewport transforms to these values
 - JSON-created text layers now use an exact-spec creation path that preserves the requested final `x`, `y`, `width`, `height`, typography, alignment, and text content values directly on the created layer
+- when that exact JSON path provides `width` and/or `height`, the created box text now keeps those dimensions fixed and fits the font size into them
 - JSON field names are case-sensitive; supported text size keys are lowercase `width` and `height`
 - the layer-name key is also case-sensitive and must be written exactly as `"Layer name"`
 - the optional `language` field is currently ignored
@@ -381,7 +387,7 @@ When `addShadow` is enabled:
 When the text form was last populated from valid JSON:
 
 - using `Create Layer` continues through the same exact JSON text creation path
-- this keeps final text `width` and `height` aligned with the JSON-populated values instead of falling back to the normal inspector-style text sizing path
+- this keeps final text `width` and `height` aligned with the JSON-populated values while applying the same shared auto-fit font sizing used by direct JSON creation
 
 ### Manual Image Layer Creation
 
@@ -536,6 +542,7 @@ When movement is axis-locked with `Shift`, snapping remains active only on the u
 
 - single-layer resize now uses a stable pointer-down snapshot for the full drag instead of re-basing limits from intermediate transient sizes
 - reversing direction during the same resize drag can grow the layer back up naturally instead of getting capped by the smallest transient state reached earlier in the drag
+- resizing a box text layer now also recomputes its fitted font size through the shared text helper path, so the resize still lands as one coherent history step
 - resize still preserves the existing minimum-size behavior, anchor-handle behavior, and temporary `Shift` proportional resize behavior
 - the editor now caps resize results at an absolute maximum of `5000 x 5000`
 

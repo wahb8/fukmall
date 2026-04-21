@@ -29,6 +29,16 @@ function getRedoButton() {
   return screen.getByRole('button', { name: 'Redo' })
 }
 
+function getLayerRowByName(container, layerName) {
+  const row = Array.from(container.querySelectorAll('.layer-row')).find((candidate) => (
+    candidate.querySelector('.layer-name-input')?.value === layerName
+  ))
+
+  expect(row).not.toBeUndefined()
+
+  return row
+}
+
 describe('App inspector history coalescing', () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext
 
@@ -214,5 +224,90 @@ describe('App inspector history coalescing', () => {
     })
 
     expect(getRedoButton()).toBeDisabled()
+  })
+
+  it('keeps text resize auto-fit as one coherent undoable adjustment', async () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    fireEvent.click(getLayerRowByName(container, 'Headline'))
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBeGreaterThan(0)
+    })
+
+    const inspector = getInspector(container)
+    const widthInput = getNumericInput(inspector, 'Width')
+    const fontSizeInput = getNumericInput(inspector, 'Font Size')
+    const initialWidth = Number(widthInput.value)
+    const initialFontSize = Number(fontSizeInput.value)
+    const nextWidth = Math.max(72, initialWidth - 120)
+
+    fireEvent.change(widthInput, { target: { value: String(nextWidth) } })
+    fireEvent.blur(widthInput)
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBe(nextWidth)
+    })
+
+    const fittedFontSize = Number(getNumericInput(getInspector(container), 'Font Size').value)
+
+    expect(fittedFontSize).toBeLessThan(initialFontSize)
+
+    fireEvent.click(getUndoButton())
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBe(initialWidth)
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(initialFontSize)
+    })
+
+    fireEvent.click(getRedoButton())
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBe(nextWidth)
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(fittedFontSize)
+    })
+  })
+
+  it('lets the full-layer font size control override auto-fit after a text resize', async () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    fireEvent.click(getLayerRowByName(container, 'Headline'))
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBeGreaterThan(0)
+    })
+
+    const inspector = getInspector(container)
+    const widthInput = getNumericInput(inspector, 'Width')
+    const narrowedWidth = Math.max(72, Number(widthInput.value) - 120)
+
+    fireEvent.change(widthInput, { target: { value: String(narrowedWidth) } })
+    fireEvent.blur(widthInput)
+
+    const fittedFontSize = await waitFor(() => {
+      const nextValue = Number(getNumericInput(getInspector(container), 'Font Size').value)
+      expect(nextValue).toBeGreaterThan(0)
+      return nextValue
+    })
+
+    expect(fittedFontSize).toBeGreaterThan(24)
+
+    fireEvent.focus(getNumericInput(getInspector(container), 'Font Size'))
+    fireEvent.change(getNumericInput(getInspector(container), 'Font Size'), {
+      target: { value: '24' },
+    })
+    fireEvent.blur(getNumericInput(getInspector(container), 'Font Size'))
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(24)
+    })
   })
 })

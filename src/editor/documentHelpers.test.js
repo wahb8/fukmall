@@ -20,6 +20,8 @@ describe('document helpers', () => {
 
     expect(documentState.layers).toHaveLength(4)
     expect(documentState.layers[0].name).toBe('Background')
+    expect(documentState.layers[0].type).toBe('raster')
+    expect(documentState.layers[0].bitmap).toMatch(/^data:image\/png/)
     expect(documentState.layers[1].name).toBe('Hero Image')
     expect(documentState.selectedLayerId).toBe(documentState.layers[1].id)
   })

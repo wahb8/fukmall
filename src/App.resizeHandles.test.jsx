@@ -41,6 +41,16 @@ function getCanvasLayers(container) {
   return Array.from(container.querySelectorAll('.canvas-layer'))
 }
 
+function getLayerRowByName(container, layerName) {
+  const row = Array.from(container.querySelectorAll('.layer-row')).find((candidate) => (
+    candidate.querySelector('.layer-name-input')?.value === layerName
+  ))
+
+  expect(row).not.toBeUndefined()
+
+  return row
+}
+
 describe('App resize handle routing', () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext
 
@@ -222,5 +232,50 @@ describe('App resize handle routing', () => {
     expect(selectionFrame.closest('.canvas-layer')).toBeNull()
     expect(selectionFrame.closest('.layer-artwork')).toBeNull()
     expect(selectionFrame.parentElement?.className).toContain('canvas-surface')
+  })
+
+  it('box text handle resize updates font size and keeps the text layer visible', async () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    fireEvent.click(getLayerRowByName(container, 'Headline'))
+
+    const inspector = await waitFor(() => getInspector(container))
+    const widthInput = getNumericInput(inspector, 'Width')
+    const heightInput = getNumericInput(inspector, 'Height')
+    const fontSizeInput = getNumericInput(inspector, 'Font Size')
+    const initialWidth = Number(widthInput.value)
+    const initialHeight = Number(heightInput.value)
+    const initialFontSize = Number(fontSizeInput.value)
+    const handle = getHandle(container, 'se')
+
+    fireEvent.pointerDown(handle, { clientX: 173, clientY: 128, buttons: 1 })
+    fireEvent.pointerMove(window, { clientX: 240, clientY: 180, buttons: 1 })
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBeGreaterThan(initialWidth)
+      expect(Number(getNumericInput(getInspector(container), 'Height').value)).toBeGreaterThan(initialHeight)
+    })
+
+    const resizedWidthValue = Number(getNumericInput(getInspector(container), 'Width').value)
+    const resizedHeightValue = Number(getNumericInput(getInspector(container), 'Height').value)
+    const resizedFontSizeValue = Number(getNumericInput(getInspector(container), 'Font Size').value)
+
+    expect(resizedWidthValue).toBeGreaterThan(initialWidth)
+    expect(resizedHeightValue).toBeGreaterThan(initialHeight)
+    expect(resizedFontSizeValue).toBeGreaterThan(initialFontSize)
+    expect(container.querySelector('.canvas-layer .text-layer-canvas')).not.toBeNull()
+
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBeGreaterThan(initialWidth)
+    })
+
+    expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBeGreaterThan(initialFontSize)
+    expect(container.querySelector('.canvas-layer .text-layer-canvas')).not.toBeNull()
   })
 })

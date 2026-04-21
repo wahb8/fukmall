@@ -131,13 +131,15 @@ describe('addLayerPanel helpers', () => {
     expect(layer.text).toBe('Hello world')
     expect(layer.color).toBe('#123456')
     expect(layer.fontFamily).toBe('Arial, sans-serif')
-    expect(layer.fontSize).toBe(72)
+    expect(layer.fontSize).toBeGreaterThanOrEqual(72)
     expect(layer.textAlign).toBe('center')
     expect(layer.fontWeight).toBe(700)
     expect(layer.x).toBe(400)
     expect(layer.y).toBe(1000)
     expect(layer.width).toBe(500)
     expect(layer.height).toBe(200)
+    expect(layer.measuredWidth).toBeLessThanOrEqual(500)
+    expect(layer.measuredHeight).toBeLessThanOrEqual(200)
   })
 
   it('returns a safe error for invalid JSON', () => {
@@ -520,11 +522,14 @@ describe('addLayerPanel helpers', () => {
     expect(layer.boxWidth).toBe(500)
     expect(layer.boxHeight).toBe(200)
     expect(layer.fontFamily).toBe('Arial, sans-serif')
-    expect(layer.fontSize).toBe(72)
+    expect(layer.fontSize).toBeGreaterThanOrEqual(72)
     expect(layer.textAlign).toBe('center')
     expect(layer.fontWeight).toBe(700)
     expect(layer.color).toBe('#111111')
     expect(layer.mode).toBe('box')
+    expect(layer.autoFit).toBe(true)
+    expect(layer.measuredWidth).toBeLessThanOrEqual(500)
+    expect(layer.measuredHeight).toBeLessThanOrEqual(200)
   })
 
   it('preserves exact JSON text width and height even if layout sync runs again after creation', () => {
@@ -550,7 +555,7 @@ describe('addLayerPanel helpers', () => {
     expect(syncedLayer.height).toBe(200)
   })
 
-  it('applies anti-clipping expansion immediately when JSON text width or height are too small', () => {
+  it('keeps exact JSON width and height while fitting the font size into that box', () => {
     const layer = createExactTextLayerFromJsonSpec({
       text: 'Wrapped JSON text that needs more room immediately',
       color: '#123456',
@@ -566,11 +571,13 @@ describe('addLayerPanel helpers', () => {
       layerPlacement: 0,
     })
 
-    expect(layer.width).toBeGreaterThanOrEqual(140)
-    expect(layer.height).toBeGreaterThan(72)
+    expect(layer.width).toBe(140)
+    expect(layer.height).toBe(72)
     expect(layer.boxWidth).toBe(layer.width)
     expect(layer.boxHeight).toBe(layer.height)
-    expect(layer.height).toBeGreaterThanOrEqual(layer.measuredHeight)
+    expect(layer.fontSize).toBeLessThan(88)
+    expect(layer.measuredWidth).toBeLessThanOrEqual(layer.width)
+    expect(layer.measuredHeight).toBeLessThanOrEqual(layer.height)
   })
 
   it('creates JSON text with the same converged layout it would have after a later sync', () => {

@@ -146,7 +146,7 @@ describe('text layer anti-clipping bounds', () => {
     expect(synced.height).toBe(200)
   })
 
-  it('expands exact JSON text boxes only when the requested size is too small to stay unclipped', () => {
+  it('keeps exact JSON text boxes fixed and fits the text inside them', () => {
     const layer = createExactTextLayerFromJsonSpec({
       text: 'This exact box is too small',
       color: '#123456',
@@ -163,7 +163,10 @@ describe('text layer anti-clipping bounds', () => {
     })
     const synced = syncTextLayerLayout(layer, layer)
 
-    expect(synced.width).toBeGreaterThanOrEqual(120)
-    expect(synced.height).toBeGreaterThan(60)
+    expect(synced.width).toBe(120)
+    expect(synced.height).toBe(60)
+    expect(synced.fontSize).toBeLessThan(96)
+    expect(synced.measuredWidth).toBeLessThanOrEqual(120)
+    expect(synced.measuredHeight).toBeLessThanOrEqual(60)
   })
 })

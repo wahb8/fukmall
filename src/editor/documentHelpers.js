@@ -2,6 +2,7 @@ import heroImage from '../assets/hero.png'
 import {
   createDocument,
   createImageLayer,
+  createRasterLayer,
   createShapeLayer,
   createTextLayer,
   DEFAULT_DOCUMENT_HEIGHT,
@@ -10,10 +11,27 @@ import {
 } from '../lib/layers'
 import { topLeftToCenter } from '../lib/layerGeometry'
 import { inferImageSourceKindFromSrc } from '../lib/raster'
+import { canvasToBitmap, createSizedCanvas } from '../lib/raster'
 import { MIN_DOCUMENT_DIMENSION, MIN_LAYER_HEIGHT, MIN_LAYER_WIDTH } from './constants'
 
 export const DEFAULT_IMPORT_TRIM_ALPHA_THRESHOLD = 8
 export const DEFAULT_IMPORT_TRIM_PADDING = 1
+
+function createSeededBackgroundBitmap(width, height, fill = '#ffffff') {
+  const canvas = createSizedCanvas(width, height)
+  const context = canvas.getContext('2d')
+
+  if (context) {
+    context.fillStyle = fill
+    context.fillRect(0, 0, width, height)
+  }
+
+  const bitmap = canvasToBitmap(canvas)
+
+  return typeof bitmap === 'string' && bitmap.length > 0
+    ? bitmap
+    : 'data:image/png;base64,seeded-background'
+}
 
 export function createInitialDocument(
   width = DEFAULT_DOCUMENT_WIDTH,
@@ -22,13 +40,12 @@ export function createInitialDocument(
 ) {
   const scaleX = width / DEFAULT_DOCUMENT_WIDTH
   const scaleY = height / DEFAULT_DOCUMENT_HEIGHT
-  const whiteBackground = createShapeLayer({
+  const whiteBackground = createRasterLayer({
     name: 'Background',
     ...topLeftToCenter(0, 0, width, height),
     width,
     height,
-    fill: '#ffffff',
-    radius: 0,
+    bitmap: createSeededBackgroundBitmap(width, height),
   })
   const background = createImageLayer({
     name: 'Hero Image',

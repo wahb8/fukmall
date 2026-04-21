@@ -6,9 +6,11 @@ import { AssetLibraryPanel } from './components/editor/AssetLibraryPanel'
 import { EditorToolbar } from './components/editor/EditorToolbar'
 import { ExternalImageDropOverlay } from './components/editor/ExternalImageDropOverlay'
 import { FileMenu } from './components/editor/FileMenu'
+import { FontSizeStepper } from './components/editor/FontSizeStepper'
 import { LayerPanel } from './components/editor/LayerPanel'
 import { PromptShell } from './components/editor/PromptShell'
 import { NewFileModal } from './components/editor/modals/NewFileModal'
+import { SettingsModal } from './components/editor/modals/SettingsModal'
 import { UnsavedChangesModal } from './components/editor/modals/UnsavedChangesModal'
 import {
   ASSET_DRAG_MIME_TYPE,
@@ -980,8 +982,6 @@ function App() {
   const toolPanelErrorFadeTimeoutRef = useRef(null)
   const toolPanelErrorClearTimeoutRef = useRef(null)
   const addLayerPanelStatusTimeoutRef = useRef(null)
-  const fontSizeRepeatTimeoutRef = useRef(null)
-  const fontSizeRepeatIntervalRef = useRef(null)
   const {
     present: documentState,
     commit: commitHistory,
@@ -1075,14 +1075,13 @@ function App() {
   const [isExporting, setIsExporting] = useState(false)
   const [isOpeningFile, setIsOpeningFile] = useState(false)
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false)
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [activeMoveGuides, setActiveMoveGuides] = useState(() => createEmptySnapGuides())
   const [viewport, setViewport] = useState({
     zoom: 1,
     offsetX: 0,
     offsetY: 0,
   })
-  const FONT_SIZE_REPEAT_DELAY_MS = 320
-  const FONT_SIZE_REPEAT_INTERVAL_MS = 70
   const resetExternalImageDragState = useCallback(() => {
     externalImageDragDepthRef.current = 0
     setIsExternalImageDragActive(false)
@@ -1271,28 +1270,11 @@ function App() {
     })
   }, [clearToolPanelErrorTimers])
 
-  const clearFontSizeRepeatTimers = useCallback((finalizeAdjustment = true) => {
-    if (fontSizeRepeatTimeoutRef.current) {
-      window.clearTimeout(fontSizeRepeatTimeoutRef.current)
-      fontSizeRepeatTimeoutRef.current = null
-    }
-
-    if (fontSizeRepeatIntervalRef.current) {
-      window.clearInterval(fontSizeRepeatIntervalRef.current)
-      fontSizeRepeatIntervalRef.current = null
-    }
-
-    if (finalizeAdjustment) {
-      finishCoalescedInspectorAdjustment()
-    }
-  }, [finishCoalescedInspectorAdjustment])
-
   useEffect(() => (
     () => {
       clearAddLayerPanelStatusTimer()
-      clearFontSizeRepeatTimers(false)
     }
-  ), [clearAddLayerPanelStatusTimer, clearFontSizeRepeatTimers])
+  ), [clearAddLayerPanelStatusTimer])
 
   useEffect(() => {
     if (!toolPanelError.isRendered) {
@@ -1331,22 +1313,6 @@ function App() {
     toolPanelError.isFading,
     toolPanelError.isRendered,
   ])
-
-  useEffect(() => {
-    function stopFontSizeRepeat() {
-      clearFontSizeRepeatTimers()
-    }
-
-    window.addEventListener('pointerup', stopFontSizeRepeat)
-    window.addEventListener('pointercancel', stopFontSizeRepeat)
-    window.addEventListener('blur', stopFontSizeRepeat)
-
-    return () => {
-      window.removeEventListener('pointerup', stopFontSizeRepeat)
-      window.removeEventListener('pointercancel', stopFontSizeRepeat)
-      window.removeEventListener('blur', stopFontSizeRepeat)
-    }
-  }, [clearFontSizeRepeatTimers])
 
   useEffect(() => {
     setFontSizeInputDraft(null)
@@ -3432,6 +3398,7 @@ function App() {
       letterSpacing: sourceLayer.letterSpacing,
       textAlign: sourceLayer.textAlign,
       mode: sourceLayer.mode,
+      autoFit: sourceLayer.autoFit,
       styleRanges: sourceLayer.styleRanges,
       boxWidth: sourceLayer.boxWidth,
       boxHeight: sourceLayer.boxHeight,
@@ -4568,17 +4535,8 @@ function App() {
     })
   }
 
-  function startTextFontSizeRepeat(layerId, delta) {
+  function handleTextFontSizeStep(layerId, delta) {
     stepTextFontSize(layerId, delta)
-    clearFontSizeRepeatTimers()
-
-    fontSizeRepeatTimeoutRef.current = window.setTimeout(() => {
-      stepTextFontSize(layerId, delta)
-      fontSizeRepeatIntervalRef.current = window.setInterval(() => {
-        stepTextFontSize(layerId, delta)
-      }, FONT_SIZE_REPEAT_INTERVAL_MS)
-      fontSizeRepeatTimeoutRef.current = null
-    }, FONT_SIZE_REPEAT_DELAY_MS)
   }
 
   function getActiveLassoLayer() {
@@ -7026,18 +6984,26 @@ function App() {
         onHeightChange={(event) => setNewFileHeightInput(event.target.value)}
         onCreate={handleCreateNewFile}
       />
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        theme={theme}
+        trimTransparentImports={trimTransparentImports}
+        onClose={() => setIsSettingsModalOpen(false)}
+        onToggleTheme={() => setTheme((currentTheme) => (
+          currentTheme === 'dark' ? 'light' : 'dark'
+        ))}
+        onToggleTrimTransparentImports={() => setTrimTransparentImports((currentValue) => !currentValue)}
+      />
       <FileMenu
         fileMenuRef={fileMenuRef}
         isOpen={isFileMenuOpen}
         isOpeningFile={isOpeningFile}
         isExporting={isExporting}
-        theme={theme}
-        trimTransparentImports={trimTransparentImports}
         onToggle={() => setIsFileMenuOpen((currentValue) => !currentValue)}
-        onToggleTheme={() => setTheme((currentTheme) => (
-          currentTheme === 'dark' ? 'light' : 'dark'
-        ))}
-        onToggleTrimTransparentImports={() => setTrimTransparentImports((currentValue) => !currentValue)}
+        onOpenSettings={() => {
+          setIsFileMenuOpen(false)
+          setIsSettingsModalOpen(true)
+        }}
         onNewFile={handleNewFile}
         onOpenFile={handleOpenFileClick}
         onSaveFile={handleSaveFile}
@@ -7244,78 +7210,49 @@ function App() {
                     )}
                     {selectedLayer.type === 'text' && (
                       <>
-                        <label className="property-field">
-                          <span>Font Size</span>
-                          <div className="number-stepper" data-text-style-control="true">
-                            <button
-                              className="number-stepper-button"
-                              type="button"
-                              data-text-style-control="true"
-                              onPointerDown={(event) => {
-                                event.preventDefault()
-                                markTextStyleControlInteraction()
-                                startTextFontSizeRepeat(selectedLayer.id, -1)
-                              }}
-                              onPointerUp={clearFontSizeRepeatTimers}
-                              onPointerLeave={clearFontSizeRepeatTimers}
-                            >
-                              -
-                            </button>
-                            <input
-                              type="number"
-                              min="8"
-                              value={getDisplayedFontSizeValue(selectedLayer)}
-                              data-text-style-control="true"
-                              onPointerDown={markTextStyleControlInteraction}
-                              onFocus={(event) => {
-                                event.stopPropagation()
-                                markTextStyleControlInteraction()
-                                setFontSizeInputDraft(String(
-                                  getEditingSelectionStyleValue(selectedLayer, 'fontSize') ?? '',
-                                ))
-                              }}
-                              onChange={(event) => {
-                                event.stopPropagation()
-                                setFontSizeInputDraft(event.target.value)
-                              }}
-                              onBlur={(event) => {
-                                event.stopPropagation()
-                                commitFontSizeInputDraft(selectedLayer.id)
-                                finishCoalescedInspectorAdjustment()
-                              }}
-                              onKeyDown={(event) => {
-                                event.stopPropagation()
+                        <FontSizeStepper
+                          value={getDisplayedFontSizeValue(selectedLayer)}
+                          inputPointerDown={markTextStyleControlInteraction}
+                          onStepperPointerDown={(event) => {
+                            event.preventDefault()
+                            markTextStyleControlInteraction()
+                          }}
+                          onDecrementStep={() => handleTextFontSizeStep(selectedLayer.id, -1)}
+                          onIncrementStep={() => handleTextFontSizeStep(selectedLayer.id, 1)}
+                          onStepStop={finishCoalescedInspectorAdjustment}
+                          onInputFocus={(event) => {
+                            event.stopPropagation()
+                            markTextStyleControlInteraction()
+                            setFontSizeInputDraft(String(
+                              getEditingSelectionStyleValue(selectedLayer, 'fontSize') ?? '',
+                            ))
+                          }}
+                          onInputChange={(event) => {
+                            event.stopPropagation()
+                            setFontSizeInputDraft(event.target.value)
+                          }}
+                          onInputBlur={(event) => {
+                            event.stopPropagation()
+                            commitFontSizeInputDraft(selectedLayer.id)
+                            finishCoalescedInspectorAdjustment()
+                          }}
+                          onInputKeyDown={(event) => {
+                            event.stopPropagation()
 
-                                if (event.key === 'Enter') {
-                                  event.preventDefault()
-                                  commitFontSizeInputDraft(selectedLayer.id)
-                                  event.currentTarget.blur()
-                                  return
-                                }
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              commitFontSizeInputDraft(selectedLayer.id)
+                              event.currentTarget.blur()
+                              return
+                            }
 
-                                if (event.key === 'Escape') {
-                                  event.preventDefault()
-                                  setFontSizeInputDraft(null)
-                                  event.currentTarget.blur()
-                                }
-                              }}
-                            />
-                            <button
-                              className="number-stepper-button"
-                              type="button"
-                              data-text-style-control="true"
-                              onPointerDown={(event) => {
-                                event.preventDefault()
-                                markTextStyleControlInteraction()
-                                startTextFontSizeRepeat(selectedLayer.id, 1)
-                              }}
-                              onPointerUp={clearFontSizeRepeatTimers}
-                              onPointerLeave={clearFontSizeRepeatTimers}
-                            >
-                              +
-                            </button>
-                          </div>
-                        </label>
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              setFontSizeInputDraft(null)
+                              event.currentTarget.blur()
+                            }
+                          }}
+                        />
                         <label className="property-field">
                           <span>Weight</span>
                           <button

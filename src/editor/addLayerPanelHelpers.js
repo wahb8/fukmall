@@ -277,6 +277,7 @@ export function createExactTextLayerFromJsonSpec(spec) {
 
   return syncTextLayerLayout({
     ...seedLayer,
+    autoFit: requestedSize.hasExplicitWidth || requestedSize.hasExplicitHeight,
     x: requestedPosition.x,
     y: requestedPosition.y,
     width: requestedSize.width,

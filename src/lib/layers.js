@@ -1,5 +1,6 @@
 import {
   DEFAULT_TEXT_ALIGN,
+  DEFAULT_TEXT_AUTO_FIT,
   DEFAULT_TEXT_LETTER_SPACING,
   DEFAULT_TEXT_LINE_HEIGHT,
   DEFAULT_TEXT_MODE,
@@ -85,6 +86,7 @@ export function createTextLayer(overrides = {}) {
     color: '#0f172a',
     textAlign: DEFAULT_TEXT_ALIGN,
     mode: DEFAULT_TEXT_MODE,
+    autoFit: DEFAULT_TEXT_AUTO_FIT,
     boxWidth: null,
     boxHeight: null,
     measuredWidth: 0,

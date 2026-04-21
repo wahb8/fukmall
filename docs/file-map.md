@@ -137,6 +137,7 @@ This document describes what each tracked file in the repo currently does.
 - converts normalized specs back into controlled form values
 - keeps panel-specific coercion and defaulting out of `App.jsx`
 - contains the dedicated exact JSON text-layer creation helper used when JSON text layers must preserve final requested `width` and `height`
+- routes explicit text-layer width/height creation through the shared text auto-fit helpers so JSON-created box text keeps its requested box while fitting the font size inside it
 - now also recognizes the exact JSON key `"Layer name"` and passes it through as the final created layer name for both JSON-created text and image layers when the provided value is a non-empty trimmed string
 
 ### `src/editor/iconAssets.js`
@@ -229,6 +230,7 @@ This document describes what each tracked file in the repo currently does.
 - verifies both `Create From JSON` and `Apply JSON -> Create Layer` runtime paths
 - verifies inspector-preserving selection behavior inside the right-side inspector panel
 - now also verifies that JSON-created text layers surface the provided `"Layer name"` at runtime
+- now also verifies that JSON-created text can come in already auto-fitted to the requested box size
 
 ### `src/App.imageImport.test.jsx`
 
@@ -325,6 +327,7 @@ This document describes what each tracked file in the repo currently does.
 - current text system
 - measures text, wraps box text, syncs text layout into layer bounds, updates text style/content, normalizes partial-style ranges, and renders text to canvas
 - defaults new text layers to box mode with `Arial, sans-serif`, left alignment, `1.15` line height, and `0` letter spacing
+- now owns the box-text auto-fit model and bounded font-size search used by resize-driven and JSON-driven text fitting
 - now owns the `styleRanges` normalization and text-change remapping helpers used by partial text styling
 - now resolves partial-style text into styled runs so measurement, wrapping, alignment, and canvas rendering stay in sync
 - preserves point-text horizontal anchors across content/alignment updates
@@ -334,6 +337,7 @@ This document describes what each tracked file in the repo currently does.
 - now splits mixed-style render runs at whitespace boundaries as well as style boundaries so run-based rendering matches the current expectations more closely
 - applies left/center/right alignment in both normal line rendering and letter-spaced glyph rendering
 - now also supports an exact JSON box-size preservation flag used by JSON-created text layers so later layout sync does not overwrite requested final `width` and `height`
+- box text auto-fit reuses that same shared measurement/render path, scaling styled range font sizes proportionally instead of introducing a second renderer
 
 ### `src/lib/penTool.js`
 

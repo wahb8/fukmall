@@ -7,6 +7,7 @@ export const DEFAULT_TEXT_LINE_HEIGHT = 1.15
 export const DEFAULT_TEXT_LETTER_SPACING = 0
 export const DEFAULT_TEXT_ALIGN = 'left'
 export const DEFAULT_TEXT_MODE = 'box'
+export const DEFAULT_TEXT_AUTO_FIT = false
 export const PARTIAL_TEXT_STYLE_KEYS = [
   'fontFamily',
   'fontSize',
@@ -23,6 +24,8 @@ const POINT_TEXT_HORIZONTAL_PADDING_RIGHT = 4
 const TEXT_VERTICAL_PADDING_TOP = 4
 const TEXT_VERTICAL_PADDING_BOTTOM = 4
 const TEXT_GLYPH_EDGE_BUFFER = 2
+const MIN_AUTO_FIT_FONT_SIZE = 1
+const MAX_AUTO_FIT_FONT_SIZE = 5000
 const RTL_TEXT_CHAR_REGEX = /[\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]/u
 const STRONG_LTR_TEXT_CHAR_REGEX = /\p{Letter}/u
 const COMPLEX_SHAPING_TEXT_CHAR_REGEX = /[\u0590-\u05FF\u0600-\u06FF\u0700-\u074F\u0750-\u077F\u0780-\u07BF\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]/u
@@ -174,6 +177,28 @@ export function normalizeTextStyleRanges(styleRanges, textLength) {
   }
 
   return mergedRanges
+}
+
+function scaleTextStyleRangeFontSizes(styleRanges, ratio, textLength) {
+  const safeRatio = Number.isFinite(Number(ratio)) && Number(ratio) > 0
+    ? Number(ratio)
+    : 1
+
+  return normalizeTextStyleRanges(
+    normalizeTextStyleRanges(styleRanges, textLength).map((range) => ({
+      ...range,
+      styles: range.styles.fontSize !== undefined
+        ? {
+          ...range.styles,
+          fontSize: Math.max(
+            MIN_AUTO_FIT_FONT_SIZE,
+            Number(range.styles.fontSize) * safeRatio,
+          ),
+        }
+        : range.styles,
+    })),
+    textLength,
+  )
 }
 
 export function remapTextStyleRangesForTextChange(previousText, nextText, styleRanges) {
@@ -470,6 +495,146 @@ export function getEffectiveTextStyleSegments(layer, extraBoundaries = []) {
       style: getResolvedTextStyle(layer, getStyleOverridesForSlice(ranges, start, end)),
     }]
   })
+}
+
+function isBoxTextAutoFitEnabled(layer) {
+  return layer?.type === 'text' && layer?.mode === 'box' && layer?.autoFit === true
+}
+
+function createAutoFitCandidateLayer(layer, fontSize) {
+  const currentFontSize = Math.max(MIN_AUTO_FIT_FONT_SIZE, Number(layer?.fontSize) || 0)
+  const nextFontSize = Math.max(MIN_AUTO_FIT_FONT_SIZE, Number(fontSize) || currentFontSize)
+  const scaleRatio = nextFontSize / currentFontSize
+  const textLength = String(layer?.text ?? '').length
+
+  return {
+    ...layer,
+    fontSize: nextFontSize,
+    styleRanges: scaleTextStyleRangeFontSizes(layer?.styleRanges, scaleRatio, textLength),
+  }
+}
+
+function measureAutoFitCandidate(layer, fontSize, boxWidth, boxHeight) {
+  const candidateLayer = createAutoFitCandidateLayer({
+    ...layer,
+    width: boxWidth,
+    height: boxHeight,
+    boxWidth,
+    boxHeight,
+  }, fontSize)
+  const measurement = measureTextLayer(candidateLayer)
+
+  return {
+    layer: candidateLayer,
+    measurement,
+    fits: (
+      Number.isFinite(measurement.requiredWidth) &&
+      Number.isFinite(measurement.requiredHeight) &&
+      measurement.requiredWidth <= boxWidth &&
+      measurement.requiredHeight <= boxHeight
+    ),
+  }
+}
+
+function resolveAutoFitFontSize(layer, boxWidth, boxHeight) {
+  const textValue = String(layer?.text ?? '')
+  const startingFontSize = Math.max(
+    MIN_AUTO_FIT_FONT_SIZE,
+    Math.min(MAX_AUTO_FIT_FONT_SIZE, Math.round(Number(layer?.fontSize) || 0)),
+  )
+
+  if (textValue.length === 0) {
+    return measureAutoFitCandidate(layer, startingFontSize, boxWidth, boxHeight)
+  }
+
+  const measurementsBySize = new Map()
+  const getCandidateResult = (fontSize) => {
+    const normalizedFontSize = Math.max(
+      MIN_AUTO_FIT_FONT_SIZE,
+      Math.min(MAX_AUTO_FIT_FONT_SIZE, Math.round(Number(fontSize) || 0)),
+    )
+
+    if (!measurementsBySize.has(normalizedFontSize)) {
+      measurementsBySize.set(
+        normalizedFontSize,
+        measureAutoFitCandidate(layer, normalizedFontSize, boxWidth, boxHeight),
+      )
+    }
+
+    return measurementsBySize.get(normalizedFontSize)
+  }
+
+  const startingResult = getCandidateResult(startingFontSize)
+
+  if (!startingResult.fits) {
+    const minimumResult = getCandidateResult(MIN_AUTO_FIT_FONT_SIZE)
+
+    if (!minimumResult.fits) {
+      return minimumResult
+    }
+
+    let low = MIN_AUTO_FIT_FONT_SIZE
+    let high = startingFontSize
+    let bestFitResult = minimumResult
+
+    while (low <= high) {
+      const candidateFontSize = Math.floor((low + high) / 2)
+      const candidateResult = getCandidateResult(candidateFontSize)
+
+      if (candidateResult.fits) {
+        bestFitResult = candidateResult
+        low = candidateFontSize + 1
+      } else {
+        high = candidateFontSize - 1
+      }
+    }
+
+    return bestFitResult
+  }
+
+  let fittedFontSize = startingFontSize
+  let overflowFontSize = null
+
+  while (fittedFontSize < MAX_AUTO_FIT_FONT_SIZE) {
+    const nextFontSize = Math.min(
+      MAX_AUTO_FIT_FONT_SIZE,
+      Math.max(fittedFontSize + 1, fittedFontSize * 2),
+    )
+    const nextResult = getCandidateResult(nextFontSize)
+
+    if (!nextResult.fits) {
+      overflowFontSize = nextFontSize
+      break
+    }
+
+    fittedFontSize = nextFontSize
+
+    if (nextFontSize === MAX_AUTO_FIT_FONT_SIZE) {
+      return nextResult
+    }
+  }
+
+  if (overflowFontSize === null) {
+    return getCandidateResult(fittedFontSize)
+  }
+
+  let low = fittedFontSize
+  let high = overflowFontSize
+  let bestFitResult = getCandidateResult(fittedFontSize)
+
+  while (low <= high) {
+    const candidateFontSize = Math.floor((low + high) / 2)
+    const candidateResult = getCandidateResult(candidateFontSize)
+
+    if (candidateResult.fits) {
+      bestFitResult = candidateResult
+      low = candidateFontSize + 1
+    } else {
+      high = candidateFontSize - 1
+    }
+  }
+
+  return bestFitResult
 }
 
 function rebuildTextStyleRangesFromSegments(layer, segments) {
@@ -1078,6 +1243,12 @@ function createTextLayout(layer) {
   const measuredWidth = Math.ceil(measuredContentWidth + visualOverflowLeft + visualOverflowRight)
 
   return {
+    requiredWidth: measuredContentWidth + visualOverflowLeft + visualOverflowRight + (
+      mode === 'point'
+        ? POINT_TEXT_HORIZONTAL_PADDING_LEFT + POINT_TEXT_HORIZONTAL_PADDING_RIGHT
+        : 0
+    ),
+    requiredHeight: measuredHeight + TEXT_VERTICAL_PADDING_TOP + TEXT_VERTICAL_PADDING_BOTTOM,
     width: Math.max(measuredWidth + (
       mode === 'point'
         ? POINT_TEXT_HORIZONTAL_PADDING_LEFT + POINT_TEXT_HORIZONTAL_PADDING_RIGHT
@@ -1135,6 +1306,8 @@ export function measureTextLayer(layer) {
   const resolvedStyle = getResolvedTextStyle(layer)
 
   return {
+    requiredWidth: layout.requiredWidth,
+    requiredHeight: layout.requiredHeight,
     width: layout.width,
     height: layout.height,
     contentWidth: layout.contentWidth,
@@ -1392,56 +1565,81 @@ function preservePointTextAnchor(previousLayer, nextLayer) {
 
 export function syncTextLayerLayout(layer, previousLayer = null) {
   const preserveExactJsonBoxSize = layer.mode === 'box' && layer.preserveExactJsonBoxSize === true
-  let measurement = measureTextLayer(layer)
+  const normalizedStyleRanges = normalizeTextStyleRanges(
+    layer.styleRanges,
+    String(layer.text ?? '').length,
+  )
+  let measurement = measureTextLayer({
+    ...layer,
+    styleRanges: normalizedStyleRanges,
+  })
   const requestedBoxWidth = Math.max(Number(layer.boxWidth ?? layer.width ?? measurement.width) || 0, 1)
   const requestedBoxHeight = Math.max(Number(layer.boxHeight ?? layer.height ?? measurement.height) || 0, 1)
   let normalizedBoxWidth = null
   let normalizedBoxHeight = null
+  let nextFontSize = Math.max(MIN_AUTO_FIT_FONT_SIZE, Number(layer.fontSize) || MIN_AUTO_FIT_FONT_SIZE)
+  let nextStyleRanges = normalizedStyleRanges
 
   if (layer.mode === 'box') {
     let workingLayer = {
       ...layer,
+      styleRanges: normalizedStyleRanges,
       boxWidth: requestedBoxWidth,
       boxHeight: requestedBoxHeight,
       width: requestedBoxWidth,
       height: requestedBoxHeight,
     }
 
-    for (let iteration = 0; iteration < 3; iteration += 1) {
-      measurement = measureTextLayer(workingLayer)
-      normalizedBoxWidth = preserveExactJsonBoxSize
-        ? Math.max(requestedBoxWidth, measurement.width, 1)
-        : Math.max(requestedBoxWidth, measurement.width, 1)
-      normalizedBoxHeight = preserveExactJsonBoxSize
-        ? Math.max(requestedBoxHeight, measurement.height, 1)
-        : Math.max(requestedBoxHeight, measurement.height, 1)
+    if (isBoxTextAutoFitEnabled(workingLayer)) {
+      const autoFitResult = resolveAutoFitFontSize(
+        workingLayer,
+        requestedBoxWidth,
+        requestedBoxHeight,
+      )
 
-      if (
-        normalizedBoxWidth === (workingLayer.boxWidth ?? workingLayer.width) &&
-        normalizedBoxHeight === (workingLayer.boxHeight ?? workingLayer.height)
-      ) {
-        break
-      }
+      measurement = autoFitResult.measurement
+      normalizedBoxWidth = requestedBoxWidth
+      normalizedBoxHeight = requestedBoxHeight
+      nextFontSize = autoFitResult.layer.fontSize
+      nextStyleRanges = autoFitResult.layer.styleRanges
+    } else {
+      for (let iteration = 0; iteration < 3; iteration += 1) {
+        measurement = measureTextLayer(workingLayer)
+        normalizedBoxWidth = preserveExactJsonBoxSize
+          ? Math.max(requestedBoxWidth, measurement.width, 1)
+          : Math.max(requestedBoxWidth, measurement.width, 1)
+        normalizedBoxHeight = preserveExactJsonBoxSize
+          ? Math.max(requestedBoxHeight, measurement.height, 1)
+          : Math.max(requestedBoxHeight, measurement.height, 1)
 
-      workingLayer = {
-        ...workingLayer,
-        boxWidth: normalizedBoxWidth,
-        boxHeight: normalizedBoxHeight,
-        width: normalizedBoxWidth,
-        height: normalizedBoxHeight,
+        if (
+          normalizedBoxWidth === (workingLayer.boxWidth ?? workingLayer.width) &&
+          normalizedBoxHeight === (workingLayer.boxHeight ?? workingLayer.height)
+        ) {
+          break
+        }
+
+        workingLayer = {
+          ...workingLayer,
+          boxWidth: normalizedBoxWidth,
+          boxHeight: normalizedBoxHeight,
+          width: normalizedBoxWidth,
+          height: normalizedBoxHeight,
+        }
       }
     }
   }
 
   const nextLayer = {
     ...layer,
+    fontSize: nextFontSize,
     boxWidth: normalizedBoxWidth,
     boxHeight: normalizedBoxHeight,
-    measuredWidth: measurement.width,
-    measuredHeight: measurement.height,
+    measuredWidth: layer.mode === 'box' ? measurement.requiredWidth : measurement.width,
+    measuredHeight: layer.mode === 'box' ? measurement.requiredHeight : measurement.height,
     width: layer.mode === 'box' ? normalizedBoxWidth : measurement.width,
     height: layer.mode === 'box' ? normalizedBoxHeight : measurement.height,
-    styleRanges: normalizeTextStyleRanges(layer.styleRanges, String(layer.text ?? '').length),
+    styleRanges: nextStyleRanges,
   }
 
   return preservePointTextAnchor(previousLayer, nextLayer)
@@ -1459,8 +1657,18 @@ export function updateTextContent(layer, text) {
 }
 
 export function updateTextStyle(layer, updates) {
+  const disablesAutoFit = (
+    layer?.mode === 'box' &&
+    layer?.autoFit === true &&
+    updates &&
+    typeof updates === 'object' &&
+    Object.prototype.hasOwnProperty.call(updates, 'fontSize') &&
+    !Object.prototype.hasOwnProperty.call(updates, 'autoFit')
+  )
+
   return syncTextLayerLayout({
     ...layer,
+    ...(disablesAutoFit ? { autoFit: false } : {}),
     ...updates,
   }, layer)
 }
@@ -1480,6 +1688,7 @@ export function resizePointTextTransform(layer, scaleX, scaleY) {
 export function resizeBoxText(layer, newBoxWidth, newBoxHeight = null) {
   return syncTextLayerLayout({
     ...layer,
+    autoFit: true,
     mode: 'box',
     boxWidth: Math.max(newBoxWidth, 1),
     boxHeight: newBoxHeight,

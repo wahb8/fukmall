@@ -118,6 +118,7 @@ Current behavior:
 
 - `left`, `center`, and `right` alignment are rendered through the shared text layout/render helpers
 - box text alignment affects per-line placement inside the box while preserving wrapping/reflow
+- auto-fit box text also uses that same shared layout/render path, so editor view, inline editing, and export stay aligned
 - point text alignment preserves the layer's intended horizontal anchor when content or alignment changes
 - point-text anchor preservation now respects the renderer's actual left-anchor semantics instead of drifting when alignment changes
 - the selected-layer selection frame now forwards double-click into text editing for text layers
@@ -136,6 +137,7 @@ Current behavior:
 - when there is no highlighted range, those controls still use the existing whole-layer style path
 - range data is part of the document model, so it survives undo/redo and project-file save/load
 - the shared text renderer now resolves `styleRanges` into styled runs so wrapping, alignment, bounds, editor rendering, and export stay aligned
+- auto-fit box text scales those same styled runs through the shared helper path instead of introducing a second renderer
 - inserting text at the boundary of a styled range now extends that range correctly
 - applying a selected-range style value that matches a base-looking layer value can still persist as an explicit subrange override when that is needed to counteract a broader inherited style
 - text-layer surface cache invalidation must include `styleRanges`, otherwise partial-style edits can appear stale until some unrelated geometry change forces a redraw
@@ -194,6 +196,7 @@ Current behavior:
 - JSON-created image layers accept the same `"Layer name"` field with the same fallback rule
 - missing, empty, whitespace-only, or invalid `"Layer name"` values are ignored safely and fall back to the existing default naming behavior
 - this naming support lives in `src/editor/addLayerPanelHelpers.js` and stays part of the existing JSON normalization/creation pipeline instead of adding a separate naming-only UI path
+- JSON-created box text with explicit `width` and/or `height` now also opts into the shared text auto-fit path while keeping those requested box dimensions exact
 
 If future work expands the Add Layer schema again, keep new JSON-only fields normalized in the helper layer first and avoid pushing schema parsing into `App.jsx`.
 
@@ -294,6 +297,7 @@ Resize now depends on a stable pointer-down snapshot:
 
 - size limits during a single drag should be derived from the resize session start state, not from intermediate transient sizes reached mid-drag
 - reversing direction during the same drag should remain possible
+- resizing a box text layer now also recomputes its fitted font size through `src/lib/textLayer.js`, but still commits as one resize interaction rather than spamming history
 - the editor now hard-caps resize results at `5000 x 5000`
 
 ### Prompt Input

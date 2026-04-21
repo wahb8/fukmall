@@ -6,10 +6,10 @@ import {
   getTextEditorOverlayGeometry,
   isTextRangeFullyBold,
   measureTextLayer,
+  resizeBoxText,
   normalizeTextStyleRanges,
   remapTextStyleRangesForTextChange,
   renderTextLayer,
-  resizeBoxText,
   updateTextContent,
   updateTextLayerFont,
   updateTextStyle,
@@ -156,10 +156,137 @@ describe('text layer helpers', () => {
     const resized = resizeBoxText(layer, 200, 140)
 
     expect(resized.mode).toBe('box')
+    expect(resized.autoFit).toBe(true)
     expect(resized.boxWidth).toBe(200)
     expect(resized.boxHeight).toBe(140)
     expect(resized.width).toBe(200)
     expect(resized.height).toBe(140)
+  })
+
+  it('auto-fits box text down when the box shrinks and back up when the box grows', () => {
+    const layer = createTextLayer({
+      mode: 'box',
+      text: 'Auto fit me down and back up',
+      fontSize: 64,
+      boxWidth: 360,
+      boxHeight: 160,
+      width: 360,
+      height: 160,
+    })
+    const shrunk = resizeBoxText(layer, 140, 72)
+    const grown = resizeBoxText(shrunk, 360, 160)
+
+    expect(shrunk.fontSize).toBeLessThan(layer.fontSize)
+    expect(shrunk.measuredWidth).toBeLessThanOrEqual(shrunk.width)
+    expect(shrunk.measuredHeight).toBeLessThanOrEqual(shrunk.height)
+    expect(grown.fontSize).toBeGreaterThan(shrunk.fontSize)
+    expect(grown.measuredWidth).toBeLessThanOrEqual(grown.width)
+    expect(grown.measuredHeight).toBeLessThanOrEqual(grown.height)
+  })
+
+  it('auto-fits the seeded headline text upward for a larger resized box', () => {
+    const layer = createTextLayer({
+      mode: 'box',
+      text: 'A cleaner\nlayer stack',
+      fontSize: 40,
+      boxWidth: 300,
+      boxHeight: 120,
+      width: 300,
+      height: 120,
+    })
+    const resized = resizeBoxText(layer, 479.607476635514, 340.2056074766355)
+    expect(resized.fontSize).toBeGreaterThan(40)
+    expect(resized.measuredWidth).toBeLessThanOrEqual(resized.width)
+    expect(resized.measuredHeight).toBeLessThanOrEqual(resized.height)
+    expect(measureTextLayer(resized).requiredWidth).toBeLessThanOrEqual(resized.width)
+    expect(measureTextLayer(resized).requiredHeight).toBeLessThanOrEqual(resized.height)
+  })
+
+  it('auto-fit keeps exact required dimensions finite for fractional resized boxes', () => {
+    const resized = resizeBoxText(createTextLayer({
+      mode: 'box',
+      text: 'A cleaner\nlayer stack',
+      fontSize: 40,
+      boxWidth: 300,
+      boxHeight: 120,
+      width: 300,
+      height: 120,
+    }), 479.607476635514, 340.2056074766355)
+    const measurement = measureTextLayer(resized)
+
+    expect(Number.isFinite(measurement.requiredWidth)).toBe(true)
+    expect(Number.isFinite(measurement.requiredHeight)).toBe(true)
+    expect(measurement.requiredWidth).toBeLessThanOrEqual(resized.width)
+    expect(measurement.requiredHeight).toBeLessThanOrEqual(resized.height)
+  })
+
+  it('auto-fit respects both width and height constraints for wrapped box text', () => {
+    const layer = createTextLayer({
+      mode: 'box',
+      text: 'alpha beta gamma delta epsilon zeta',
+      fontSize: 72,
+      textAlign: 'center',
+      boxWidth: 180,
+      boxHeight: 96,
+      width: 180,
+      height: 96,
+      autoFit: true,
+    })
+    const synced = updateTextStyle(layer, {})
+
+    expect(synced.width).toBe(180)
+    expect(synced.height).toBe(96)
+    expect(synced.fontSize).toBeLessThan(72)
+    expect(synced.measuredWidth).toBeLessThanOrEqual(180)
+    expect(synced.measuredHeight).toBeLessThanOrEqual(96)
+    expect(measureTextLayer(synced).lines.length).toBeGreaterThan(1)
+  })
+
+  it('auto-fit scales style-range font sizes with the shared styled-run path', () => {
+    const layer = createTextLayer({
+      mode: 'box',
+      text: 'Hello world',
+      fontSize: 56,
+      boxWidth: 180,
+      boxHeight: 70,
+      width: 180,
+      height: 70,
+      autoFit: true,
+      styleRanges: [{ start: 6, end: 11, styles: { fontSize: 28, fontWeight: 700 } }],
+    })
+    const synced = updateTextStyle(layer, {})
+
+    expect(synced.fontSize).toBeLessThan(56)
+    expect(synced.styleRanges).toEqual([
+      {
+        start: 6,
+        end: 11,
+        styles: {
+          fontSize: expect.any(Number),
+          fontWeight: 700,
+        },
+      },
+    ])
+    expect(synced.styleRanges[0].styles.fontSize).toBeLessThan(28)
+    expect(synced.measuredWidth).toBeLessThanOrEqual(synced.width)
+    expect(synced.measuredHeight).toBeLessThanOrEqual(synced.height)
+  })
+
+  it('disables box auto-fit when the full-layer font size is edited explicitly', () => {
+    const autoFitLayer = resizeBoxText(createTextLayer({
+      mode: 'box',
+      text: 'Auto fit headline',
+      fontSize: 64,
+      boxWidth: 220,
+      boxHeight: 90,
+      width: 220,
+      height: 90,
+    }), 220, 90)
+    const updated = updateTextStyle(autoFitLayer, { fontSize: 24 })
+
+    expect(autoFitLayer.autoFit).toBe(true)
+    expect(updated.autoFit).toBe(false)
+    expect(updated.fontSize).toBe(24)
   })
 
   it('normalizes overlapping style ranges into clean merged segments', () => {

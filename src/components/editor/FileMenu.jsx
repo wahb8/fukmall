@@ -3,11 +3,8 @@ export function FileMenu({
   isOpen,
   isOpeningFile,
   isExporting,
-  theme,
-  trimTransparentImports,
   onToggle,
-  onToggleTheme,
-  onToggleTrimTransparentImports,
+  onOpenSettings,
   onNewFile,
   onOpenFile,
   onSaveFile,
@@ -25,12 +22,12 @@ export function FileMenu({
         File
       </button>
       <button
-        className={theme === 'dark' ? 'action-button active' : 'action-button'}
+        className="action-button"
         type="button"
-        onClick={onToggleTheme}
-        aria-label="Toggle dark mode"
+        onClick={onOpenSettings}
+        aria-haspopup="dialog"
       >
-        {theme === 'dark' ? 'Light UI' : 'Dark UI'}
+        Settings
       </button>
       {isOpen && (
         <div className="topbar-menu-dropdown" role="menu" aria-label="File">
@@ -53,15 +50,6 @@ export function FileMenu({
             role="menuitem"
           >
             Save File
-          </button>
-          <button
-            className="topbar-menu-item"
-            type="button"
-            onClick={onToggleTrimTransparentImports}
-            role="menuitemcheckbox"
-            aria-checked={trimTransparentImports}
-          >
-            {trimTransparentImports ? 'Trim Transparent Imports: On' : 'Trim Transparent Imports: Off'}
           </button>
           <button
             className="topbar-menu-item"
