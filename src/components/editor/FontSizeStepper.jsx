@@ -4,6 +4,7 @@ export function FontSizeStepper({
   value,
   min = 8,
   max = undefined,
+  inputRef,
   inputPointerDown,
   onDecrementStep,
   onIncrementStep,
@@ -29,6 +30,7 @@ export function FontSizeStepper({
           -
         </PressAndHoldRepeatButton>
         <input
+          ref={inputRef}
           type="number"
           min={min}
           max={max}

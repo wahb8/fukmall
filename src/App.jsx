@@ -656,6 +656,12 @@ function isSelectionPreservingUiTarget(target) {
   )
 }
 
+function isTextEditingPreservingUiTarget(target) {
+  return target instanceof HTMLElement && Boolean(
+    target.closest('.text-layer-editor, [data-text-style-control="true"]'),
+  )
+}
+
 function isResizeHandleTarget(target) {
   return target instanceof HTMLElement && Boolean(target.closest('.resize-handle'))
 }
@@ -1026,6 +1032,7 @@ function App() {
   const copiedLayerRef = useRef(null)
   const lastPenEditableLayerIdRef = useRef(null)
   const textEditorRef = useRef(null)
+  const fontSizeInputRef = useRef(null)
   const textSelectionRef = useRef({ start: 0, end: 0 })
   const textSelectionRestoreRef = useRef(null)
   const preserveTextEditingBlurRef = useRef(false)
@@ -1081,6 +1088,7 @@ function App() {
   const [textDraft, setTextDraft] = useState('')
   const [textEditorSelection, setTextEditorSelection] = useState({ start: 0, end: 0 })
   const [fontSizeInputDraft, setFontSizeInputDraft] = useState(null)
+  const fontSizeInputDraftRef = useRef(null)
   const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false)
   const [isUnsavedChangesModalOpen, setIsUnsavedChangesModalOpen] = useState(false)
   const [newFileNameInput, setNewFileNameInput] = useState(DEFAULT_DOCUMENT_NAME)
@@ -1377,7 +1385,7 @@ function App() {
   ])
 
   useEffect(() => {
-    setFontSizeInputDraft(null)
+    setFontSizeDraftValue(null)
   }, [editingTextLayerId, selectedLayer?.id, textEditorSelection.end, textEditorSelection.start])
 
   const activateTool = useCallback((nextTool) => {
@@ -1436,6 +1444,22 @@ function App() {
   const resetColors = useCallback(() => {
     setGlobalColors(createDefaultColors())
   }, [])
+
+  function setFontSizeDraftValue(nextValue) {
+    fontSizeInputDraftRef.current = nextValue
+    setFontSizeInputDraft(nextValue)
+  }
+
+  function clearTextEditingSessionState() {
+    setEditingTextLayerId(null)
+    setTextDraft('')
+    setTextEditorSelection({ start: 0, end: 0 })
+    setFontSizeDraftValue(null)
+    textSelectionRef.current = { start: 0, end: 0 }
+    textSelectionRestoreRef.current = null
+    preserveTextEditingBlurRef.current = false
+    interactionRef.current = null
+  }
 
   const syncTextEditorSelection = useCallback((textarea) => {
     if (!textarea) {
@@ -1914,6 +1938,18 @@ function App() {
         return
       }
 
+      if (editingTextLayerId) {
+        if (
+          canvasRef.current?.contains(target) ||
+          isTextEditingPreservingUiTarget(target)
+        ) {
+          return
+        }
+
+        commitTextEditing(editingTextLayerId)
+        return
+      }
+
       if (canvasRef.current?.contains(target)) {
         return
       }
@@ -1938,7 +1974,7 @@ function App() {
     return () => {
       window.removeEventListener('pointerdown', handleOutsideCanvasPointerDown)
     }
-  }, [commit, selectedLayerIds.length])
+  }, [commit, editingTextLayerId, selectedLayerIds.length])
 
   useEffect(() => {
     const overlayCanvas = overlayCanvasRef.current
@@ -3921,7 +3957,7 @@ function App() {
     setEditingTextLayerId(null)
     setTextDraft('')
     setTextEditorSelection({ start: 0, end: 0 })
-    setFontSizeInputDraft(null)
+    setFontSizeDraftValue(null)
     setToolPanelError({
       message: '',
       isRendered: false,
@@ -4548,14 +4584,16 @@ function App() {
   }
 
   function commitFontSizeInputDraft(layerId) {
-    if (fontSizeInputDraft === null) {
+    const pendingDraft = fontSizeInputDraftRef.current
+
+    if (pendingDraft === null) {
       return
     }
 
-    const trimmedDraft = String(fontSizeInputDraft).trim()
+    const trimmedDraft = String(pendingDraft).trim()
 
     if (trimmedDraft.length === 0) {
-      setFontSizeInputDraft(null)
+      setFontSizeDraftValue(null)
       return
     }
 
@@ -4567,7 +4605,23 @@ function App() {
       })
     }
 
-    setFontSizeInputDraft(null)
+    setFontSizeDraftValue(null)
+  }
+
+  function flushPendingFontSizeInputDraft(target) {
+    const activeFontSizeInput = fontSizeInputRef.current
+
+    if (
+      fontSizeInputDraftRef.current === null ||
+      !activeFontSizeInput ||
+      target === activeFontSizeInput
+    ) {
+      return
+    }
+
+    if (selectedLayer?.type === 'text') {
+      commitFontSizeInputDraft(selectedLayer.id)
+    }
   }
 
   function stepTextFontSize(layerId, delta) {
@@ -4577,7 +4631,7 @@ function App() {
       return
     }
 
-    setFontSizeInputDraft(null)
+    setFontSizeDraftValue(null)
     const selection = getEditingTextSelectionRange(layerId)
     const currentFontSize = selection
       ? (getUniformTextStyleValueForRange(layer, selection.start, selection.end, 'fontSize') ?? layer.fontSize)
@@ -4959,6 +5013,10 @@ function App() {
       return
     }
 
+    if (hitLayer.type === 'text' && event.detail > 1) {
+      return
+    }
+
     startMove(event, hitLayer)
   }
 
@@ -5002,6 +5060,12 @@ function App() {
       event.stopPropagation()
       event.preventDefault()
       selectDocumentLayer(topLayer.id)
+      return
+    }
+
+    if (layer.type === 'text' && event.detail > 1) {
+      event.stopPropagation()
+      event.preventDefault()
       return
     }
 
@@ -6206,9 +6270,24 @@ function App() {
   }
 
   function handleLayerPointerDown(event, layer) {
+    if (event.target instanceof HTMLElement) {
+      flushPendingFontSizeInputDraft(event.target)
+    }
+
     if (currentTool === 'zoom') {
       handleZoomPointer(event)
       return
+    }
+
+    if (currentTool === 'select' && editingTextLayerId) {
+      if (layer.id === editingTextLayerId) {
+        event.stopPropagation()
+        event.preventDefault()
+        commitTextEditing(editingTextLayerId)
+        return
+      }
+
+      commitTextEditing(editingTextLayerId)
     }
 
     const resizeHandleHit = getActiveSelectionResizeHandleHit(event)
@@ -6311,6 +6390,10 @@ function App() {
   }
 
   function handleCanvasPointerDown(event) {
+    if (event.target instanceof HTMLElement) {
+      flushPendingFontSizeInputDraft(event.target)
+    }
+
     if (currentTool === 'zoom') {
       handleZoomPointer(event)
       return
@@ -6328,6 +6411,18 @@ function App() {
     }
 
     if (currentTool === 'select' && isSelectionFrameTarget(event.target)) {
+      return
+    }
+
+    if (
+      currentTool === 'select' &&
+      editingTextLayerId &&
+      event.target instanceof HTMLElement &&
+      !event.target.closest('.canvas-layer')
+    ) {
+      event.stopPropagation()
+      event.preventDefault()
+      commitTextEditing(editingTextLayerId)
       return
     }
 
@@ -6590,6 +6685,16 @@ function App() {
     beginTextEditing(targetLayer)
   }
 
+  function handleTextLayerDoubleClick(event, layer) {
+    if (currentTool !== 'select' || editingTextLayerId || layer.type !== 'text') {
+      return
+    }
+
+    event.stopPropagation()
+    event.preventDefault()
+    beginTextEditing(layer)
+  }
+
   function beginTextEditing(layer) {
     if (layer.type !== 'text') {
       return
@@ -6681,24 +6786,19 @@ function App() {
   }
 
   function commitTextEditing(layerId) {
+    if (!layerId) {
+      clearTextEditingSessionState()
+      return
+    }
+
     const nextText = textDraft.trim() ? textDraft : 'New Text'
 
     updateTextLayerContent(layerId, nextText)
-    setEditingTextLayerId(null)
-    setTextDraft('')
-    setTextEditorSelection({ start: 0, end: 0 })
-    setFontSizeInputDraft(null)
-    textSelectionRestoreRef.current = null
-    preserveTextEditingBlurRef.current = false
+    clearTextEditingSessionState()
   }
 
   function cancelTextEditing() {
-    setEditingTextLayerId(null)
-    setTextDraft('')
-    setTextEditorSelection({ start: 0, end: 0 })
-    setFontSizeInputDraft(null)
-    textSelectionRestoreRef.current = null
-    preserveTextEditingBlurRef.current = false
+    clearTextEditingSessionState()
   }
 
   function registerLayerElement(layerId, node) {
@@ -6753,6 +6853,7 @@ function App() {
           zIndex: index + 1,
         }}
         onPointerDown={(event) => handleLayerPointerDown(event, layer)}
+        onDoubleClick={(event) => handleTextLayerDoubleClick(event, layer)}
       >
         <div className="layer-artwork" style={{ opacity: layer.opacity }}>
           {layer.type === 'text' && (
@@ -6937,6 +7038,7 @@ function App() {
           className="layer-selection-overlay selection-frame interactive"
           style={sharedStyle}
           onPointerDown={(event) => handleSingleSelectionFramePointerDown(event, layer)}
+          onDoubleClick={(event) => handleTextLayerDoubleClick(event, layer)}
           aria-hidden="true"
         >
           {HANDLE_DIRECTIONS.map((handle) => (
@@ -7030,6 +7132,7 @@ function App() {
       ref={appShellRef}
       className="app-shell"
       data-theme={theme}
+      onPointerDownCapture={(event) => flushPendingFontSizeInputDraft(event.target)}
       onDragEnter={handleExternalImageDragEnter}
       onDragOver={handleExternalImageDragOver}
       onDragLeave={handleExternalImageDragLeave}
@@ -7294,6 +7397,7 @@ function App() {
                           value={getDisplayedFontSizeValue(selectedLayer)}
                           min={MIN_FONT_SIZE}
                           max={MAX_FONT_SIZE}
+                          inputRef={fontSizeInputRef}
                           inputPointerDown={markTextStyleControlInteraction}
                           onStepperPointerDown={(event) => {
                             event.preventDefault()
@@ -7305,13 +7409,13 @@ function App() {
                           onInputFocus={(event) => {
                             event.stopPropagation()
                             markTextStyleControlInteraction()
-                            setFontSizeInputDraft(String(
+                            setFontSizeDraftValue(String(
                               getEditingSelectionStyleValue(selectedLayer, 'fontSize') ?? '',
                             ))
                           }}
                           onInputChange={(event) => {
                             event.stopPropagation()
-                            setFontSizeInputDraft(event.target.value)
+                            setFontSizeDraftValue(event.target.value)
                           }}
                           onInputBlur={(event) => {
                             event.stopPropagation()
@@ -7330,7 +7434,7 @@ function App() {
 
                             if (event.key === 'Escape') {
                               event.preventDefault()
-                              setFontSizeInputDraft(null)
+                              setFontSizeDraftValue(null)
                               event.currentTarget.blur()
                             }
                           }}
