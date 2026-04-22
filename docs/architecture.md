@@ -117,6 +117,14 @@ Key responsibilities:
 
 These helpers are the safest place to extend behavior before wiring it back into `App.jsx`.
 
+One important recent constraint in `textLayer.js`:
+
+- box-text auto-fit now derives its effective wrap width from the same font-specific canvas metrics
+  used by rendering, instead of wrapping against the raw box width and only later adding glyph
+  overflow padding
+- this keeps the fit solver font-agnostic across families such as `Arial`, `Cairo`, and bundled
+  fonts, and keeps selection bounds aligned with the fitted layout
+
 ## Persistence Model
 
 The app currently has two persistence paths:
@@ -164,6 +172,9 @@ The highest-risk areas remain lightly covered and rely on manual regression test
 - raster surface cache synchronization
 - canvas-stage hit testing and gesture routing
 - complex text-editing interactions
+
+There is now additional targeted App-level regression coverage for the font-sensitive box-text
+auto-fit path, including shrink/grow behavior and selection-bound sync across multiple fonts.
 
 When adding features, prefer pushing logic into `src/lib/`, `src/editor/`, or extracted components
 first, then keep `App.jsx` as the integration layer.

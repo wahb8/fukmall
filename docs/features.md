@@ -77,6 +77,13 @@ loaded by `src/App.jsx`.
 - box text can now opt into automatic font fitting through the shared text-layout/render path
 - text layers can also be flipped horizontally or vertically from the inspector without flattening them
 - when auto-fit is active, changing a box text layer's width or height recomputes the largest fitting font size inside the current box instead of growing the box to keep the old font size
+- that auto-fit solve is now font-agnostic across supported families such as `Arial`, `Cairo`,
+  bundled fonts, and normal system-like serif/sans stacks
+- box-text fitting now resolves the usable wrap width from the same font-specific canvas metrics that
+  also drive rendering and selection bounds, instead of wrapping against the full box and only later
+  penalizing glyph overhang
+- slight box shrinks therefore no longer snap wider-overhang fonts prematurely to `8` unless `8` is
+  truly the largest fitting result for that box
 - JSON-created text layers with explicit `width` and/or `height` use that same shared auto-fit path on creation
 - text layers now also store normalized partial-style ranges through `styleRanges`
 - when text is actively being edited and a non-empty text selection exists, supported style changes apply only to that selected range
@@ -255,6 +262,8 @@ Text layers support:
 - point mode and box mode
 - box resizing with reflow
 - auto-fit box resizing, using the same shared measurement/render helpers as normal display and export
+- auto-fit resize now stays consistent across multiple supported fonts instead of depending on the
+  current family's horizontal overhang characteristics
 - font selection from a fixed list
 - bold toggle
 - color editing
@@ -557,6 +566,8 @@ When movement is axis-locked with `Shift`, snapping remains active only on the u
 - single-layer resize now uses a stable pointer-down snapshot for the full drag instead of re-basing limits from intermediate transient sizes
 - reversing direction during the same resize drag can grow the layer back up naturally instead of getting capped by the smallest transient state reached earlier in the drag
 - resizing a box text layer now also recomputes its fitted font size through the shared text helper path, so the resize still lands as one coherent history step
+- after shrinking, enlarging the same auto-fit text box recomputes upward normally instead of staying
+  pinned to the minimum fitted size because of stale font-sensitive measurement state
 - resize still preserves the existing minimum-size behavior, anchor-handle behavior, and temporary `Shift` proportional resize behavior
 - the editor now caps resize results at an absolute maximum of `5000 x 5000`
 

@@ -4479,7 +4479,11 @@ function App() {
     if (selection) {
       applyTextLayerUpdate(
         layerId,
-        (layer) => applyTextStyleToRange(layer, selection.start, selection.end, stylesOrUpdater),
+        (layer) => (
+          typeof stylesOrUpdater === 'function'
+            ? stylesOrUpdater(layer)
+            : applyTextStyleToRange(layer, selection.start, selection.end, stylesOrUpdater)
+        ),
       )
       restoreTextEditorSelection(selection)
       return

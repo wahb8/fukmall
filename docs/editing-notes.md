@@ -149,6 +149,9 @@ Current behavior:
 - `left`, `center`, and `right` alignment are rendered through the shared text layout/render helpers
 - box text alignment affects per-line placement inside the box while preserving wrapping/reflow
 - auto-fit box text also uses that same shared layout/render path, so editor view, inline editing, and export stay aligned
+- box-text auto-fit now also resolves its usable wrap width from the same font-specific measurement
+  data that drives rendering, which avoids font-dependent regressions where wider-overhang families
+  could collapse to `8px` on a slight shrink
 - point text alignment preserves the layer's intended horizontal anchor when content or alignment changes
 - point-text anchor preservation now respects the renderer's actual left-anchor semantics instead of drifting when alignment changes
 - the selected-layer selection frame now forwards double-click into text editing for text layers
@@ -156,6 +159,16 @@ Current behavior:
 - when inline editing opens, the textarea caret is moved to the end of the current text
 
 If future work changes text editing again, preserve the shared renderer path so editor view, inline editing, and export do not drift apart.
+
+Recent font-specific auto-fit note:
+
+- the old failure mode was not generic resize orchestration; it came from wrapping against the raw
+  box width and then treating font-specific glyph overflow as a later fit failure
+- `Arial` exposed that mismatch more aggressively than `Cairo`, so slight shrink operations could
+  fall through to the minimum fitted size even though the text still had room
+- if future work touches measurement again, preserve the rule that box wrap width, fit solving,
+  visible canvas rendering, inline editing, export, and selection bounds all derive from the same
+  font-sensitive measurement model
 
 ### Partial Text Styling
 
@@ -328,6 +341,8 @@ Resize now depends on a stable pointer-down snapshot:
 - size limits during a single drag should be derived from the resize session start state, not from intermediate transient sizes reached mid-drag
 - reversing direction during the same drag should remain possible
 - resizing a box text layer now also recomputes its fitted font size through `src/lib/textLayer.js`, but still commits as one resize interaction rather than spamming history
+- the shrink solve must remain font-agnostic; do not reintroduce any path where fonts with larger
+  horizontal overhang can be rejected after wrapping against a different width model
 - the editor now hard-caps resize results at `5000 x 5000`
 
 ### Prompt Input
@@ -358,6 +373,12 @@ Current automated test scope is intentionally conservative:
 - strong coverage around `src/lib/history.js`, `src/hooks/useHistory.js`, `src/lib/layers.js`, `src/lib/documentFiles.js`, `src/lib/textLayer.js`, `src/lib/moveSnapping.js`, `src/lib/viewport.js`, and `src/editor/documentHelpers.js`
 - light component coverage around extracted presentational editor components
 - no deep tests yet for the pointer lifecycle, raster surface cache behavior, or full `App.jsx` interaction orchestration
+
+Recent targeted exception:
+
+- `src/App.autoFitFontRegression.test.jsx` now adds focused App-level runtime coverage for the
+  font-specific auto-fit shrink/grow regression using differentiated metrics for `Arial`, `Cairo`,
+  `Ubuntu`, and `Georgia`
 
 Recent test-foundation note:
 

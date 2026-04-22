@@ -4,6 +4,13 @@ Fukmall is a client-side React + Vite layered composition editor prototype. It b
 
 The Add Layer JSON flow now also supports an exact case-sensitive `"Layer name"` field for both JSON-created text and image layers. When that field is present and non-empty after trimming, the created layer uses that name; otherwise the existing default naming behavior is preserved.
 
+Box-text auto-fit now also uses a font-agnostic shared measurement model during creation and resize.
+The fit solver no longer wraps against the full box width and then rejects wider-overhang fonts after
+the fact; instead it resolves the usable wrap width from the same font-specific canvas metrics that
+drive editor rendering, inline editing, export, and selection bounds. This fixes the regression
+where some fonts, especially `Arial`, could snap prematurely to `8px` on slight shrink while fonts
+such as `Cairo` still behaved correctly.
+
 Current image import behavior includes:
 
 - validated PNG, JPG, JPEG, WEBP, and SVG import from the file picker, external desktop drop, and asset-library canvas drop
@@ -47,6 +54,7 @@ Current automated coverage is intentionally focused on the safest seams:
 - pure helper/domain modules in `src/lib/`
 - app-level helper logic in `src/editor/`
 - a few stable presentational components in `src/components/editor/`
+- targeted App-level regression coverage for box-text auto-fit runtime behavior across multiple fonts
 
 The current baseline is green:
 
@@ -55,6 +63,13 @@ The current baseline is green:
 - `npm run lint` passes with the existing React hook dependency warnings in `src/App.jsx`
 
 Current automated tests intentionally do not try to deeply cover the highest-risk interaction engine in `src/App.jsx`, including the full pointer lifecycle, raster surface cache coordination, and canvas gesture integration. Those areas still rely primarily on careful manual regression testing.
+
+Recent text-specific regression coverage now includes app-level auto-fit resize checks for:
+
+- `Arial`
+- `Cairo`
+- `Ubuntu`
+- `Georgia`
 
 ## Documentation
 

@@ -255,6 +255,8 @@ This document describes what each tracked file in the repo currently does.
 
 - App-level regression coverage for selected-frame interaction and selection chrome structure
 - verifies that the visible single-layer selection frame is not rendered inside the opacity-applied artwork subtree
+- now also includes a resize regression that verifies a newly auto-fit text box can enlarge and then
+  shrink on the next drag without collapsing prematurely to the minimum fitted size
 
 ### `src/App.css`
 
@@ -343,6 +345,9 @@ This document describes what each tracked file in the repo currently does.
 - measures text, wraps box text, syncs text layout into layer bounds, updates text style/content, normalizes partial-style ranges, and renders text to canvas
 - defaults new text layers to box mode with `Arial, sans-serif`, left alignment, `1.15` line height, and `0` letter spacing
 - now owns the box-text auto-fit model and bounded font-size search used by resize-driven and JSON-driven text fitting
+- box-text auto-fit now also iterates against the effective usable wrap width after font-specific
+  glyph overflow padding is known, instead of wrapping against the raw box width and rejecting some
+  fonts only after the measurement step
 - now owns the `styleRanges` normalization and text-change remapping helpers used by partial text styling
 - now resolves partial-style text into styled runs so measurement, wrapping, alignment, and canvas rendering stay in sync
 - preserves point-text horizontal anchors across content/alignment updates
@@ -353,6 +358,16 @@ This document describes what each tracked file in the repo currently does.
 - applies left/center/right alignment in both normal line rendering and letter-spaced glyph rendering
 - now also supports an exact JSON box-size preservation flag used by JSON-created text layers so later layout sync does not overwrite requested final `width` and `height`
 - box text auto-fit reuses that same shared measurement/render path, scaling styled range font sizes proportionally instead of introducing a second renderer
+- keeps auto-fit source font/style data stable across later content/style edits so resize-driven
+  fitting continues to solve from the authored baseline instead of accumulating previous fitted sizes
+
+### `src/App.autoFitFontRegression.test.jsx`
+
+- App-level regression coverage for the font-sensitive auto-fit box-text path
+- uses a font-aware canvas measurement stub so different font families expose different horizontal
+  metrics during the test run
+- verifies initial creation bounds, slight shrink behavior, later grow recovery, and selection-frame
+  sync for `Arial`, `Cairo`, `Ubuntu`, and `Georgia`
 
 ### `src/lib/penTool.js`
 

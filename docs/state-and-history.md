@@ -187,6 +187,8 @@ Current partial-style behavior is intentionally data-first:
 - undo/redo and project-file save/load include these ranges because they live in the document snapshot
 - measurement, wrapping, bounds, editor rendering, and export now all consume the same run-based text layout derived from these ranges
 - when box-text auto-fit is enabled, that same run-based path scales the stored text styles to the current fitted font size instead of switching to a separate renderer
+- the box-text fit solve now also derives its usable wrap width from that same font-sensitive
+  measurement path, so different font families do not drift into different shrink/grow behavior
 
 ## Selection State
 

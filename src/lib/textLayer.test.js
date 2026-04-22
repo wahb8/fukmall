@@ -18,6 +18,74 @@ import { centerToTopLeft } from './layerGeometry'
 import { createTextLayer } from './layers'
 
 describe('text layer helpers', () => {
+  function getFontMetrics(fontDescriptor) {
+    const normalizedFont = String(fontDescriptor ?? '').toLowerCase()
+
+    if (normalizedFont.includes('arial')) {
+      return {
+        widthFactor: 0.62,
+        ascentFactor: 0.78,
+        descentFactor: 0.22,
+        overflowFactor: 0.18,
+      }
+    }
+
+    if (normalizedFont.includes('cairo')) {
+      return {
+        widthFactor: 0.54,
+        ascentFactor: 0.84,
+        descentFactor: 0.24,
+        overflowFactor: 0.05,
+      }
+    }
+
+    if (normalizedFont.includes('ubuntu')) {
+      return {
+        widthFactor: 0.58,
+        ascentFactor: 0.8,
+        descentFactor: 0.22,
+        overflowFactor: 0.08,
+      }
+    }
+
+    if (normalizedFont.includes('georgia')) {
+      return {
+        widthFactor: 0.6,
+        ascentFactor: 0.81,
+        descentFactor: 0.23,
+        overflowFactor: 0.1,
+      }
+    }
+
+    return {
+      widthFactor: 0.59,
+      ascentFactor: 0.8,
+      descentFactor: 0.22,
+      overflowFactor: 0.09,
+    }
+  }
+
+  function createFontSensitiveMeasureText(font) {
+    const fontMatch = String(font ?? '').match(/(\d+(?:\.\d+)?)px\s+(.+)$/)
+    const fontSize = fontMatch ? Number(fontMatch[1]) : 16
+    const fontDescriptor = fontMatch?.[2] ?? ''
+    const metrics = getFontMetrics(fontDescriptor)
+
+    return (text) => {
+      const glyphCount = Array.from(String(text ?? '')).length
+      const width = glyphCount * Math.max(fontSize * metrics.widthFactor, 1)
+      const overflow = glyphCount > 0 ? fontSize * metrics.overflowFactor : 0
+
+      return {
+        width,
+        actualBoundingBoxAscent: fontSize * metrics.ascentFactor,
+        actualBoundingBoxDescent: fontSize * metrics.descentFactor,
+        actualBoundingBoxLeft: overflow,
+        actualBoundingBoxRight: width + overflow,
+      }
+    }
+  }
+
   function resolveLargestFittingFontSize(layer, width, height) {
     let bestFontSize = 8
 
@@ -424,6 +492,51 @@ describe('text layer helpers', () => {
     expect(synced.measuredHeight).toBeLessThanOrEqual(synced.height)
   })
 
+  it('keeps slight auto-fit shrinks font-agnostic across Arial, Cairo, Ubuntu, and Georgia', () => {
+    const contextPrototype = Object.getPrototypeOf(document.createElement('canvas').getContext('2d'))
+    const measureTextSpy = vi
+      .spyOn(contextPrototype, 'measureText')
+      .mockImplementation(function mockMeasureText(text) {
+        return createFontSensitiveMeasureText(this.font)(text)
+      })
+
+    try {
+      const fontFamilies = [
+        'Arial, sans-serif',
+        '"Cairo", sans-serif',
+        '"Ubuntu", sans-serif',
+        'Georgia, serif',
+      ]
+
+      for (const fontFamily of fontFamilies) {
+        const layer = createTextLayer({
+          mode: 'box',
+          text: 'A much longer headline that needs fitting',
+          fontFamily,
+          fontSize: 88,
+          boxWidth: 220,
+          boxHeight: 90,
+          width: 220,
+          height: 90,
+          autoFit: true,
+        })
+        const enlarged = resizeBoxText(layer, 236, 100)
+        const shrunk = resizeBoxText(enlarged, 224, 94)
+        const recovered = resizeBoxText(shrunk, 244, 108)
+
+        expect(shrunk.fontSize).toBeGreaterThan(8)
+        expect(shrunk.fontSize).toBeLessThanOrEqual(enlarged.fontSize)
+        expect(shrunk.measuredWidth).toBe(measureTextLayer(shrunk).requiredWidth)
+        expect(shrunk.measuredHeight).toBe(measureTextLayer(shrunk).requiredHeight)
+        expect(recovered.fontSize).toBeGreaterThan(shrunk.fontSize)
+        expect(recovered.measuredWidth).toBe(measureTextLayer(recovered).requiredWidth)
+        expect(recovered.measuredHeight).toBe(measureTextLayer(recovered).requiredHeight)
+      }
+    } finally {
+      measureTextSpy.mockRestore()
+    }
+  })
+
   it('disables box auto-fit when the full-layer font size is edited explicitly', () => {
     const autoFitLayer = resizeBoxText(createTextLayer({
       mode: 'box',
@@ -517,6 +630,44 @@ describe('text layer helpers', () => {
       { start: 0, end: 6, styles: { color: '#ff0000' } },
       { start: 6, end: 11, styles: { color: '#ff0000', fontFamily: '"Ubuntu", sans-serif' } },
     ])
+  })
+
+  it('supports functional selected-range updates without flattening surrounding mixed styles', () => {
+    const layer = createTextLayer({
+      text: 'Hello world',
+      mode: 'point',
+      styleRanges: [
+        { start: 0, end: 5, styles: { color: '#ff0000' } },
+        { start: 6, end: 11, styles: { fontWeight: 700 } },
+      ],
+    })
+    const updated = applyTextStyleToRange(layer, 3, 8, (style) => ({
+      ...style,
+      fontFamily: '"Ubuntu", sans-serif',
+      fontWeight: Number(style.fontWeight) >= 700 ? 400 : 700,
+    }))
+
+    expect(updated.styleRanges).toEqual([
+      { start: 0, end: 3, styles: { color: '#ff0000' } },
+      {
+        start: 3,
+        end: 5,
+        styles: { color: '#ff0000', fontFamily: '"Ubuntu", sans-serif', fontWeight: 700 },
+      },
+      {
+        start: 5,
+        end: 6,
+        styles: { fontFamily: '"Ubuntu", sans-serif', fontWeight: 700 },
+      },
+      {
+        start: 6,
+        end: 8,
+        styles: { fontFamily: '"Ubuntu", sans-serif' },
+      },
+      { start: 8, end: 11, styles: { fontWeight: 700 } },
+    ])
+    expect(getUniformTextStyleValueForRange(updated, 3, 8, 'fontFamily')).toBe('"Ubuntu", sans-serif')
+    expect(getUniformTextStyleValueForRange(updated, 3, 8, 'fontWeight')).toBe(null)
   })
 
   it('can remove bold from a selected range without affecting surrounding text', () => {
