@@ -92,6 +92,8 @@ export function createTextLayer(overrides = {}) {
     boxHeight: null,
     measuredWidth: 0,
     measuredHeight: 0,
+    autoFitSourceFontSize: null,
+    autoFitSourceStyleRanges: null,
     styleRanges: [],
     eraseMask: '',
     paintOverlayBitmap: '',

@@ -273,6 +273,28 @@ describe('text layer helpers', () => {
     expect(grownAgain.measuredHeight).toBe(measureTextLayer(grownAgain).requiredHeight)
   })
 
+  it('keeps a stable authored auto-fit source across shrink minimum recover cycles', () => {
+    const layer = resizeBoxText(createTextLayer({
+      mode: 'box',
+      text: 'A much longer headline that needs fitting',
+      fontSize: 88,
+      boxWidth: 220,
+      boxHeight: 90,
+      width: 220,
+      height: 90,
+    }), 220, 90)
+    const minimum = resizeBoxText(layer, 72, 48)
+    const recovered = resizeBoxText(minimum, 220, 90)
+
+    expect(layer.autoFitSourceFontSize).toBe(88)
+    expect(minimum.fontSize).toBe(8)
+    expect(minimum.autoFitSourceFontSize).toBe(88)
+    expect(recovered.fontSize).toBe(layer.fontSize)
+    expect(recovered.autoFitSourceFontSize).toBe(88)
+    expect(recovered.measuredWidth).toBe(measureTextLayer(recovered).requiredWidth)
+    expect(recovered.measuredHeight).toBe(measureTextLayer(recovered).requiredHeight)
+  })
+
   it('auto-fits the seeded headline text upward for a larger resized box', () => {
     const layer = createTextLayer({
       mode: 'box',

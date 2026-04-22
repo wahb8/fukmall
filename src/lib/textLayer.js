@@ -240,6 +240,58 @@ function scaleTextStyleRangeFontSizes(styleRanges, ratio, textLength) {
   )
 }
 
+function getTextLength(layer) {
+  return String(layer?.text ?? '').length
+}
+
+function normalizeLayerStyleRanges(layer, styleRanges = layer?.styleRanges) {
+  return normalizeTextStyleRanges(styleRanges, getTextLength(layer))
+}
+
+function getAutoFitSourceFontSize(layer) {
+  return clampTextFontSize(
+    layer?.autoFitSourceFontSize ?? layer?.fontSize,
+    MIN_AUTO_FIT_FONT_SIZE,
+  )
+}
+
+function getAutoFitSourceStyleRanges(layer, fallbackStyleRanges = layer?.styleRanges) {
+  return normalizeLayerStyleRanges(
+    layer,
+    Array.isArray(layer?.autoFitSourceStyleRanges)
+      ? layer.autoFitSourceStyleRanges
+      : fallbackStyleRanges,
+  )
+}
+
+function createAutoFitResizeSourceLayer(layer, normalizedStyleRanges = null) {
+  const nextStyleRanges = normalizedStyleRanges ?? normalizeLayerStyleRanges(layer)
+
+  return {
+    ...layer,
+    fontSize: getAutoFitSourceFontSize(layer),
+    styleRanges: getAutoFitSourceStyleRanges(layer, nextStyleRanges),
+  }
+}
+
+function rebaseAutoFitAuthoringLayer(layer) {
+  if (!isBoxTextAutoFitEnabled(layer)) {
+    return {
+      ...layer,
+      styleRanges: normalizeLayerStyleRanges(layer),
+    }
+  }
+
+  const normalizedStyleRanges = normalizeLayerStyleRanges(layer)
+
+  return {
+    ...layer,
+    styleRanges: normalizedStyleRanges,
+    autoFitSourceFontSize: clampTextFontSize(layer?.fontSize, MIN_AUTO_FIT_FONT_SIZE),
+    autoFitSourceStyleRanges: normalizedStyleRanges,
+  }
+}
+
 export function remapTextStyleRangesForTextChange(previousText, nextText, styleRanges) {
   const previousValue = String(previousText ?? '')
   const nextValue = String(nextText ?? '')
@@ -329,6 +381,7 @@ export function remapTextStyleRangesForTextChange(previousText, nextText, styleR
 }
 
 export function applyTextStyleToRange(layer, start, end, stylesOrUpdater) {
+  const authoringLayer = rebaseAutoFitAuthoringLayer(layer)
   const textLength = String(layer?.text ?? '').length
   const normalizedStart = Math.max(0, Math.min(textLength, Math.floor(Number(start) || 0)))
   const normalizedEnd = Math.max(0, Math.min(textLength, Math.floor(Number(end) || 0)))
@@ -347,26 +400,26 @@ export function applyTextStyleToRange(layer, start, end, stylesOrUpdater) {
 
   if (nextStyles) {
     return syncTextLayerLayout({
-      ...layer,
+      ...authoringLayer,
       styleRanges: normalizeTextStyleRanges([
-        ...normalizeTextStyleRanges(layer?.styleRanges, textLength),
+        ...normalizeTextStyleRanges(authoringLayer?.styleRanges, textLength),
         {
           start: normalizedStart,
           end: normalizedEnd,
           styles: nextStyles,
         },
       ], textLength),
-    }, layer)
+    }, authoringLayer)
   }
 
-  const nextSegments = getEffectiveTextStyleSegments(layer, [normalizedStart, normalizedEnd]).map((segment) => {
+  const nextSegments = getEffectiveTextStyleSegments(authoringLayer, [normalizedStart, normalizedEnd]).map((segment) => {
     if (segment.end <= normalizedStart || segment.start >= normalizedEnd) {
       return segment
     }
 
     const nextStyle = typeof stylesOrUpdater === 'function'
-      ? getResolvedTextStyle(layer, stylesOrUpdater(segment.style))
-      : getResolvedTextStyle(layer, {
+      ? getResolvedTextStyle(authoringLayer, stylesOrUpdater(segment.style))
+      : getResolvedTextStyle(authoringLayer, {
         ...segment.style,
         ...nextStyles,
       })
@@ -378,9 +431,9 @@ export function applyTextStyleToRange(layer, start, end, stylesOrUpdater) {
   })
 
   return syncTextLayerLayout({
-    ...layer,
-    styleRanges: rebuildTextStyleRangesFromSegments(layer, nextSegments),
-  }, layer)
+    ...authoringLayer,
+    styleRanges: rebuildTextStyleRangesFromSegments(authoringLayer, nextSegments),
+  }, authoringLayer)
 }
 
 export function isTextStyleActiveAcrossRange(layer, start, end, predicate) {
@@ -1013,6 +1066,25 @@ function tokenizeParagraphCharacters(characters, context) {
   return tokens
 }
 
+function createParagraphsFromCharacters(characters) {
+  const paragraphs = []
+  let currentParagraph = []
+
+  for (const character of characters) {
+    if (character.char === '\n') {
+      paragraphs.push(currentParagraph)
+      currentParagraph = []
+      continue
+    }
+
+    currentParagraph.push(character)
+  }
+
+  paragraphs.push(currentParagraph)
+
+  return paragraphs
+}
+
 function measureRunAdvanceWidth(context, text, style) {
   context.font = getTextFontFromStyle(style)
   return measureTextWidth(context, text, style.letterSpacing)
@@ -1341,51 +1413,64 @@ function createTextLayout(layer) {
   const metricsCache = new Map()
   const fallbackStyle = getResolvedTextStyle(layer)
   const mode = layer.mode ?? DEFAULT_TEXT_MODE
-  const maxWidth = mode === 'box' ? Math.max(layer.boxWidth ?? 0, 1) : null
+  const maxBoxWidth = mode === 'box' ? Math.max(layer.boxWidth ?? 0, 1) : null
   const baseDirection = detectTextDirection(layer?.text ?? '')
   const allCharacters = createStyledCharacters(layer, context, metricsCache)
-  const paragraphs = []
-  let currentParagraph = []
-
-  for (const character of allCharacters) {
-    if (character.char === '\n') {
-      paragraphs.push(currentParagraph)
-      currentParagraph = []
-      continue
-    }
-
-    currentParagraph.push(character)
-  }
-
-  paragraphs.push(currentParagraph)
-
-  const lines = mode === 'box'
-    ? paragraphs.flatMap((paragraph) => (
-      layoutParagraphTokens(
-        tokenizeParagraphCharacters(paragraph, context),
-        maxWidth,
+  const paragraphs = createParagraphsFromCharacters(allCharacters)
+  const createLines = (wrapWidth = null) => (
+    mode === 'box'
+      ? paragraphs.flatMap((paragraph) => (
+        layoutParagraphTokens(
+          tokenizeParagraphCharacters(paragraph, context),
+          wrapWidth,
+          fallbackStyle,
+          context,
+          metricsCache,
+          baseDirection,
+        )
+      ))
+      : paragraphs.map((paragraph) => finalizeLayoutLine(
+        paragraph,
         fallbackStyle,
         context,
         metricsCache,
-        baseDirection,
-      )
-    ))
-    : paragraphs.map((paragraph) => finalizeLayoutLine(
-      paragraph,
-      fallbackStyle,
-      context,
-      metricsCache,
-      resolveDetectedTextDirection(paragraph.map((character) => character.char).join(''), baseDirection),
-    ))
-  const measuredLineWidth = lines.reduce((largestWidth, line) => Math.max(largestWidth, line.width), 0)
-  const visualOverflowLeft = lines.reduce((largestOverflow, line) => (
+        resolveDetectedTextDirection(paragraph.map((character) => character.char).join(''), baseDirection),
+      ))
+  )
+
+  let effectiveWrapWidth = maxBoxWidth
+  let lines = createLines(mode === 'box' ? effectiveWrapWidth : null)
+  let visualOverflowLeft = lines.reduce((largestOverflow, line) => (
     Math.max(largestOverflow, Math.max(0, -(line.visualLeft ?? 0)))
   ), 0)
-  const visualOverflowRight = lines.reduce((largestOverflow, line) => (
+  let visualOverflowRight = lines.reduce((largestOverflow, line) => (
     Math.max(largestOverflow, Math.max(0, (line.visualRight ?? line.width) - line.width))
   ), 0)
+
+  if (mode === 'box') {
+    for (let iteration = 0; iteration < 4; iteration += 1) {
+      const nextPaddingLeft = Math.ceil(visualOverflowLeft)
+      const nextPaddingRight = Math.ceil(visualOverflowRight)
+      const nextWrapWidth = Math.max((maxBoxWidth ?? 1) - nextPaddingLeft - nextPaddingRight, 1)
+
+      if (nextWrapWidth === effectiveWrapWidth) {
+        break
+      }
+
+      effectiveWrapWidth = nextWrapWidth
+      lines = createLines(effectiveWrapWidth)
+      visualOverflowLeft = lines.reduce((largestOverflow, line) => (
+        Math.max(largestOverflow, Math.max(0, -(line.visualLeft ?? 0)))
+      ), 0)
+      visualOverflowRight = lines.reduce((largestOverflow, line) => (
+        Math.max(largestOverflow, Math.max(0, (line.visualRight ?? line.width) - line.width))
+      ), 0)
+    }
+  }
+
+  const measuredLineWidth = lines.reduce((largestWidth, line) => Math.max(largestWidth, line.width), 0)
   const measuredContentWidth = mode === 'box'
-    ? Math.max(maxWidth ?? 0, measuredLineWidth, 1)
+    ? Math.max(measuredLineWidth, 1)
     : measuredLineWidth
   const measuredHeight = lines.reduce((totalHeight, line) => totalHeight + line.lineHeight, 0)
   const paddingLeft = Math.ceil(
@@ -1395,19 +1480,23 @@ function createTextLayout(layer) {
     (mode === 'point' ? POINT_TEXT_HORIZONTAL_PADDING_RIGHT : 0) + visualOverflowRight,
   )
   const measuredWidth = Math.ceil(measuredContentWidth + visualOverflowLeft + visualOverflowRight)
+  const requiredWidth = mode === 'box'
+    ? Math.max(
+      measuredLineWidth + paddingLeft + paddingRight,
+      1,
+    )
+    : measuredContentWidth + visualOverflowLeft + visualOverflowRight + (
+      POINT_TEXT_HORIZONTAL_PADDING_LEFT + POINT_TEXT_HORIZONTAL_PADDING_RIGHT
+    )
 
   return {
-    requiredWidth: measuredContentWidth + visualOverflowLeft + visualOverflowRight + (
-      mode === 'point'
-        ? POINT_TEXT_HORIZONTAL_PADDING_LEFT + POINT_TEXT_HORIZONTAL_PADDING_RIGHT
-        : 0
-    ),
+    requiredWidth,
     requiredHeight: measuredHeight + TEXT_VERTICAL_PADDING_TOP + TEXT_VERTICAL_PADDING_BOTTOM,
-    width: Math.max(measuredWidth + (
-      mode === 'point'
-        ? POINT_TEXT_HORIZONTAL_PADDING_LEFT + POINT_TEXT_HORIZONTAL_PADDING_RIGHT
-        : 0
-    ), 1),
+    width: mode === 'box'
+      ? Math.max(requiredWidth, 1)
+      : Math.max(measuredWidth + (
+        POINT_TEXT_HORIZONTAL_PADDING_LEFT + POINT_TEXT_HORIZONTAL_PADDING_RIGHT
+      ), 1),
     height: Math.ceil(measuredHeight + TEXT_VERTICAL_PADDING_TOP + TEXT_VERTICAL_PADDING_BOTTOM),
     contentWidth: measuredContentWidth,
     contentHeight: measuredHeight,
@@ -1719,10 +1808,7 @@ function preservePointTextAnchor(previousLayer, nextLayer) {
 
 export function syncTextLayerLayout(layer, previousLayer = null) {
   const preserveExactJsonBoxSize = layer.mode === 'box' && layer.preserveExactJsonBoxSize === true
-  const normalizedStyleRanges = normalizeTextStyleRanges(
-    layer.styleRanges,
-    String(layer.text ?? '').length,
-  )
+  const normalizedStyleRanges = normalizeLayerStyleRanges(layer)
   let measurement = measureTextLayer({
     ...layer,
     styleRanges: normalizedStyleRanges,
@@ -1733,6 +1819,8 @@ export function syncTextLayerLayout(layer, previousLayer = null) {
   let normalizedBoxHeight = null
   let nextFontSize = clampTextFontSize(layer.fontSize, MIN_AUTO_FIT_FONT_SIZE)
   let nextStyleRanges = normalizedStyleRanges
+  let nextAutoFitSourceFontSize = null
+  let nextAutoFitSourceStyleRanges = null
 
   if (layer.mode === 'box') {
     let workingLayer = {
@@ -1745,14 +1833,18 @@ export function syncTextLayerLayout(layer, previousLayer = null) {
     }
 
     if (isBoxTextAutoFitEnabled(workingLayer)) {
-      const autoFitFallbackResult = createAutoFitFallbackResult(
+      const autoFitSourceLayer = createAutoFitResizeSourceLayer(
         workingLayer,
+        normalizedStyleRanges,
+      )
+      const autoFitFallbackResult = createAutoFitFallbackResult(
+        autoFitSourceLayer,
         previousLayer,
         requestedBoxWidth,
         requestedBoxHeight,
       )
       const autoFitResult = resolveAutoFitFontSize(
-        workingLayer,
+        autoFitSourceLayer,
         requestedBoxWidth,
         requestedBoxHeight,
         autoFitFallbackResult,
@@ -1763,6 +1855,8 @@ export function syncTextLayerLayout(layer, previousLayer = null) {
       normalizedBoxHeight = requestedBoxHeight
       nextFontSize = autoFitResult.layer.fontSize
       nextStyleRanges = autoFitResult.layer.styleRanges
+      nextAutoFitSourceFontSize = autoFitSourceLayer.fontSize
+      nextAutoFitSourceStyleRanges = autoFitSourceLayer.styleRanges
     } else {
       for (let iteration = 0; iteration < 3; iteration += 1) {
         measurement = measureTextLayer(workingLayer)
@@ -1806,18 +1900,29 @@ export function syncTextLayerLayout(layer, previousLayer = null) {
     width: layer.mode === 'box' ? normalizedBoxWidth : measurement.width,
     height: layer.mode === 'box' ? normalizedBoxHeight : measurement.height,
     styleRanges: nextStyleRanges,
+    autoFitSourceFontSize: isBoxTextAutoFitEnabled(layer)
+      ? nextAutoFitSourceFontSize
+      : null,
+    autoFitSourceStyleRanges: isBoxTextAutoFitEnabled(layer)
+      ? nextAutoFitSourceStyleRanges
+      : null,
   }
 
   return preservePointTextAnchor(previousLayer, nextLayer)
 }
 
 export function updateTextContent(layer, text) {
+  const authoringLayer = rebaseAutoFitAuthoringLayer(layer)
   const nextLayer = syncTextLayerLayout({
-    ...layer,
+    ...authoringLayer,
     text,
     name: String(text ?? '').replace(/\s+/g, ' ').trim() || 'New Text',
-    styleRanges: remapTextStyleRangesForTextChange(layer.text, text, layer.styleRanges),
-  }, layer)
+    styleRanges: remapTextStyleRangesForTextChange(
+      authoringLayer.text,
+      text,
+      authoringLayer.styleRanges,
+    ),
+  }, authoringLayer)
 
   return applyPointTextVisualAnchor(layer, nextLayer)
 }
@@ -1831,12 +1936,24 @@ export function updateTextStyle(layer, updates) {
     Object.prototype.hasOwnProperty.call(updates, 'fontSize') &&
     !Object.prototype.hasOwnProperty.call(updates, 'autoFit')
   )
+  const authoringLayer = disablesAutoFit
+    ? {
+      ...layer,
+      styleRanges: normalizeLayerStyleRanges(layer),
+    }
+    : rebaseAutoFitAuthoringLayer(layer)
 
   return syncTextLayerLayout({
-    ...layer,
-    ...(disablesAutoFit ? { autoFit: false } : {}),
+    ...authoringLayer,
+    ...(disablesAutoFit
+      ? {
+        autoFit: false,
+        autoFitSourceFontSize: null,
+        autoFitSourceStyleRanges: null,
+      }
+      : {}),
     ...updates,
-  }, layer)
+  }, authoringLayer)
 }
 
 export function updateTextLayerFont(layer, fontFamily) {

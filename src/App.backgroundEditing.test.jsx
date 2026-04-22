@@ -147,8 +147,8 @@ describe('App background layer editing', () => {
     fireEvent.pointerDown(backgroundLayer, { clientX: 10, clientY: 500, buttons: 1 })
 
     await waitFor(() => {
-      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBe(1080)
-      expect(Number(getNumericInput(getInspector(container), 'Height').value)).toBe(1440)
+      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBe(1110)
+      expect(Number(getNumericInput(getInspector(container), 'Height').value)).toBe(1470)
     })
 
     expect(screen.queryByText('Fill')).toBeNull()

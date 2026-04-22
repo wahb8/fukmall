@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import {
@@ -10,6 +10,10 @@ import { CURRENT_DOCUMENT_STORAGE_KEY } from './lib/documentFiles'
 
 function getToolPanelError() {
   return screen.queryByRole('status')
+}
+
+function getNewFileDialog() {
+  return screen.getByRole('dialog', { name: 'New file dimensions' })
 }
 
 function getInspector(container) {
@@ -203,5 +207,35 @@ describe('App tool-panel error lifecycle', () => {
 
     expect(screen.getByRole('status')).toHaveClass('visible')
     expect(screen.getByRole('button', { name: 'Dismiss status message' })).toBeInTheDocument()
+  })
+
+  it('clears the transient tool-panel error when a new file resets runtime state', async () => {
+    shouldFailAutosave = true
+
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('Current document could not be autosaved locally.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pen' }))
+    expect(screen.getByRole('button', { name: 'Pen' })).toHaveClass('active')
+
+    shouldFailAutosave = false
+
+    fireEvent.click(screen.getByRole('button', { name: 'File' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New File' }))
+
+    const dialog = getNewFileDialog()
+    fireEvent.change(within(dialog).getByLabelText('Name'), {
+      target: { value: 'Reset Runtime State' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    expect(screen.queryByRole('dialog', { name: 'New file dimensions' })).toBeNull()
+    expect(getToolPanelError()).toBeNull()
+    expect(screen.getByRole('button', { name: 'Select' })).toHaveClass('active')
   })
 })

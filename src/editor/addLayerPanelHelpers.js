@@ -6,7 +6,7 @@ import {
   MIN_LAYER_HEIGHT,
   MIN_LAYER_WIDTH,
 } from './constants'
-import { resizeBoxText, resizePointTextTransform, syncTextLayerLayout } from '../lib/textLayer'
+import { resizeBoxText, resizePointTextTransform } from '../lib/textLayer'
 
 const VALID_TEXT_ALIGNMENTS = new Set(['left', 'center', 'right'])
 const DEFAULT_TEXT_LAYER = createTextLayer()
@@ -182,6 +182,20 @@ export function applyInspectorSizeToLayer(layer, sizeInput, minimumSize = {}) {
     },
     nextMinimumSize,
   )
+
+  if (
+    layer?.type === 'text' &&
+    layer.mode === 'box' &&
+    resolvedSize.hasExplicitWidth &&
+    resolvedSize.hasExplicitHeight
+  ) {
+    return resizeBoxText(
+      layer,
+      Math.max(nextMinimumSize.width, resolvedSize.width),
+      Math.max(nextMinimumSize.height, resolvedSize.height),
+    )
+  }
+
   let nextLayer = layer
 
   if (resolvedSize.hasExplicitWidth) {
@@ -284,18 +298,20 @@ export function createExactTextLayerFromJsonSpec(spec) {
     y: requestedPosition.y,
   })
 
-  return syncTextLayerLayout({
-    ...seedLayer,
-    autoFit: requestedSize.hasExplicitWidth || requestedSize.hasExplicitHeight,
-    x: requestedPosition.x,
-    y: requestedPosition.y,
-    width: requestedSize.width,
-    height: requestedSize.height,
-    boxWidth: requestedSize.width,
-    boxHeight: requestedSize.height,
-    mode: 'box',
-    preserveExactJsonBoxSize: true,
-  }, seedLayer)
+  if (!(requestedSize.hasExplicitWidth || requestedSize.hasExplicitHeight)) {
+    return seedLayer
+  }
+
+  return resizeBoxText(
+    {
+      ...seedLayer,
+      x: requestedPosition.x,
+      y: requestedPosition.y,
+      preserveExactJsonBoxSize: true,
+    },
+    requestedSize.width,
+    requestedSize.height,
+  )
 }
 
 export async function createImageLayerFromAddSpec(

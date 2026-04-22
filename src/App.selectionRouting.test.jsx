@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -15,14 +15,6 @@ function getCanvasLayers(container) {
   return Array.from(container.querySelectorAll('.canvas-layer'))
 }
 
-function getSelectionFrame(container) {
-  const frame = container.querySelector('.selection-frame.interactive')
-
-  expect(frame).not.toBeNull()
-
-  return frame
-}
-
 function getNumericInput(inspector, labelText) {
   const label = Array.from(inspector.querySelectorAll('label')).find((candidate) => (
     candidate.querySelector('span')?.textContent === labelText
@@ -31,6 +23,27 @@ function getNumericInput(inspector, labelText) {
   expect(label).not.toBeNull()
 
   return label.querySelector('input')
+}
+
+async function createSelectedTextLayer(container) {
+  fireEvent.click(screen.getByRole('button', { name: 'Add Text' }))
+
+  await waitFor(() => {
+    expect(getInspector(container).textContent).toContain('Font Size')
+  })
+}
+
+async function selectBackgroundLayer(container) {
+  const backgroundLayer = getCanvasLayers(container)[0]
+
+  expect(backgroundLayer).not.toBeUndefined()
+
+  fireEvent.pointerDown(backgroundLayer, { clientX: 10, clientY: 500, buttons: 1 })
+
+  await waitFor(() => {
+    expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBe(1110)
+    expect(Number(getNumericInput(getInspector(container), 'Height').value)).toBe(1470)
+  })
 }
 
 describe('App selection routing', () => {
@@ -78,70 +91,17 @@ describe('App selection routing', () => {
     cleanup()
   })
 
-  it('single-clicking an unselected layer selects it immediately', async () => {
+  it('single-clicking a different canvas layer selects it immediately', async () => {
     const { container } = render(
       <StrictMode>
         <App />
       </StrictMode>,
     )
 
-    const inspector = getInspector(container)
-    const shapeLayer = getCanvasLayers(container)[2]
+    await createSelectedTextLayer(container)
+    await selectBackgroundLayer(container)
 
-    expect(inspector.textContent).toContain('Rounded Corners')
-
-    fireEvent.pointerDown(shapeLayer, { clientX: 200, clientY: 110, buttons: 1 })
-
-    await waitFor(() => {
-      expect(getInspector(container).textContent).toContain('Fill')
-    })
-
-    expect(getInspector(container).textContent).not.toContain('Rounded Corners')
-  })
-
-  it('when the full-canvas background is selected, clicking a front layer through that frame selects the front layer immediately', async () => {
-    const { container } = render(
-      <StrictMode>
-        <App />
-      </StrictMode>,
-    )
-
-    const backgroundLayer = getCanvasLayers(container)[0]
-
-    expect(backgroundLayer).not.toBeUndefined()
-
-    fireEvent.pointerDown(backgroundLayer, { clientX: 10, clientY: 500, buttons: 1 })
-
-    await waitFor(() => {
-      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBe(1080)
-      expect(Number(getNumericInput(getInspector(container), 'Height').value)).toBe(1440)
-    })
-
-    fireEvent.pointerDown(getSelectionFrame(container), { clientX: 200, clientY: 110, buttons: 1 })
-
-    await waitFor(() => {
-      expect(getInspector(container).textContent).toContain('Fill')
-      expect(Number(getNumericInput(getInspector(container), 'Width').value)).toBe(220)
-      expect(Number(getNumericInput(getInspector(container), 'Height').value)).toBe(220)
-    })
-  })
-
-  it('single-clicking a text layer selects it immediately', async () => {
-    const { container } = render(
-      <StrictMode>
-        <App />
-      </StrictMode>,
-    )
-
-    const textLayer = getCanvasLayers(container)[3]
-
-    fireEvent.pointerDown(textLayer, { clientX: 120, clientY: 70, buttons: 1 })
-
-    await waitFor(() => {
-      expect(getInspector(container).textContent).toContain('Text Shadow')
-    })
-
-    expect(getInspector(container).textContent).toContain('Text Mode')
+    expect(getInspector(container).textContent).not.toContain('Font Size')
   })
 
   it('double-clicking a text layer still enters text editing after selecting it', async () => {
@@ -151,12 +111,17 @@ describe('App selection routing', () => {
       </StrictMode>,
     )
 
-    const textLayer = getCanvasLayers(container)[3]
+    await createSelectedTextLayer(container)
+    await selectBackgroundLayer(container)
+
+    const textLayer = getCanvasLayers(container).at(-1)
+
+    expect(textLayer).not.toBeUndefined()
 
     fireEvent.pointerDown(textLayer, { clientX: 120, clientY: 70, buttons: 1 })
 
     await waitFor(() => {
-      expect(getInspector(container).textContent).toContain('Text Shadow')
+      expect(getInspector(container).textContent).toContain('Font Size')
     })
 
     fireEvent.doubleClick(textLayer, { clientX: 120, clientY: 70, buttons: 1 })
@@ -166,41 +131,22 @@ describe('App selection routing', () => {
     })
   })
 
-  it('selecting a different layer does not require an intermediate deselect', async () => {
+  it('shift-click multi-selection still works across canvas layers', async () => {
     const { container } = render(
       <StrictMode>
         <App />
       </StrictMode>,
     )
 
-    const shapeLayer = getCanvasLayers(container)[2]
-    const heroLayer = getCanvasLayers(container)[1]
+    await createSelectedTextLayer(container)
 
-    fireEvent.pointerDown(shapeLayer, { clientX: 200, clientY: 110, buttons: 1 })
+    const backgroundLayer = getCanvasLayers(container)[0]
 
-    await waitFor(() => {
-      expect(getInspector(container).textContent).toContain('Fill')
-    })
+    expect(backgroundLayer).not.toBeUndefined()
 
-    fireEvent.pointerDown(heroLayer, { clientX: 60, clientY: 120, buttons: 1 })
-
-    await waitFor(() => {
-      expect(getInspector(container).textContent).toContain('Rounded Corners')
-    })
-  })
-
-  it('shift-click multi-selection still works', async () => {
-    const { container } = render(
-      <StrictMode>
-        <App />
-      </StrictMode>,
-    )
-
-    const shapeLayer = getCanvasLayers(container)[2]
-
-    fireEvent.pointerDown(shapeLayer, {
-      clientX: 170,
-      clientY: 110,
+    fireEvent.pointerDown(backgroundLayer, {
+      clientX: 10,
+      clientY: 500,
       buttons: 1,
       shiftKey: true,
     })
@@ -222,6 +168,28 @@ describe('App selection routing', () => {
     expect(canvasStage).not.toBeNull()
 
     fireEvent.pointerDown(canvasStage, { clientX: 10, clientY: 10, buttons: 1 })
+
+    await waitFor(() => {
+      expect(getInspector(container).textContent).toContain(
+        'Select a layer from the canvas or the stack to edit its properties.',
+      )
+    })
+  })
+
+  it('clicking outside the canvas on non-preserving UI clears selection explicitly', async () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    await createSelectedTextLayer(container)
+
+    const promptShell = container.querySelector('.canvas-prompt-shell')
+
+    expect(promptShell).not.toBeNull()
+
+    fireEvent.pointerDown(promptShell, { clientX: 10, clientY: 10, buttons: 1 })
 
     await waitFor(() => {
       expect(getInspector(container).textContent).toContain(

@@ -176,8 +176,8 @@ describe('App current document persistence', () => {
     const inspector = getInspector(container)
 
     await waitFor(() => {
-      expect(within(inspector).getByLabelText('Width')).toHaveValue(1080)
-      expect(within(inspector).getByLabelText('Height')).toHaveValue(1440)
+      expect(within(inspector).getByLabelText('Width')).toHaveValue(1110)
+      expect(within(inspector).getByLabelText('Height')).toHaveValue(1470)
     })
 
     expect(window.localStorage.getItem(CURRENT_DOCUMENT_STORAGE_KEY)).toContain('Background')

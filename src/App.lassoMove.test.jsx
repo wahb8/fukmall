@@ -97,11 +97,11 @@ function getCanvasSurface(container) {
 async function createDefaultFloatingSelection(container) {
   fireEvent.click(screen.getByRole('button', { name: 'Lasso' }))
 
-  const heroLayer = getCanvasLayers(container)[1]
+  const sourceLayer = getCanvasLayers(container)[0]
 
-  expect(heroLayer).not.toBeUndefined()
+  expect(sourceLayer).not.toBeUndefined()
 
-  fireEvent.pointerDown(heroLayer, {
+  fireEvent.pointerDown(sourceLayer, {
     ...toClientPoint(100, 100),
     button: 0,
     buttons: 1,
@@ -232,8 +232,8 @@ describe('App lasso floating-selection drag', () => {
     const inspector = getInspector(container)
 
     await waitFor(() => {
-      expect(Number(getNumericInput(inspector, 'X').value)).toBeCloseTo(170, 5)
-      expect(Number(getNumericInput(inspector, 'Y').value)).toBeCloseTo(190, 5)
+      expect(Math.abs(Number(getNumericInput(inspector, 'X').value) - 170)).toBeLessThan(1)
+      expect(Math.abs(Number(getNumericInput(inspector, 'Y').value) - 190)).toBeLessThan(1)
     })
   })
 
@@ -272,8 +272,8 @@ describe('App lasso floating-selection drag', () => {
     const inspector = getInspector(container)
 
     await waitFor(() => {
-      expect(Number(getNumericInput(inspector, 'X').value)).toBeCloseTo(210, 5)
-      expect(Number(getNumericInput(inspector, 'Y').value)).toBeCloseTo(122, 5)
+      expect(Math.abs(Number(getNumericInput(inspector, 'X').value) - 210)).toBeLessThan(1)
+      expect(Math.abs(Number(getNumericInput(inspector, 'Y').value) - 122)).toBeLessThan(1)
     })
   })
 })

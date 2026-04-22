@@ -3,6 +3,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
+const LONG_JSON_TEXT_PAYLOAD = `{
+  "texts": [
+    {
+      "Layer name": "Runtime Resize Text",
+      "text": "A much longer headline that needs fitting after resize",
+      "color": "#123456",
+      "bolded": false,
+      "font": "Arial, sans-serif",
+      "size": 42,
+      "alignment": "left",
+      "x": 220,
+      "y": 140,
+      "addShadow": false,
+      "layerPlacement": 0
+    }
+  ]
+}`
+
 function getInspector(container) {
   const inspector = container.querySelector('.inspector-panel')
 
@@ -46,6 +64,18 @@ async function createSelectedTextLayer(container) {
 
   await waitFor(() => {
     expect(getInspector(container).textContent).toContain('Font Size')
+  })
+}
+
+async function createSelectedLongJsonTextLayer(container) {
+  fireEvent.change(screen.getAllByLabelText('JSON')[0], {
+    target: { value: LONG_JSON_TEXT_PAYLOAD },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Create From JSON' }))
+
+  await waitFor(() => {
+    expect(getInspector(container).textContent).toContain('Font Size')
+    expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(42)
   })
 }
 
@@ -281,5 +311,71 @@ describe('App resize handle routing', () => {
 
     expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBeGreaterThan(initialFontSize)
     expect(container.querySelector('.canvas-layer .text-layer-canvas')).not.toBeNull()
+  })
+
+  it('a newly auto-fit text box shrinks across the next drag without snapping to the minimum font size', async () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    await createSelectedLongJsonTextLayer(container)
+
+    const getWidth = () => Number(getNumericInput(getInspector(container), 'Width').value)
+    const getHeight = () => Number(getNumericInput(getInspector(container), 'Height').value)
+    const getFontSize = () => Number(getNumericInput(getInspector(container), 'Font Size').value)
+    const handle = () => getHandle(container, 'se')
+    const initialWidth = getWidth()
+    const initialHeight = getHeight()
+    const initialFontSize = getFontSize()
+
+    fireEvent.pointerDown(handle(), { clientX: 173, clientY: 128, buttons: 1 })
+    fireEvent.pointerMove(window, { clientX: 240, clientY: 180, buttons: 1 })
+
+    await waitFor(() => {
+      expect(getWidth()).toBeGreaterThan(initialWidth)
+      expect(getHeight()).toBeGreaterThan(initialHeight)
+      expect(getFontSize()).toBeGreaterThan(initialFontSize)
+    })
+
+    const grownWidth = getWidth()
+    const grownHeight = getHeight()
+    const grownFontSize = getFontSize()
+
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => {
+      expect(getWidth()).toBe(grownWidth)
+      expect(getHeight()).toBe(grownHeight)
+      expect(getFontSize()).toBe(grownFontSize)
+    })
+
+    fireEvent.pointerDown(handle(), { clientX: 240, clientY: 180, buttons: 1 })
+    fireEvent.pointerMove(window, { clientX: 228, clientY: 170, buttons: 1 })
+
+    await waitFor(() => {
+      expect(getWidth()).toBeLessThan(grownWidth)
+      expect(getHeight()).toBeLessThan(grownHeight)
+      expect(getFontSize()).toBeLessThanOrEqual(grownFontSize)
+      expect(getFontSize()).toBeGreaterThan(8)
+    })
+
+    const frame = getSelectionFrame(container)
+    const shrunkWidth = getWidth()
+    const shrunkHeight = getHeight()
+    const shrunkFontSize = getFontSize()
+
+    expect(Number.parseFloat(frame.style.width)).toBeCloseTo(shrunkWidth)
+    expect(Number.parseFloat(frame.style.height)).toBeCloseTo(shrunkHeight)
+    expect(shrunkFontSize).toBeGreaterThan(8)
+
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => {
+      expect(getWidth()).toBe(shrunkWidth)
+      expect(getHeight()).toBe(shrunkHeight)
+      expect(getFontSize()).toBe(shrunkFontSize)
+    })
   })
 })

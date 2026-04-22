@@ -514,6 +514,7 @@ describe('addLayerPanel helpers', () => {
     expect(createdLayer.y).toBe(1000)
     expect(createdLayer.width).toBe(inspectorSizedLayer.width)
     expect(createdLayer.height).toBe(inspectorSizedLayer.height)
+    expect(createdLayer.autoFitSourceFontSize).toBe(42)
   })
 
   it('creates JSON text layers with exact final fields from the JSON spec', () => {
@@ -546,8 +547,20 @@ describe('addLayerPanel helpers', () => {
     expect(layer.color).toBe('#111111')
     expect(layer.mode).toBe('box')
     expect(layer.autoFit).toBe(true)
+    expect(layer.autoFitSourceFontSize).toBe(72)
     expect(layer.measuredWidth).toBeLessThanOrEqual(500)
     expect(layer.measuredHeight).toBeLessThanOrEqual(200)
+  })
+
+  it('keeps JSON text without explicit box dimensions on the normal non-auto-fit creation path', () => {
+    const layer = createExactTextLayerFromJsonSpec({
+      text: 'Hello world',
+      font: 'Arial, sans-serif',
+      size: 72,
+    })
+
+    expect(layer.autoFit).toBe(false)
+    expect(layer.autoFitSourceFontSize).toBeNull()
   })
 
   it('preserves exact JSON text width and height even if layout sync runs again after creation', () => {

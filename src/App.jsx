@@ -2504,9 +2504,10 @@ function App() {
             const relativeY = (originalTopLeft.y - startBounds.y) / Math.max(startBounds.height, 1)
             const scaledX = nextX + (relativeX * nextWidth)
             const scaledY = nextY + (relativeY * nextHeight)
+            const baseLayer = originalState.layerSnapshot ?? layer
 
-            if (layer.type === 'text') {
-              if (layer.mode === 'box') {
+            if (baseLayer.type === 'text') {
+              if (baseLayer.mode === 'box') {
                 const resizedWidth = clampValue(
                   originalState.width * ratioX,
                   MIN_LAYER_WIDTH,
@@ -2519,7 +2520,7 @@ function App() {
                 )
                 const resizedLayer = resizeBoxText(
                   {
-                    ...layer,
+                    ...baseLayer,
                     ...topLeftToCenter(scaledX, scaledY, resizedWidth, resizedHeight),
                   },
                   resizedWidth,
@@ -2535,7 +2536,7 @@ function App() {
               return {
                 ...resizePointTextTransform(
                   {
-                    ...layer,
+                    ...baseLayer,
                     ...topLeftToCenter(
                       scaledX,
                       scaledY,
@@ -2546,8 +2547,8 @@ function App() {
                   scaleSignedLayerAxis(originalState.scaleX, ratioX, maximumScaleX),
                   scaleSignedLayerAxis(originalState.scaleY, ratioY, maximumScaleY),
                 ),
-                width: layer.measuredWidth ?? layer.width,
-                height: layer.measuredHeight ?? layer.height,
+                width: baseLayer.measuredWidth ?? baseLayer.width,
+                height: baseLayer.measuredHeight ?? baseLayer.height,
               }
             }
 
@@ -2563,7 +2564,7 @@ function App() {
             )
 
             return {
-              ...layer,
+              ...baseLayer,
               ...topLeftToCenter(scaledX, scaledY, resizedWidth, resizedHeight),
               width: resizedWidth,
               height: resizedHeight,
@@ -3344,32 +3345,6 @@ function App() {
     deleteSelectedLayers,
   ])
 
-  useEffect(() => {
-    function handleDocumentPointerDown(event) {
-      const canvas = canvasRef.current
-
-      if (!canvas) {
-        return
-      }
-
-      if (event.target instanceof HTMLElement && event.target.closest('.sidebar')) {
-        return
-      }
-
-      if (canvas.contains(event.target)) {
-        return
-      }
-
-      clearDocumentSelection()
-    }
-
-    window.addEventListener('pointerdown', handleDocumentPointerDown)
-
-    return () => {
-      window.removeEventListener('pointerdown', handleDocumentPointerDown)
-    }
-  }, [setTransient])
-
   function applyLayerDocumentUpdate(currentDocument, layerId, updater) {
     const sourceLayer = findLayer(currentDocument, layerId)
 
@@ -3464,6 +3439,8 @@ function App() {
       textAlign: sourceLayer.textAlign,
       mode: sourceLayer.mode,
       autoFit: sourceLayer.autoFit,
+      autoFitSourceFontSize: sourceLayer.autoFitSourceFontSize,
+      autoFitSourceStyleRanges: sourceLayer.autoFitSourceStyleRanges,
       styleRanges: sourceLayer.styleRanges,
       boxWidth: sourceLayer.boxWidth,
       boxHeight: sourceLayer.boxHeight,
@@ -3935,6 +3912,7 @@ function App() {
 
   const resetEditorRuntimeState = useCallback(() => {
     clearAddLayerPanelStatusTimer()
+    clearToolPanelErrorTimers()
     interactionRef.current = null
     rasterSurfacesRef.current = new Map()
     copiedLayerRef.current = null
@@ -3942,6 +3920,14 @@ function App() {
     externalImageDragDepthRef.current = 0
     setEditingTextLayerId(null)
     setTextDraft('')
+    setTextEditorSelection({ start: 0, end: 0 })
+    setFontSizeInputDraft(null)
+    setToolPanelError({
+      message: '',
+      isRendered: false,
+      isVisible: false,
+      isFading: false,
+    })
     setActiveTool('select')
     setLassoSelection(null)
     setRectSelection(null)
@@ -3957,15 +3943,19 @@ function App() {
     setAddLayerImageFormValues(getDefaultImageLayerFormValues())
     setDraggedAssetId(null)
     setActiveSvgToolLayerId(null)
+    setIsFileMenuOpen(false)
+    setIsSettingsModalOpen(false)
     setIsCanvasAssetDropActive(false)
     setIsExternalImageDragActive(false)
+    setIsOpeningFile(false)
+    setIsExporting(false)
     setActiveMoveGuides(createEmptySnapGuides())
     setViewport({
       zoom: 1,
       offsetX: 0,
       offsetY: 0,
     })
-  }, [clearAddLayerPanelStatusTimer])
+  }, [clearAddLayerPanelStatusTimer, clearToolPanelErrorTimers])
 
   const loadDocumentState = useCallback((nextDocumentState) => {
     const normalizedDocument = normalizeDocumentState(nextDocumentState)
@@ -5130,6 +5120,7 @@ function App() {
         originalLayerStates: Object.fromEntries(activeSelection.map((selectedLayer) => [
           selectedLayer.id,
           {
+            layerSnapshot: selectedLayer,
             x: selectedLayer.x,
             y: selectedLayer.y,
             width: selectedLayer.width,

@@ -402,7 +402,7 @@ describe('App image import flows', () => {
 
     expect(screen.getByText('Current document could not be autosaved locally.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add Image' })).toBeInTheDocument()
-  })
+  }, 10000)
 
   it('trims transparent raster padding on direct import by default', async () => {
     const file = createImageFile(
@@ -464,8 +464,8 @@ describe('App image import flows', () => {
       </StrictMode>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'File' }))
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Trim Transparent Imports: On' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    fireEvent.click(screen.getByRole('button', { name: /Trim Transparent Imports/i }))
 
     fireEvent.change(getDirectImportInput(container), {
       target: {

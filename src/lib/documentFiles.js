@@ -55,6 +55,12 @@ function normalizeDocumentLayer(layer, options = {}) {
       positionNormalizedLayer.styleRanges,
       String(positionNormalizedLayer.text ?? '').length,
     ),
+    autoFitSourceStyleRanges: Array.isArray(positionNormalizedLayer.autoFitSourceStyleRanges)
+      ? normalizeTextStyleRanges(
+        positionNormalizedLayer.autoFitSourceStyleRanges,
+        String(positionNormalizedLayer.text ?? '').length,
+      )
+      : null,
   }
 }
 
