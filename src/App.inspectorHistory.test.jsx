@@ -21,6 +21,18 @@ function getNumericInput(inspector, labelText) {
   return label.querySelector('input')
 }
 
+function getPropertyButton(inspector, labelText, buttonText) {
+  const label = Array.from(inspector.querySelectorAll('label')).find((candidate) => (
+    candidate.querySelector('span')?.textContent === labelText
+  ))
+
+  expect(label).not.toBeNull()
+
+  return Array.from(label.querySelectorAll('button')).find((candidate) => (
+    candidate.textContent?.trim() === buttonText
+  ))
+}
+
 function getUndoButton() {
   return screen.getByRole('button', { name: 'Undo' })
 }
@@ -29,14 +41,12 @@ function getRedoButton() {
   return screen.getByRole('button', { name: 'Redo' })
 }
 
-function getLayerRowByName(container, layerName) {
-  const row = Array.from(container.querySelectorAll('.layer-row')).find((candidate) => (
-    candidate.querySelector('.layer-name-input')?.value === layerName
-  ))
+async function createSelectedTextLayer(container) {
+  fireEvent.click(screen.getByRole('button', { name: 'Add Text' }))
 
-  expect(row).not.toBeUndefined()
-
-  return row
+  await waitFor(() => {
+    expect(getInspector(container).textContent).toContain('Font Size')
+  })
 }
 
 describe('App inspector history coalescing', () => {
@@ -159,6 +169,8 @@ describe('App inspector history coalescing', () => {
       </StrictMode>,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Add Text' }))
+
     const layerRows = Array.from(container.querySelectorAll('.layer-row'))
     const initiallySelectedRow = container.querySelector('.layer-row.selected')
     const secondRow = layerRows.find((row) => row !== initiallySelectedRow)
@@ -233,11 +245,7 @@ describe('App inspector history coalescing', () => {
       </StrictMode>,
     )
 
-    fireEvent.click(getLayerRowByName(container, 'Headline'))
-
-    await waitFor(() => {
-      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBeGreaterThan(0)
-    })
+    await createSelectedTextLayer(container)
 
     const inspector = getInspector(container)
     const widthInput = getNumericInput(inspector, 'Width')
@@ -279,11 +287,7 @@ describe('App inspector history coalescing', () => {
       </StrictMode>,
     )
 
-    fireEvent.click(getLayerRowByName(container, 'Headline'))
-
-    await waitFor(() => {
-      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBeGreaterThan(0)
-    })
+    await createSelectedTextLayer(container)
 
     const inspector = getInspector(container)
     const widthInput = getNumericInput(inspector, 'Width')
@@ -308,6 +312,102 @@ describe('App inspector history coalescing', () => {
 
     await waitFor(() => {
       expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(24)
+    })
+  })
+
+  it('keeps auto-fit font size stable when bold is toggled and preserves undo/redo', async () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    await createSelectedTextLayer(container)
+
+    const widthInput = getNumericInput(getInspector(container), 'Width')
+    const narrowedWidth = Math.max(72, Number(widthInput.value) - 120)
+
+    fireEvent.change(widthInput, { target: { value: String(narrowedWidth) } })
+    fireEvent.blur(widthInput)
+
+    const fittedFontSize = await waitFor(() => {
+      const nextValue = Number(getNumericInput(getInspector(container), 'Font Size').value)
+      expect(nextValue).toBeGreaterThan(8)
+      return nextValue
+    })
+    const boldButton = getPropertyButton(getInspector(container), 'Weight', 'Bold')
+
+    expect(boldButton).not.toBeUndefined()
+
+    fireEvent.click(boldButton)
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(fittedFontSize)
+    })
+
+    fireEvent.click(getUndoButton())
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(fittedFontSize)
+    })
+
+    fireEvent.click(getRedoButton())
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(fittedFontSize)
+    })
+  })
+
+  it('clamps oversized inspector font size input and stops the stepper at the max', async () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    await createSelectedTextLayer(container)
+
+    const fontSizeInput = getNumericInput(getInspector(container), 'Font Size')
+    fireEvent.focus(fontSizeInput)
+    fireEvent.change(fontSizeInput, { target: { value: '4000' } })
+    fireEvent.blur(fontSizeInput)
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(1000)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Increase font size' }))
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Font Size').value)).toBe(1000)
+    })
+  })
+
+  it('clamps oversized inspector letter spacing and line height input values', async () => {
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    await createSelectedTextLayer(container)
+
+    fireEvent.change(getNumericInput(getInspector(container), 'Letter Spacing'), {
+      target: { value: '80' },
+    })
+    fireEvent.blur(getNumericInput(getInspector(container), 'Letter Spacing'))
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Letter Spacing').value)).toBe(50)
+    })
+
+    fireEvent.change(getNumericInput(getInspector(container), 'Line Height'), {
+      target: { value: '10' },
+    })
+    fireEvent.blur(getNumericInput(getInspector(container), 'Line Height'))
+
+    await waitFor(() => {
+      expect(Number(getNumericInput(getInspector(container), 'Line Height').value)).toBe(3)
     })
   })
 })

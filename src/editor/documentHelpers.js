@@ -1,10 +1,7 @@
-import heroImage from '../assets/hero.png'
 import {
   createDocument,
   createImageLayer,
   createRasterLayer,
-  createShapeLayer,
-  createTextLayer,
   DEFAULT_DOCUMENT_HEIGHT,
   DEFAULT_DOCUMENT_NAME,
   DEFAULT_DOCUMENT_WIDTH,
@@ -16,6 +13,7 @@ import { MIN_DOCUMENT_DIMENSION, MIN_LAYER_HEIGHT, MIN_LAYER_WIDTH } from './con
 
 export const DEFAULT_IMPORT_TRIM_ALPHA_THRESHOLD = 8
 export const DEFAULT_IMPORT_TRIM_PADDING = 1
+const SEEDED_BACKGROUND_BLEED_PX = 30
 
 function createSeededBackgroundBitmap(width, height, fill = '#ffffff') {
   const canvas = createSizedCanvas(width, height)
@@ -38,58 +36,24 @@ export function createInitialDocument(
   height = DEFAULT_DOCUMENT_HEIGHT,
   name = DEFAULT_DOCUMENT_NAME,
 ) {
-  const scaleX = width / DEFAULT_DOCUMENT_WIDTH
-  const scaleY = height / DEFAULT_DOCUMENT_HEIGHT
+  const backgroundWidth = width + SEEDED_BACKGROUND_BLEED_PX
+  const backgroundHeight = height + SEEDED_BACKGROUND_BLEED_PX
   const whiteBackground = createRasterLayer({
     name: 'Background',
-    ...topLeftToCenter(0, 0, width, height),
-    width,
-    height,
-    bitmap: createSeededBackgroundBitmap(width, height),
-  })
-  const background = createImageLayer({
-    name: 'Hero Image',
     ...topLeftToCenter(
-      Math.round(76 * scaleX),
-      Math.round(62 * scaleY),
-      Math.max(MIN_LAYER_WIDTH, Math.round(360 * scaleX)),
-      Math.max(MIN_LAYER_HEIGHT, Math.round(260 * scaleY)),
+      -(SEEDED_BACKGROUND_BLEED_PX / 2),
+      -(SEEDED_BACKGROUND_BLEED_PX / 2),
+      backgroundWidth,
+      backgroundHeight,
     ),
-    width: Math.max(MIN_LAYER_WIDTH, Math.round(360 * scaleX)),
-    height: Math.max(MIN_LAYER_HEIGHT, Math.round(260 * scaleY)),
-    src: heroImage,
-    bitmap: heroImage,
-  })
-  const card = createShapeLayer({
-    name: 'Color Block',
-    ...topLeftToCenter(
-      Math.round(340 * scaleX),
-      Math.round(120 * scaleY),
-      Math.max(MIN_LAYER_WIDTH, Math.round(220 * scaleX)),
-      Math.max(MIN_LAYER_HEIGHT, Math.round(220 * scaleY)),
-    ),
-    width: Math.max(MIN_LAYER_WIDTH, Math.round(220 * scaleX)),
-    height: Math.max(MIN_LAYER_HEIGHT, Math.round(220 * scaleY)),
-    fill: '#f97316',
-    radius: 34,
-  })
-  const title = createTextLayer({
-    name: 'Headline',
-    ...topLeftToCenter(
-      Math.round(126 * scaleX),
-      Math.round(114 * scaleY),
-      Math.max(MIN_LAYER_WIDTH, Math.round(300 * scaleX)),
-      Math.max(MIN_LAYER_HEIGHT, Math.round(120 * scaleY)),
-    ),
-    width: Math.max(MIN_LAYER_WIDTH, Math.round(300 * scaleX)),
-    height: Math.max(MIN_LAYER_HEIGHT, Math.round(120 * scaleY)),
-    text: 'A cleaner\nlayer stack',
-    fontSize: Math.max(8, Math.round(40 * Math.min(scaleX, scaleY))),
+    width: backgroundWidth,
+    height: backgroundHeight,
+    bitmap: createSeededBackgroundBitmap(backgroundWidth, backgroundHeight),
   })
 
   return createDocument(
-    [whiteBackground, background, card, title],
-    background.id,
+    [whiteBackground],
+    whiteBackground.id,
     width,
     height,
     name,

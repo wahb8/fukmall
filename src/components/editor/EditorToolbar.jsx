@@ -1,4 +1,5 @@
 import { getEditorIcons } from '../../editor/iconAssets'
+import closeIcon from '../../assets/Close (X).svg'
 
 function ToolButtons({ currentTool, icons, onActivateTool, onResetViewport }) {
   return (
@@ -191,6 +192,7 @@ export function EditorToolbar({
   onForegroundChange,
   onSwapColors,
   onResetColors,
+  onDismissToolPanelError,
 }) {
   return (
     <header className="editor-topbar">
@@ -206,7 +208,15 @@ export function EditorToolbar({
           role="status"
           aria-live="polite"
         >
-          {toolPanelError.message}
+          <span className="tool-panel-error-message">{toolPanelError.message}</span>
+          <button
+            className="tool-panel-error-dismiss"
+            type="button"
+            onClick={onDismissToolPanelError}
+            aria-label="Dismiss status message"
+          >
+            <img src={closeIcon} alt="" aria-hidden="true" />
+          </button>
         </div>
       )}
       <div className="toolbar-actions">

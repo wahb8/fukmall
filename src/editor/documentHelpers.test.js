@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { centerToTopLeft } from '../lib/layerGeometry'
 import { createShapeLayer } from '../lib/layers'
 import {
   clampImportedImagePosition,
@@ -17,13 +18,22 @@ import {
 describe('document helpers', () => {
   it('creates the seeded initial document shape', () => {
     const documentState = createInitialDocument()
+    const backgroundLayer = documentState.layers[0]
+    const backgroundTopLeft = centerToTopLeft(
+      backgroundLayer.x,
+      backgroundLayer.y,
+      backgroundLayer.width,
+      backgroundLayer.height,
+    )
 
-    expect(documentState.layers).toHaveLength(4)
-    expect(documentState.layers[0].name).toBe('Background')
-    expect(documentState.layers[0].type).toBe('raster')
-    expect(documentState.layers[0].bitmap).toMatch(/^data:image\/png/)
-    expect(documentState.layers[1].name).toBe('Hero Image')
-    expect(documentState.selectedLayerId).toBe(documentState.layers[1].id)
+    expect(documentState.layers).toHaveLength(1)
+    expect(backgroundLayer.name).toBe('Background')
+    expect(backgroundLayer.type).toBe('raster')
+    expect(backgroundLayer.width).toBe(documentState.width + 30)
+    expect(backgroundLayer.height).toBe(documentState.height + 30)
+    expect(backgroundTopLeft).toEqual({ x: -15, y: -15 })
+    expect(backgroundLayer.bitmap).toMatch(/^data:image\/png/)
+    expect(documentState.selectedLayerId).toBe(backgroundLayer.id)
   })
 
   it('normalizes new-file name and dimensions safely', () => {

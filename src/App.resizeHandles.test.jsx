@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -41,14 +41,12 @@ function getCanvasLayers(container) {
   return Array.from(container.querySelectorAll('.canvas-layer'))
 }
 
-function getLayerRowByName(container, layerName) {
-  const row = Array.from(container.querySelectorAll('.layer-row')).find((candidate) => (
-    candidate.querySelector('.layer-name-input')?.value === layerName
-  ))
+async function createSelectedTextLayer(container) {
+  fireEvent.click(screen.getByRole('button', { name: 'Add Text' }))
 
-  expect(row).not.toBeUndefined()
-
-  return row
+  await waitFor(() => {
+    expect(getInspector(container).textContent).toContain('Font Size')
+  })
 }
 
 describe('App resize handle routing', () => {
@@ -191,15 +189,23 @@ describe('App resize handle routing', () => {
       </StrictMode>,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Add Text' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Text' }))
+
+    const textRows = await waitFor(() => Array.from(container.querySelectorAll('.layer-row'))
+      .filter((row) => row.querySelector('.layer-name-input')?.value === 'New Text'))
+
+    expect(textRows).toHaveLength(2)
+
+    fireEvent.click(textRows[0])
+
     const inspector = getInspector(container)
     const widthInput = getNumericInput(inspector, 'Width')
-    const yInput = getNumericInput(inspector, 'Y')
     const initialWidth = Number(widthInput.value)
-    const initialY = Number(yInput.value)
     const canvasLayers = getCanvasLayers(container)
-    const overlappingTopLayer = canvasLayers[2]
+    const overlappingTopLayer = canvasLayers.at(-1)
 
-    expect(inspector.textContent).toContain('Rounded Corners')
+    expect(inspector.textContent).toContain('Font Size')
     expect(overlappingTopLayer).not.toBeUndefined()
 
     fireEvent.pointerDown(overlappingTopLayer, { clientX: 173, clientY: 76, buttons: 1 })
@@ -209,8 +215,6 @@ describe('App resize handle routing', () => {
       expect(Number(widthInput.value)).not.toBe(initialWidth)
     })
 
-    expect(Number(yInput.value)).toBe(initialY)
-    expect(inspector.textContent).toContain('Rounded Corners')
     expect(container.querySelector('.selection-frame.interactive')).not.toBeNull()
 
     fireEvent.pointerUp(window)
@@ -241,7 +245,7 @@ describe('App resize handle routing', () => {
       </StrictMode>,
     )
 
-    fireEvent.click(getLayerRowByName(container, 'Headline'))
+    await createSelectedTextLayer(container)
 
     const inspector = await waitFor(() => getInspector(container))
     const widthInput = getNumericInput(inspector, 'Width')

@@ -119,6 +119,28 @@ describe('App tool-panel error lifecycle', () => {
     expect(getToolPanelError()).toBeNull()
   })
 
+  it('dismisses the transient tool-panel error immediately when the close button is clicked', async () => {
+    shouldFailAutosave = true
+
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('Current document could not be autosaved locally.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss status message' }))
+
+    expect(getToolPanelError()).toBeNull()
+
+    await act(async () => {
+      vi.advanceTimersByTime(TOOL_PANEL_ERROR_DURATION_MS + 10)
+    })
+
+    expect(getToolPanelError()).toBeNull()
+  })
+
   it('restarts the timer cleanly when a new tool-panel error appears during fade-out', async () => {
     shouldFailAutosave = true
 
@@ -158,5 +180,28 @@ describe('App tool-panel error lifecycle', () => {
     })
 
     expect(getToolPanelError()).toBeNull()
+  })
+
+  it('shows a new tool-panel error normally after the previous one was manually dismissed', async () => {
+    shouldFailAutosave = true
+
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss status message' }))
+    expect(getToolPanelError()).toBeNull()
+
+    shouldFailAutosave = false
+    const inspector = getInspector(container)
+    fireEvent.change(getNumericInput(inspector, 'Opacity'), { target: { value: '0.9' } })
+
+    shouldFailAutosave = true
+    fireEvent.change(getNumericInput(getInspector(container), 'Opacity'), { target: { value: '0.8' } })
+
+    expect(screen.getByRole('status')).toHaveClass('visible')
+    expect(screen.getByRole('button', { name: 'Dismiss status message' })).toBeInTheDocument()
   })
 })

@@ -333,21 +333,62 @@
   visibility: hidden;
   opacity: 0;
   transform: translate(-50%, calc(-50% - 4px));
-  padding: 0.78rem 0.9rem;
+  padding: 0.78rem 1.4rem 1rem 0.9rem;
   border: 1px solid transparent;
   border-radius: 14px;
   background: rgba(185, 28, 28, 0);
   color: rgba(127, 29, 29, 0);
   font-size: 0.84rem;
   line-height: 1.4;
-  text-align: center;
-  pointer-events: none;
+  text-align: left;
+  pointer-events: auto;
   transition:
     opacity 220ms ease,
     transform 220ms ease,
     border-color 220ms ease,
     background-color 220ms ease,
     color 220ms ease;
+}
+
+.tool-panel-error-message {
+  width: 100%;
+  display: block;
+}
+
+.tool-panel-error-dismiss {
+  appearance: none;
+  -webkit-appearance: none;
+  position: absolute;
+  right: -0.45rem;
+  bottom: -0.45rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.3rem;
+  padding: 0.24rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(127, 29, 29, 0.45);
+  background: #e7b3b3;
+  background-image: none;
+  color: #6b1b1b;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+  opacity: 1;
+}
+
+.tool-panel-error-dismiss img {
+  display: block;
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.tool-panel-error-dismiss:hover,
+.tool-panel-error-dismiss:focus-visible {
+  background: #dc9d9d;
 }
 
 .tool-panel-error.visible {

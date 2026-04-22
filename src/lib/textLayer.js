@@ -1,4 +1,10 @@
 import { centerToTopLeft, topLeftToCenter } from './layerGeometry'
+import {
+  MAX_FONT_SIZE,
+  MAX_LETTER_SPACING,
+  MAX_LINE_HEIGHT,
+  MIN_FONT_SIZE,
+} from '../editor/constants'
 
 const TEXT_MEASURE_CANVAS = document.createElement('canvas')
 const TEXT_MEASURE_CONTEXT = TEXT_MEASURE_CANVAS.getContext('2d')
@@ -24,8 +30,8 @@ const POINT_TEXT_HORIZONTAL_PADDING_RIGHT = 4
 const TEXT_VERTICAL_PADDING_TOP = 4
 const TEXT_VERTICAL_PADDING_BOTTOM = 4
 const TEXT_GLYPH_EDGE_BUFFER = 2
-const MIN_AUTO_FIT_FONT_SIZE = 1
-const MAX_AUTO_FIT_FONT_SIZE = 5000
+const MIN_AUTO_FIT_FONT_SIZE = MIN_FONT_SIZE
+const MAX_AUTO_FIT_FONT_SIZE = MAX_FONT_SIZE
 const RTL_TEXT_CHAR_REGEX = /[\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]/u
 const STRONG_LTR_TEXT_CHAR_REGEX = /\p{Letter}/u
 const COMPLEX_SHAPING_TEXT_CHAR_REGEX = /[\u0590-\u05FF\u0600-\u06FF\u0700-\u074F\u0750-\u077F\u0780-\u07BF\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFC]/u
@@ -76,6 +82,36 @@ function haveSameStyleOverrides(firstStyles, secondStyles) {
   ))
 }
 
+function clampTextFontSize(value, fallback = MIN_FONT_SIZE) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return fallback
+  }
+
+  return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, numericValue))
+}
+
+function clampTextLineHeight(value, fallback = DEFAULT_TEXT_LINE_HEIGHT) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return fallback
+  }
+
+  return Math.max(0.1, Math.min(MAX_LINE_HEIGHT, numericValue))
+}
+
+function clampTextLetterSpacing(value, fallback = DEFAULT_TEXT_LETTER_SPACING) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return fallback
+  }
+
+  return Math.min(MAX_LETTER_SPACING, numericValue)
+}
+
 export function normalizeTextStyleOverrides(styles) {
   if (!styles || typeof styles !== 'object') {
     return {}
@@ -107,18 +143,21 @@ export function normalizeTextStyleOverrides(styles) {
       return nextStyles
     }
 
+    let normalizedValue = value
+
+    if (key === 'fontSize') {
+      normalizedValue = clampTextFontSize(value)
+    } else if (key === 'lineHeight') {
+      normalizedValue = clampTextLineHeight(value)
+    } else if (key === 'letterSpacing') {
+      normalizedValue = clampTextLetterSpacing(value)
+    } else if (key === 'fontWeight' || key === 'strokeWidth') {
+      normalizedValue = Number(value)
+    }
+
     return {
       ...nextStyles,
-      [key]: (
-        key === 'fontSize' ||
-        key === 'fontWeight' ||
-        key === 'lineHeight' ||
-        key === 'letterSpacing' ||
-        key === 'strokeWidth'
-      )
-          ? Number(value)
-          : value
-      ,
+      [key]: normalizedValue,
     }
   }, {})
 }
@@ -190,9 +229,9 @@ function scaleTextStyleRangeFontSizes(styleRanges, ratio, textLength) {
       styles: range.styles.fontSize !== undefined
         ? {
           ...range.styles,
-          fontSize: Math.max(
-            MIN_AUTO_FIT_FONT_SIZE,
+          fontSize: clampTextFontSize(
             Number(range.styles.fontSize) * safeRatio,
+            MIN_AUTO_FIT_FONT_SIZE,
           ),
         }
         : range.styles,
@@ -419,12 +458,12 @@ function getResolvedTextStyle(layer, overrides = {}) {
 
   return {
     ...mergedStyle,
-    fontSize: Math.max(1, Number(mergedStyle.fontSize) || 1),
+    fontSize: clampTextFontSize(mergedStyle.fontSize),
     fontWeight: Number.isFinite(Number(mergedStyle.fontWeight))
       ? Number(mergedStyle.fontWeight)
       : mergedStyle.fontWeight,
-    lineHeight: Math.max(0.1, Number(mergedStyle.lineHeight) || DEFAULT_TEXT_LINE_HEIGHT),
-    letterSpacing: Number(mergedStyle.letterSpacing) || 0,
+    lineHeight: clampTextLineHeight(mergedStyle.lineHeight),
+    letterSpacing: clampTextLetterSpacing(mergedStyle.letterSpacing),
     strokeWidth: Math.max(0, Number(mergedStyle.strokeWidth) || 0),
   }
 }
@@ -501,9 +540,28 @@ function isBoxTextAutoFitEnabled(layer) {
   return layer?.type === 'text' && layer?.mode === 'box' && layer?.autoFit === true
 }
 
+function isFiniteMeasurementValue(value) {
+  return Number.isFinite(Number(value)) && Number(value) >= 0
+}
+
+function isValidTextMeasurement(measurement) {
+  return Boolean(measurement) && (
+    isFiniteMeasurementValue(measurement.requiredWidth) &&
+    isFiniteMeasurementValue(measurement.requiredHeight) &&
+    isFiniteMeasurementValue(measurement.width) &&
+    isFiniteMeasurementValue(measurement.height)
+  )
+}
+
+function doesMeasurementFitBox(measurement, boxWidth, boxHeight) {
+  return isValidTextMeasurement(measurement) &&
+    measurement.requiredWidth <= boxWidth &&
+    measurement.requiredHeight <= boxHeight
+}
+
 function createAutoFitCandidateLayer(layer, fontSize) {
-  const currentFontSize = Math.max(MIN_AUTO_FIT_FONT_SIZE, Number(layer?.fontSize) || 0)
-  const nextFontSize = Math.max(MIN_AUTO_FIT_FONT_SIZE, Number(fontSize) || currentFontSize)
+  const currentFontSize = clampTextFontSize(layer?.fontSize, MIN_AUTO_FIT_FONT_SIZE)
+  const nextFontSize = clampTextFontSize(fontSize, currentFontSize)
   const scaleRatio = nextFontSize / currentFontSize
   const textLength = String(layer?.text ?? '').length
 
@@ -527,31 +585,123 @@ function measureAutoFitCandidate(layer, fontSize, boxWidth, boxHeight) {
   return {
     layer: candidateLayer,
     measurement,
-    fits: (
-      Number.isFinite(measurement.requiredWidth) &&
-      Number.isFinite(measurement.requiredHeight) &&
-      measurement.requiredWidth <= boxWidth &&
-      measurement.requiredHeight <= boxHeight
-    ),
+    fits: doesMeasurementFitBox(measurement, boxWidth, boxHeight),
   }
 }
 
-function resolveAutoFitFontSize(layer, boxWidth, boxHeight) {
+function normalizeAutoFitResult(result, boxWidth, boxHeight, fallbackMeasurement = null) {
+  if (!result?.layer) {
+    return result
+  }
+
+  const normalizedLayer = {
+    ...result.layer,
+    width: boxWidth,
+    height: boxHeight,
+    boxWidth,
+    boxHeight,
+  }
+  const remeasured = measureTextLayer(normalizedLayer)
+  const measurement = isValidTextMeasurement(remeasured)
+    ? remeasured
+    : isValidTextMeasurement(result.measurement)
+      ? result.measurement
+      : isValidTextMeasurement(fallbackMeasurement)
+        ? fallbackMeasurement
+        : remeasured
+
+  return {
+    layer: normalizedLayer,
+    measurement,
+    fits: doesMeasurementFitBox(measurement, boxWidth, boxHeight),
+  }
+}
+
+function createPreviousMeasurementFallback(previousLayer, boxWidth, boxHeight) {
+  const previousRequiredWidth = Number(previousLayer?.measuredWidth)
+  const previousRequiredHeight = Number(previousLayer?.measuredHeight)
+
+  if (
+    !Number.isFinite(previousRequiredWidth) ||
+    !Number.isFinite(previousRequiredHeight)
+  ) {
+    return null
+  }
+
+  return {
+    requiredWidth: previousRequiredWidth,
+    requiredHeight: previousRequiredHeight,
+    width: Number(previousLayer?.width) || boxWidth,
+    height: Number(previousLayer?.height) || boxHeight,
+    contentWidth: Math.max(previousRequiredWidth, 1),
+    contentHeight: Math.max(previousRequiredHeight, 1),
+    paddingLeft: 0,
+    paddingRight: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+    lines: [],
+    layoutLines: [],
+  }
+}
+
+function createAutoFitFallbackResult(layer, previousLayer, boxWidth, boxHeight) {
+  if (
+    !previousLayer ||
+    previousLayer.type !== 'text' ||
+    previousLayer.mode !== 'box'
+  ) {
+    return null
+  }
+
+  const previousFontSize = Math.max(
+    MIN_AUTO_FIT_FONT_SIZE,
+    Math.round(clampTextFontSize(previousLayer.fontSize, MIN_AUTO_FIT_FONT_SIZE)),
+  )
+  const previousRequiredWidth = Number(previousLayer.measuredWidth)
+  const previousRequiredHeight = Number(previousLayer.measuredHeight)
+
+  if (
+    !Number.isFinite(previousRequiredWidth) ||
+    !Number.isFinite(previousRequiredHeight) ||
+    previousRequiredWidth > boxWidth ||
+    previousRequiredHeight > boxHeight
+  ) {
+    return null
+  }
+
+  const fallbackLayer = createAutoFitCandidateLayer(layer, previousFontSize)
+  const previousMeasurementFallback = createPreviousMeasurementFallback(
+    previousLayer,
+    boxWidth,
+    boxHeight,
+  )
+  const fallbackResult = normalizeAutoFitResult({
+    layer: fallbackLayer,
+  }, boxWidth, boxHeight, previousMeasurementFallback)
+
+  return fallbackResult?.fits ? fallbackResult : null
+}
+
+function resolveAutoFitFontSize(layer, boxWidth, boxHeight, fallbackResult = null) {
   const textValue = String(layer?.text ?? '')
   const startingFontSize = Math.max(
     MIN_AUTO_FIT_FONT_SIZE,
-    Math.min(MAX_AUTO_FIT_FONT_SIZE, Math.round(Number(layer?.fontSize) || 0)),
+    Math.min(MAX_AUTO_FIT_FONT_SIZE, Math.round(clampTextFontSize(layer?.fontSize, MIN_AUTO_FIT_FONT_SIZE))),
   )
 
   if (textValue.length === 0) {
-    return measureAutoFitCandidate(layer, startingFontSize, boxWidth, boxHeight)
+    return normalizeAutoFitResult(
+      measureAutoFitCandidate(layer, startingFontSize, boxWidth, boxHeight),
+      boxWidth,
+      boxHeight,
+    )
   }
 
   const measurementsBySize = new Map()
   const getCandidateResult = (fontSize) => {
     const normalizedFontSize = Math.max(
       MIN_AUTO_FIT_FONT_SIZE,
-      Math.min(MAX_AUTO_FIT_FONT_SIZE, Math.round(Number(fontSize) || 0)),
+      Math.min(MAX_AUTO_FIT_FONT_SIZE, Math.round(clampTextFontSize(fontSize, MIN_AUTO_FIT_FONT_SIZE))),
     )
 
     if (!measurementsBySize.has(normalizedFontSize)) {
@@ -566,11 +716,15 @@ function resolveAutoFitFontSize(layer, boxWidth, boxHeight) {
 
   const startingResult = getCandidateResult(startingFontSize)
 
+  if (!isValidTextMeasurement(startingResult.measurement)) {
+    return normalizeAutoFitResult(fallbackResult ?? startingResult, boxWidth, boxHeight)
+  }
+
   if (!startingResult.fits) {
     const minimumResult = getCandidateResult(MIN_AUTO_FIT_FONT_SIZE)
 
     if (!minimumResult.fits) {
-      return minimumResult
+      return normalizeAutoFitResult(fallbackResult ?? minimumResult, boxWidth, boxHeight)
     }
 
     let low = MIN_AUTO_FIT_FONT_SIZE
@@ -589,7 +743,7 @@ function resolveAutoFitFontSize(layer, boxWidth, boxHeight) {
       }
     }
 
-    return bestFitResult
+    return normalizeAutoFitResult(bestFitResult, boxWidth, boxHeight)
   }
 
   let fittedFontSize = startingFontSize
@@ -615,7 +769,7 @@ function resolveAutoFitFontSize(layer, boxWidth, boxHeight) {
   }
 
   if (overflowFontSize === null) {
-    return getCandidateResult(fittedFontSize)
+    return normalizeAutoFitResult(getCandidateResult(fittedFontSize), boxWidth, boxHeight)
   }
 
   let low = fittedFontSize
@@ -634,7 +788,7 @@ function resolveAutoFitFontSize(layer, boxWidth, boxHeight) {
     }
   }
 
-  return bestFitResult
+  return normalizeAutoFitResult(bestFitResult, boxWidth, boxHeight)
 }
 
 function rebuildTextStyleRangesFromSegments(layer, segments) {
@@ -1577,7 +1731,7 @@ export function syncTextLayerLayout(layer, previousLayer = null) {
   const requestedBoxHeight = Math.max(Number(layer.boxHeight ?? layer.height ?? measurement.height) || 0, 1)
   let normalizedBoxWidth = null
   let normalizedBoxHeight = null
-  let nextFontSize = Math.max(MIN_AUTO_FIT_FONT_SIZE, Number(layer.fontSize) || MIN_AUTO_FIT_FONT_SIZE)
+  let nextFontSize = clampTextFontSize(layer.fontSize, MIN_AUTO_FIT_FONT_SIZE)
   let nextStyleRanges = normalizedStyleRanges
 
   if (layer.mode === 'box') {
@@ -1591,10 +1745,17 @@ export function syncTextLayerLayout(layer, previousLayer = null) {
     }
 
     if (isBoxTextAutoFitEnabled(workingLayer)) {
+      const autoFitFallbackResult = createAutoFitFallbackResult(
+        workingLayer,
+        previousLayer,
+        requestedBoxWidth,
+        requestedBoxHeight,
+      )
       const autoFitResult = resolveAutoFitFontSize(
         workingLayer,
         requestedBoxWidth,
         requestedBoxHeight,
+        autoFitFallbackResult,
       )
 
       measurement = autoFitResult.measurement
@@ -1633,6 +1794,11 @@ export function syncTextLayerLayout(layer, previousLayer = null) {
   const nextLayer = {
     ...layer,
     fontSize: nextFontSize,
+    lineHeight: clampTextLineHeight(layer.lineHeight, DEFAULT_TEXT_LINE_HEIGHT),
+    letterSpacing: clampTextLetterSpacing(
+      layer.letterSpacing,
+      DEFAULT_TEXT_LETTER_SPACING,
+    ),
     boxWidth: normalizedBoxWidth,
     boxHeight: normalizedBoxHeight,
     measuredWidth: layer.mode === 'box' ? measurement.requiredWidth : measurement.width,

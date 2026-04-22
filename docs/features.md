@@ -8,10 +8,10 @@ If no locally saved current document exists, the app falls back to a seeded demo
 
 The initial document includes:
 
-- a full-canvas white background layer
-- a hero image layer
-- an orange rounded rectangle shape layer
-- an editable text layer
+- a full-canvas white background layer only
+- that seeded background layer is intentionally created `30px` larger in both dimensions than the
+  document and offset by `-15px` on both axes so it extends slightly beyond the document on all
+  sides while staying visually centered
 
 This seed data is created in `src/editor/documentHelpers.js` through `createInitialDocument()` and
 loaded by `src/App.jsx`.
@@ -125,6 +125,8 @@ loaded by `src/App.jsx`.
 - click a layer or layer row to select it
 - inspector edits operate on the selected layer
 - the single-layer inspector also exposes `Flip Horizontal` and `Flip Vertical` transform actions
+- the inspector no longer exposes raw `Scale X` / `Scale Y` numeric inputs; flips stay available as
+  the user-facing transform controls while signed scale remains part of the internal layer model
 - resize handles appear on selection
 - once a layer is already selected, dragging from anywhere inside its transformed selection frame starts move immediately, even over transparent pixels
 - selection bounds lines, handle circles, and the rest of the selected-layer chrome are editor-only overlay UI and stay visually independent from the selected layer's own `opacity`
@@ -479,6 +481,15 @@ Supported behavior includes:
 The stage visually represents a 1080 x 1440 document inside a 428px-wide display frame.
 
 There is also a prompt-style input rendered below the canvas, but it is currently presentational only and is not wired into document generation or editing behavior.
+
+## Transient Status UI
+
+- the top toolbar can show a transient inline error/status pill for short-lived problems such as
+  autosave failures or tool-availability feedback
+- that pill still auto-fades on the existing timer
+- it now also includes a manual dismiss control at the lower-right edge so the current message can
+  be closed immediately
+- dismissing one message does not prevent later messages from appearing normally
 
 ## Export
 

@@ -1,6 +1,11 @@
 import { createImageLayer, createTextLayer } from '../lib/layers'
 import { getDefaultImportedImagePosition } from './documentHelpers'
-import { MIN_LAYER_HEIGHT, MIN_LAYER_WIDTH } from './constants'
+import {
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
+  MIN_LAYER_HEIGHT,
+  MIN_LAYER_WIDTH,
+} from './constants'
 import { resizeBoxText, resizePointTextTransform, syncTextLayerLayout } from '../lib/textLayer'
 
 const VALID_TEXT_ALIGNMENTS = new Set(['left', 'center', 'right'])
@@ -28,6 +33,10 @@ function coerceNumber(value) {
 function coerceInteger(value) {
   const numericValue = coerceNumber(value)
   return numericValue === null ? null : Math.trunc(numericValue)
+}
+
+function clampTextSpecSize(value) {
+  return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, value))
 }
 
 function coerceBoolean(value) {
@@ -424,7 +433,7 @@ export function normalizeTextLayerSpec(input) {
     const size = coerceNumber(input.size)
 
     if (size !== null && size > 0) {
-      nextSpec.size = size
+      nextSpec.size = clampTextSpecSize(size)
     }
   }
 
@@ -538,7 +547,7 @@ export function normalizeJsonTextLayerSpec(input) {
     const size = coerceNumber(input.size)
 
     if (size !== null && size > 0) {
-      nextSpec.size = size
+      nextSpec.size = clampTextSpecSize(size)
     }
   }
 

@@ -3,7 +3,13 @@ import { createExactTextLayerFromJsonSpec } from '../editor/addLayerPanelHelpers
 import { centerToTopLeft } from './layerGeometry'
 import { createTextLayer } from './layers'
 import { renderTextLayerToCanvas } from './raster'
-import { measureTextLayer, syncTextLayerLayout, updateTextContent, updateTextStyle } from './textLayer'
+import {
+  measureTextLayer,
+  resizeBoxText,
+  syncTextLayerLayout,
+  updateTextContent,
+  updateTextStyle,
+} from './textLayer'
 
 const POINT_TEXT_PADDING_EXPECTED = 4
 
@@ -168,5 +174,27 @@ describe('text layer anti-clipping bounds', () => {
     expect(synced.fontSize).toBeLessThan(96)
     expect(synced.measuredWidth).toBeLessThanOrEqual(120)
     expect(synced.measuredHeight).toBeLessThanOrEqual(60)
+  })
+
+  it('keeps auto-fit box measurement state in sync after a shrink resize', () => {
+    const layer = createTextLayer({
+      mode: 'box',
+      text: 'Bounds should keep following the shrunken fitted text',
+      fontSize: 64,
+      boxWidth: 360,
+      boxHeight: 160,
+      width: 360,
+      height: 160,
+      autoFit: true,
+    })
+    const enlarged = resizeBoxText(layer, 420, 200)
+    const shrunk = resizeBoxText(enlarged, 220, 92)
+    const measurement = measureTextLayer(shrunk)
+
+    expect(shrunk.width).toBe(220)
+    expect(shrunk.height).toBe(92)
+    expect(shrunk.measuredWidth).toBe(measurement.requiredWidth)
+    expect(shrunk.measuredHeight).toBe(measurement.requiredHeight)
+    expect(shrunk.measuredHeight).toBeLessThan(enlarged.measuredHeight)
   })
 })

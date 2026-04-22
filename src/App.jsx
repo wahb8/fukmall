@@ -23,8 +23,13 @@ import {
   DEFAULT_TEXT_SHADOW_OPACITY,
   DISPLAY_DOCUMENT_WIDTH,
   HANDLE_DIRECTIONS,
+  MAX_ASSET_LIBRARY_ITEMS,
+  MAX_FONT_SIZE,
   MAX_LAYER_SIZE,
+  MAX_LETTER_SPACING,
+  MAX_LINE_HEIGHT,
   MAX_VIEWPORT_ZOOM,
+  MIN_FONT_SIZE,
   MIN_DOCUMENT_DIMENSION,
   MIN_LAYER_HEIGHT,
   MIN_LAYER_WIDTH,
@@ -279,6 +284,38 @@ function getImportedSourceKind(file, src) {
   }
 
   return inferImageSourceKindFromSrc(src)
+}
+
+function clampFontSizeInputValue(value) {
+  return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.round(Number(value) || 0)))
+}
+
+function clampLetterSpacingInputValue(value) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return 0
+  }
+
+  return Math.min(MAX_LETTER_SPACING, numericValue)
+}
+
+function clampLineHeightInputValue(value) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return 1.15
+  }
+
+  return Math.max(0.5, Math.min(MAX_LINE_HEIGHT, numericValue))
+}
+
+function getAssetLibraryLimitMessage(acceptedCount, rejectedCount) {
+  if (acceptedCount > 0 && rejectedCount > 0) {
+    return `Asset library limit reached. Added ${acceptedCount} asset${acceptedCount === 1 ? '' : 's'}; ${rejectedCount} ${rejectedCount === 1 ? 'was' : 'were'} not imported.`
+  }
+
+  return 'Asset library limit reached. Remove an asset before importing more.'
 }
 
 async function importAssetsFromFiles(files) {
@@ -1285,6 +1322,16 @@ function App() {
     })
   }, [clearToolPanelErrorTimers])
 
+  const dismissToolPanelError = useCallback(() => {
+    clearToolPanelErrorTimers()
+    setToolPanelError({
+      message: '',
+      isRendered: false,
+      isVisible: false,
+      isFading: false,
+    })
+  }, [clearToolPanelErrorTimers])
+
   useEffect(() => (
     () => {
       clearAddLayerPanelStatusTimer()
@@ -2276,9 +2323,12 @@ function App() {
           let linkedRatioX = nextWidth / Math.max(interaction.startWidth, 1)
           let linkedRatioY = nextHeight / Math.max(interaction.startHeight, 1)
           let nextPrimaryLayer = null
+          const resizeBaseLayer = interaction.startLayerSnapshot
           let nextDocument = updateLayer(currentDocument, interaction.layerId, (layer) => {
+            const baseLayer = resizeBaseLayer?.id === layer.id ? resizeBaseLayer : layer
+
             if (interaction.layerType === 'text') {
-              if (layer.mode === 'box') {
+              if (baseLayer.mode === 'box') {
                 const resizedWidth = Math.max(
                   minimumWidth,
                   nextFrameWidth / Math.max(Math.abs(interaction.startScaleX), 0.1),
@@ -2293,7 +2343,7 @@ function App() {
 
                 nextPrimaryLayer = resizeBoxText(
                   {
-                    ...layer,
+                    ...baseLayer,
                     x: nextX,
                     y: nextY,
                   },
@@ -2319,15 +2369,15 @@ function App() {
               nextPrimaryLayer = {
                 ...resizePointTextTransform(
                   {
-                    ...layer,
+                    ...baseLayer,
                     x: nextX,
                     y: nextY,
                   },
                   Math.sign(interaction.startScaleX || 1) * nextScaleX,
                   Math.sign(interaction.startScaleY || 1) * nextScaleY,
                 ),
-                width: layer.measuredWidth ?? layer.width,
-                height: layer.measuredHeight ?? layer.height,
+                width: baseLayer.measuredWidth ?? baseLayer.width,
+                height: baseLayer.measuredHeight ?? baseLayer.height,
               }
 
               linkedRatioX = nextScaleX / Math.max(Math.abs(interaction.startScaleX), 0.0001)
@@ -2337,7 +2387,7 @@ function App() {
             }
 
             nextPrimaryLayer = {
-              ...layer,
+              ...baseLayer,
               x: nextX,
               y: nextY,
               width: nextWidth,
@@ -4207,13 +4257,29 @@ function App() {
 
     try {
       const { assets, errors } = await importAssetsFromFiles(files)
+      let assetLimitMessage = null
 
       if (assets.length > 0) {
-        setAssetLibrary((currentAssets) => [...currentAssets, ...assets])
+        const availableSlots = Math.max(MAX_ASSET_LIBRARY_ITEMS - assetLibrary.length, 0)
+        const acceptedAssets = assets.slice(0, availableSlots)
+        const rejectedAssetCount = assets.length - acceptedAssets.length
+
+        if (acceptedAssets.length > 0) {
+          setAssetLibrary((currentAssets) => [...currentAssets, ...acceptedAssets])
+        }
+
+        if (rejectedAssetCount > 0 || availableSlots === 0) {
+          assetLimitMessage = getAssetLibraryLimitMessage(
+            acceptedAssets.length,
+            rejectedAssetCount || assets.length,
+          )
+        }
       }
 
       if (errors.length > 0) {
         handleImageImportFailure(errors[0])
+      } else if (assetLimitMessage) {
+        showToolPanelError(assetLimitMessage)
       }
     } finally {
       event.target.value = ''
@@ -4503,7 +4569,7 @@ function App() {
 
     if (Number.isFinite(nextValue)) {
       applyTextStyleChange(layerId, {
-        fontSize: Math.max(8, Math.round(nextValue)),
+        fontSize: clampFontSizeInputValue(nextValue),
       })
     }
 
@@ -4522,7 +4588,7 @@ function App() {
     const currentFontSize = selection
       ? (getUniformTextStyleValueForRange(layer, selection.start, selection.end, 'fontSize') ?? layer.fontSize)
       : layer.fontSize
-    const nextFontSize = Math.max(8, Number(currentFontSize) + delta)
+    const nextFontSize = clampFontSizeInputValue(Number(currentFontSize) + delta)
     const sessionScope = selection ? `${selection.start}-${selection.end}` : 'layer'
 
     applyCoalescedLayerAdjustment({
@@ -5093,6 +5159,7 @@ function App() {
       type: 'resize',
       layerId: layer.id,
       layerType: layer.type,
+      startLayerSnapshot: layer,
       linkedLayerId: linkedPartner?.id ?? null,
       handle,
       pointerStart: {
@@ -6390,15 +6457,17 @@ function App() {
 
     if (selectedLayer.type === 'text') {
       if (key === 'fontSize') {
+        const nextFontSize = clampFontSizeInputValue(resolvedValue)
+
         applyCoalescedLayerAdjustment({
           layerId: selectedLayer.id,
           propertyKey: 'fontSize',
           startValue: selectedLayer.fontSize,
-          nextValue: resolvedValue,
+          nextValue: nextFontSize,
           updater: (layer) => (
             layer.type === 'text'
               ? updateTextStyle(layer, {
-                fontSize: resolvedValue,
+                fontSize: nextFontSize,
               })
               : layer
           ),
@@ -7039,6 +7108,7 @@ function App() {
           canUndo={canUndo || hasActiveInspectorAdjustment}
           canRedo={canRedo}
           toolPanelError={toolPanelError}
+          onDismissToolPanelError={dismissToolPanelError}
           globalColors={globalColors}
           onActivateTool={activateTool}
           onResetViewport={() => setViewport({ zoom: 1, offsetX: 0, offsetY: 0 })}
@@ -7227,6 +7297,8 @@ function App() {
                       <>
                         <FontSizeStepper
                           value={getDisplayedFontSizeValue(selectedLayer)}
+                          min={MIN_FONT_SIZE}
+                          max={MAX_FONT_SIZE}
                           inputPointerDown={markTextStyleControlInteraction}
                           onStepperPointerDown={(event) => {
                             event.preventDefault()
@@ -7359,11 +7431,12 @@ function App() {
                           <input
                             type="number"
                             step="0.5"
+                            max={MAX_LETTER_SPACING}
                             value={selectedLayer.letterSpacing ?? 0}
                             data-text-style-control="true"
                             onPointerDown={markTextStyleControlInteraction}
                             onChange={(event) => {
-                              const nextLetterSpacing = Number(event.target.value) || 0
+                              const nextLetterSpacing = clampLetterSpacingInputValue(event.target.value)
                               const selection = getEditingTextSelectionRange(selectedLayer.id)
 
                               applyCoalescedLayerAdjustment({
@@ -7398,12 +7471,13 @@ function App() {
                           <input
                             type="number"
                             min="0.5"
+                            max={MAX_LINE_HEIGHT}
                             step="0.05"
                             value={selectedLayer.lineHeight ?? 1.15}
                             data-text-style-control="true"
                             onPointerDown={markTextStyleControlInteraction}
                             onChange={(event) => {
-                              const nextLineHeight = Math.max(0.5, Number(event.target.value) || 1.15)
+                              const nextLineHeight = clampLineHeightInputValue(event.target.value)
                               const selection = getEditingTextSelectionRange(selectedLayer.id)
 
                               applyCoalescedLayerAdjustment({
@@ -7591,28 +7665,6 @@ function App() {
                         step="0.1"
                         value={selectedLayer.opacity}
                         onChange={(event) => handleNumericChange('opacity', event.target.value, 0)}
-                        onBlur={finishCoalescedInspectorAdjustment}
-                      />
-                    </label>
-                    <label className="property-field">
-                      <span>Scale X</span>
-                      <input
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        value={selectedLayer.scaleX}
-                        onChange={(event) => handleNumericChange('scaleX', event.target.value, 0.1)}
-                        onBlur={finishCoalescedInspectorAdjustment}
-                      />
-                    </label>
-                    <label className="property-field">
-                      <span>Scale Y</span>
-                      <input
-                        type="number"
-                        min="0.1"
-                        step="0.1"
-                        value={selectedLayer.scaleY}
-                        onChange={(event) => handleNumericChange('scaleY', event.target.value, 0.1)}
                         onBlur={finishCoalescedInspectorAdjustment}
                       />
                     </label>

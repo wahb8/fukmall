@@ -79,6 +79,7 @@ describe('App Add Layer JSON flow', () => {
       expect(within(inspectorPanel).getByLabelText('Height')).toHaveValue(200)
     })
     expect(screen.getByDisplayValue('JSON Hero Title')).toBeInTheDocument()
+    expect(Number(getNumericInput(inspectorPanel, 'Font Size').value)).toBeGreaterThan(8)
   })
 
   it('preserves the final runtime text layer width and height after Apply JSON then Create Layer', async () => {
@@ -103,6 +104,7 @@ describe('App Add Layer JSON flow', () => {
       expect(within(inspectorPanel).getByLabelText('Height')).toHaveValue(200)
     })
     expect(screen.getByDisplayValue('JSON Hero Title')).toBeInTheDocument()
+    expect(Number(getNumericInput(inspectorPanel, 'Font Size').value)).toBeGreaterThan(8)
   })
 
   it('fits JSON-created text into the requested box during direct Create From JSON', async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   applyExplicitImagePosition,
   applyInspectorSizeToLayer,
@@ -212,6 +212,24 @@ describe('addLayerPanel helpers', () => {
       y: 140,
       width: 340,
       addShadow: false,
+    })
+  })
+
+  it('clamps oversized text sizes from manual specs and JSON specs', () => {
+    expect(normalizeTextLayerSpec({
+      text: 'Manual text',
+      size: '4000',
+    })).toEqual({
+      text: 'Manual text',
+      size: 1000,
+    })
+
+    expect(normalizeJsonTextLayerSpec({
+      text: 'JSON text',
+      size: 2400,
+    })).toEqual({
+      text: 'JSON text',
+      size: 1000,
     })
   })
 
@@ -580,6 +598,45 @@ describe('addLayerPanel helpers', () => {
     expect(layer.measuredHeight).toBeLessThanOrEqual(layer.height)
   })
 
+  it('does not collapse bold JSON text to size 1 when the bold measurement path is invalid', () => {
+    const contextPrototype = Object.getPrototypeOf(document.createElement('canvas').getContext('2d'))
+    const originalMeasureText = contextPrototype.measureText
+    const measureTextSpy = vi
+      .spyOn(contextPrototype, 'measureText')
+      .mockImplementation(function mockMeasureText(text) {
+        if (String(this.font).includes('700')) {
+          return {
+            width: Number.NaN,
+            actualBoundingBoxAscent: Number.NaN,
+            actualBoundingBoxDescent: Number.NaN,
+            actualBoundingBoxLeft: Number.NaN,
+            actualBoundingBoxRight: Number.NaN,
+          }
+        }
+
+        return originalMeasureText.call(this, text)
+      })
+
+    try {
+      const layer = createExactTextLayerFromJsonSpec({
+        text: 'JSON bold headline',
+        bolded: true,
+        font: 'Arial, sans-serif',
+        size: 72,
+        width: 500,
+        height: 200,
+      })
+
+      expect(layer.fontWeight).toBe(700)
+      expect(layer.fontSize).toBe(72)
+      expect(layer.fontSize).toBeGreaterThan(8)
+      expect(layer.width).toBe(500)
+      expect(layer.height).toBe(200)
+    } finally {
+      measureTextSpy.mockRestore()
+    }
+  })
+
   it('creates JSON text with the same converged layout it would have after a later sync', () => {
     const layer = createExactTextLayerFromJsonSpec({
       text: 'I love big mcchicken sandwiches',
@@ -621,5 +678,17 @@ describe('addLayerPanel helpers', () => {
 
     expect(layer.width).toBe(500)
     expect(layer.height).toBe(200)
+  })
+
+  it('clamps oversized JSON-created text sizes before layout sync runs', () => {
+    const layer = createExactTextLayerFromJsonSpec({
+      text: 'Huge JSON text',
+      size: 4000,
+      width: 800,
+      height: 400,
+    })
+
+    expect(layer.fontSize).toBeLessThanOrEqual(1000)
+    expect(layer.fontSize).toBeGreaterThan(8)
   })
 })

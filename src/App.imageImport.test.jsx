@@ -641,4 +641,65 @@ describe('App image import flows', () => {
     const svgImage = container.querySelector(`img.layer-image[src="${svgDataUrl}"]`)
     expect(svgImage).not.toBeNull()
   })
+
+  it('caps the asset library at 20 items, accepts only remaining slots, and shows a transient limit message', async () => {
+    const files = Array.from({ length: 21 }, (_, index) => {
+      const file = createImageFile(
+        `asset-${index + 1}.png`,
+        'image/png',
+        `data:image/png;base64,asset-cap-${index + 1}`,
+      )
+
+      registerImageSource(file.__mockDataUrl, {
+        width: 12,
+        height: 12,
+      })
+
+      return file
+    })
+
+    const { container } = render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+
+    fireEvent.change(getAssetLibraryInput(container), {
+      target: {
+        files,
+      },
+    })
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('.asset-card')).toHaveLength(20)
+    })
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Asset library limit reached. Added 20 assets; 1 was not imported.',
+    )
+
+    const extraFile = createImageFile(
+      'asset-22.png',
+      'image/png',
+      'data:image/png;base64,asset-cap-22',
+    )
+    registerImageSource(extraFile.__mockDataUrl, {
+      width: 12,
+      height: 12,
+    })
+
+    fireEvent.change(getAssetLibraryInput(container), {
+      target: {
+        files: [extraFile],
+      },
+    })
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('.asset-card')).toHaveLength(20)
+    })
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Asset library limit reached. Remove an asset before importing more.',
+    )
+  })
 })

@@ -60,4 +60,24 @@ describe('FontSizeStepper', () => {
     vi.advanceTimersByTime(280)
     expect(onIncrementStep).toHaveBeenCalledTimes(4)
   })
+
+  it('forwards the configured max to the numeric input', () => {
+    render(
+      <FontSizeStepper
+        value={1000}
+        max={1000}
+        onDecrementStep={() => {}}
+        onIncrementStep={() => {}}
+        onStepStop={() => {}}
+        onStepperPointerDown={() => {}}
+        inputPointerDown={() => {}}
+        onInputFocus={() => {}}
+        onInputChange={() => {}}
+        onInputBlur={() => {}}
+        onInputKeyDown={() => {}}
+      />,
+    )
+
+    expect(screen.getByRole('spinbutton')).toHaveAttribute('max', '1000')
+  })
 })

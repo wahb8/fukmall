@@ -78,7 +78,9 @@ This document describes what each tracked file in the repo currently does.
 - restores the last current document from local storage on startup and autosaves document changes back to that storage
 - still owns tool state, document state integration, layer rendering, keyboard shortcuts, drag/drop, viewport, and canvas interaction flow
 - now delegates several stable render sections into `src/components/editor/`
-- creates the default document, including the full-canvas white background layer used for new files
+- creates the default document, including the single seeded background layer used for new files
+- the seeded background layer is intentionally oversized slightly beyond the document bounds so it
+  bleeds `15px` past each edge while staying centered
 - no longer exposes group layers in the seeded document or inspector UI
 - contains the unified validated image import path used by direct imports, external desktop drops, and asset-library canvas drops
 - contains the trim-transparent-imports runtime preference, persists it separately in `localStorage`, and applies it only to eligible raster imports
@@ -96,6 +98,8 @@ This document describes what each tracked file in the repo currently does.
 - contains the bucket fill tool wiring, including toolbar controls, tolerance state, and bitmap-layer fill commits
 - contains the asset library panel structure, including the fixed header and scrollable asset list region
 - contains the fixed left-side tool layout, zoom-tool reset behavior, and file-menu interactions
+- contains the transient top-toolbar status/error state plus the timer and manual-dismiss wiring for
+  that pill
 - contains a currently unwired prompt-style input below the canvas
 - contains move interaction behavior such as snapping and temporary Shift axis locking
 - contains the selected-frame move behavior so already-selected layers can be dragged from their transformed selection frame without another opaque-pixel hit
@@ -123,6 +127,8 @@ This document describes what each tracked file in the repo currently does.
 
 - app-level document/file helpers used by `App.jsx`
 - creates the seeded initial document
+- the current seeded document is background-only and sizes that background layer `30px` larger than
+  the requested document in both dimensions while centering the bleed
 - normalizes new-file modal inputs
 - sanitizes save/export filename bases
 - contains imported-image placement helpers
@@ -154,6 +160,7 @@ This document describes what each tracked file in the repo currently does.
 
 - presentational toolbar component for tool buttons, tool options, history controls, add-text/add-image actions, and global color controls
 - includes the marquee tool button using `src/assets/marquee.svg`
+- renders the transient top-toolbar status/error pill and its dismiss button through props
 - keeps toolbar UI out of `App.jsx` while leaving the actual behavior callbacks in `App`
 
 ### `src/components/editor/FileMenu.jsx`
@@ -262,6 +269,7 @@ This document describes what each tracked file in the repo currently does.
 - constrains the Add Layer panel height and gives it its own internal scroll region below the asset library
 - controls the masonry-like asset card layout and the asset delete button placement
 - styles the file menu dropdown, active asset-drop canvas state, shared multi-selection frame, inline text editor, and the prompt shell below the canvas
+- styles the transient top-toolbar status/error pill and its corner-mounted dismiss button
 - makes the single-layer selection frame interactive so it can act as the move region for already-selected layers
 - styles the selection overlay path so visible selection chrome stays independent from layer artwork opacity
 - styles the segmented alignment control and linked-layer controls in the inspector
@@ -407,7 +415,7 @@ This document describes what each tracked file in the repo currently does.
 
 ### `src/assets/hero.png`
 
-- demo image used in the initial document
+- leftover demo image asset from earlier seeded-document iterations
 
 ### `src/assets/BadeenDisplay-Regular.ttf`
 

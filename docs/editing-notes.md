@@ -86,7 +86,7 @@ The file workflow now includes document creation UI, not just open/save/export.
 Current behavior:
 
 - `New File` opens a modal for document name, width, and height
-- creating a new file rebuilds the seeded demo document at the requested dimensions
+- creating a new file rebuilds the seeded document at the requested dimensions
 - choosing `New File` while the current document is dirty opens an unsaved-changes confirmation modal first
 - the app also registers a browser `beforeunload` prompt while unsaved changes exist
 
@@ -104,7 +104,13 @@ Current behavior:
 
 ### Default New File State
 
-Fresh documents now start with a full-canvas white background layer at the bottom of the stack.
+Fresh documents now start with a single white background layer at the bottom of the stack.
+
+Current background seeding behavior:
+
+- the background is the only seeded layer
+- it is created `30px` larger than the document in both dimensions
+- it is centered so it extends `15px` past each document edge instead of growing only down/right
 
 ### Layer Flips
 
@@ -113,9 +119,22 @@ Layer flipping now uses the existing signed `scaleX` / `scaleY` transform model 
 Current behavior:
 
 - the single-layer inspector exposes `Flip Horizontal` and `Flip Vertical`
+- the inspector no longer exposes raw `Scale X` / `Scale Y` inputs even though signed scale still
+  exists in the document model and transform math
 - flips mirror the selected layer around its own center by inverting the sign of the chosen scale axis
 - export stays aligned because it already uses the same signed-scale transform path
 - point-text resize paths must preserve the existing sign of `scaleX` / `scaleY`; otherwise a later resize can accidentally undo a flip
+
+### Transient Toolbar Status Pill
+
+The toolbar-level transient error/status pill now has both timed and manual dismissal.
+
+Current behavior:
+
+- the existing fade/clear timing still applies
+- the pill now has a small dismiss button mounted on its lower-right corner
+- manual dismiss clears the current message immediately and also clears the active fade/clear timers
+- later transient messages should still appear normally after a manual dismiss
 
 ### Text Paint Remapping
 

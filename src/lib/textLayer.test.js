@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   applyTextStyleToRange,
   detectTextDirection,
@@ -18,6 +18,27 @@ import { centerToTopLeft } from './layerGeometry'
 import { createTextLayer } from './layers'
 
 describe('text layer helpers', () => {
+  function resolveLargestFittingFontSize(layer, width, height) {
+    let bestFontSize = 8
+
+    for (let fontSize = 8; fontSize <= 1000; fontSize += 1) {
+      const measurement = measureTextLayer({
+        ...layer,
+        width,
+        height,
+        boxWidth: width,
+        boxHeight: height,
+        fontSize,
+      })
+
+      if (measurement.requiredWidth <= width && measurement.requiredHeight <= height) {
+        bestFontSize = fontSize
+      }
+    }
+
+    return bestFontSize
+  }
+
   function createRecordingContext() {
     const fillCalls = []
     const strokeCalls = []
@@ -184,6 +205,74 @@ describe('text layer helpers', () => {
     expect(grown.measuredHeight).toBeLessThanOrEqual(grown.height)
   })
 
+  it('matches the largest fitting shared font size when an auto-fit box shrinks', () => {
+    const layer = createTextLayer({
+      mode: 'box',
+      text: 'Shrink me without collapsing to the minimum',
+      fontSize: 64,
+      boxWidth: 360,
+      boxHeight: 160,
+      width: 360,
+      height: 160,
+      autoFit: true,
+    })
+    const width = 220
+    const height = 92
+    const resized = resizeBoxText(layer, width, height)
+    const expectedFontSize = resolveLargestFittingFontSize(layer, width, height)
+
+    expect(resized.fontSize).toBe(expectedFontSize)
+    expect(resized.fontSize).toBeGreaterThan(8)
+    expect(resized.measuredWidth).toBe(measureTextLayer(resized).requiredWidth)
+    expect(resized.measuredHeight).toBe(measureTextLayer(resized).requiredHeight)
+  })
+
+  it('refreshes measured bounds after shrinking an auto-fit box text layer', () => {
+    const layer = createTextLayer({
+      mode: 'box',
+      text: 'Measured bounds should shrink with the fitted text',
+      fontSize: 64,
+      boxWidth: 360,
+      boxHeight: 160,
+      width: 360,
+      height: 160,
+      autoFit: true,
+    })
+    const enlarged = resizeBoxText(layer, 420, 200)
+    const shrunk = resizeBoxText(enlarged, 220, 92)
+    const shrunkMeasurement = measureTextLayer(shrunk)
+
+    expect(shrunk.fontSize).toBeLessThan(enlarged.fontSize)
+    expect(shrunk.measuredWidth).toBe(shrunkMeasurement.requiredWidth)
+    expect(shrunk.measuredHeight).toBe(shrunkMeasurement.requiredHeight)
+    expect(shrunk.measuredHeight).toBeLessThan(enlarged.measuredHeight)
+  })
+
+  it('keeps auto-fit box text stable across enlarge shrink enlarge sequences', () => {
+    const layer = createTextLayer({
+      mode: 'box',
+      text: 'Resize me up and down and keep deriving from the current box',
+      fontSize: 60,
+      boxWidth: 280,
+      boxHeight: 120,
+      width: 280,
+      height: 120,
+      autoFit: true,
+    })
+    const enlarged = resizeBoxText(layer, 420, 180)
+    const shrunk = resizeBoxText(enlarged, 210, 88)
+    const grownAgain = resizeBoxText(shrunk, 420, 180)
+    const expectedShrunkFontSize = resolveLargestFittingFontSize(layer, 210, 88)
+    const expectedGrownAgainFontSize = resolveLargestFittingFontSize(layer, 420, 180)
+
+    expect(enlarged.fontSize).toBe(resolveLargestFittingFontSize(layer, 420, 180))
+    expect(shrunk.fontSize).toBe(expectedShrunkFontSize)
+    expect(grownAgain.fontSize).toBe(expectedGrownAgainFontSize)
+    expect(grownAgain.fontSize).toBe(enlarged.fontSize)
+    expect(grownAgain.measuredWidth).toBe(measureTextLayer(grownAgain).requiredWidth)
+    expect(grownAgain.measuredHeight).toBe(measureTextLayer(grownAgain).requiredHeight)
+  })
+
   it('auto-fits the seeded headline text upward for a larger resized box', () => {
     const layer = createTextLayer({
       mode: 'box',
@@ -242,6 +331,47 @@ describe('text layer helpers', () => {
     expect(measureTextLayer(synced).lines.length).toBeGreaterThan(1)
   })
 
+  it('does not collapse auto-fit text to size 1 when bold re-layout measurement becomes invalid', () => {
+    const contextPrototype = Object.getPrototypeOf(document.createElement('canvas').getContext('2d'))
+    const originalMeasureText = contextPrototype.measureText
+    const measureTextSpy = vi
+      .spyOn(contextPrototype, 'measureText')
+      .mockImplementation(function mockMeasureText(text) {
+        if (String(this.font).includes('700')) {
+          return {
+            width: Number.NaN,
+            actualBoundingBoxAscent: Number.NaN,
+            actualBoundingBoxDescent: Number.NaN,
+            actualBoundingBoxLeft: Number.NaN,
+            actualBoundingBoxRight: Number.NaN,
+          }
+        }
+
+        return originalMeasureText.call(this, text)
+      })
+
+    try {
+      const layer = resizeBoxText(createTextLayer({
+        mode: 'box',
+        text: 'Bold should not collapse this layer',
+        fontSize: 64,
+        boxWidth: 220,
+        boxHeight: 90,
+        width: 220,
+        height: 90,
+      }), 220, 90)
+      const bold = updateTextStyle(layer, { fontWeight: 700 })
+
+      expect(layer.fontSize).toBeGreaterThan(8)
+      expect(bold.fontSize).toBe(layer.fontSize)
+      expect(bold.fontSize).toBeGreaterThan(8)
+      expect(bold.measuredWidth).toBeLessThanOrEqual(bold.width)
+      expect(bold.measuredHeight).toBeLessThanOrEqual(bold.height)
+    } finally {
+      measureTextSpy.mockRestore()
+    }
+  })
+
   it('auto-fit scales style-range font sizes with the shared styled-run path', () => {
     const layer = createTextLayer({
       mode: 'box',
@@ -287,6 +417,46 @@ describe('text layer helpers', () => {
     expect(autoFitLayer.autoFit).toBe(true)
     expect(updated.autoFit).toBe(false)
     expect(updated.fontSize).toBe(24)
+  })
+
+  it('clamps oversized text style values through the shared update path', () => {
+    const layer = createTextLayer({
+      text: 'Capped values',
+      mode: 'point',
+    })
+    const updated = updateTextStyle(layer, {
+      fontSize: 4000,
+      letterSpacing: 80,
+      lineHeight: 10,
+    })
+
+    expect(updated.fontSize).toBe(1000)
+    expect(updated.letterSpacing).toBe(50)
+    expect(updated.lineHeight).toBe(3)
+  })
+
+  it('clamps oversized style-range values when partial text styles are applied', () => {
+    const layer = createTextLayer({
+      text: 'Hello world',
+      mode: 'point',
+    })
+    const updated = applyTextStyleToRange(layer, 0, 5, {
+      fontSize: 2400,
+      letterSpacing: 99,
+      lineHeight: 8,
+    })
+
+    expect(updated.styleRanges).toEqual([
+      {
+        start: 0,
+        end: 5,
+        styles: {
+          fontSize: 1000,
+          letterSpacing: 50,
+          lineHeight: 3,
+        },
+      },
+    ])
   })
 
   it('normalizes overlapping style ranges into clean merged segments', () => {

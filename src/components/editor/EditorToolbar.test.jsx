@@ -32,6 +32,7 @@ function createToolbarProps(overrides = {}) {
     onForegroundChange: vi.fn(),
     onSwapColors: vi.fn(),
     onResetColors: vi.fn(),
+    onDismissToolPanelError: vi.fn(),
     ...overrides,
   }
 }
@@ -122,6 +123,7 @@ describe('EditorToolbar', () => {
     )
 
     expect(screen.getByRole('status')).toHaveClass('tool-panel-error', 'visible')
+    expect(screen.getByRole('button', { name: 'Dismiss status message' })).toBeInTheDocument()
 
     rerender(
       <EditorToolbar
@@ -152,5 +154,22 @@ describe('EditorToolbar', () => {
     )
 
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('invokes the dismiss callback when the tool-panel message close button is clicked', () => {
+    const props = createToolbarProps({
+      toolPanelError: {
+        message: 'Dismiss me',
+        isRendered: true,
+        isVisible: true,
+        isFading: false,
+      },
+    })
+
+    render(<EditorToolbar {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss status message' }))
+
+    expect(props.onDismissToolPanelError).toHaveBeenCalledTimes(1)
   })
 })

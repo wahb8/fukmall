@@ -176,10 +176,10 @@ describe('App current document persistence', () => {
     const inspector = getInspector(container)
 
     await waitFor(() => {
-      expect(within(inspector).getByLabelText('Width')).toHaveValue(360)
-      expect(within(inspector).getByLabelText('Height')).toHaveValue(260)
+      expect(within(inspector).getByLabelText('Width')).toHaveValue(1080)
+      expect(within(inspector).getByLabelText('Height')).toHaveValue(1440)
     })
 
-    expect(window.localStorage.getItem(CURRENT_DOCUMENT_STORAGE_KEY)).toContain('Hero Image')
+    expect(window.localStorage.getItem(CURRENT_DOCUMENT_STORAGE_KEY)).toContain('Background')
   })
 })

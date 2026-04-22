@@ -3,6 +3,7 @@ import { PressAndHoldRepeatButton } from './PressAndHoldRepeatButton'
 export function FontSizeStepper({
   value,
   min = 8,
+  max = undefined,
   inputPointerDown,
   onDecrementStep,
   onIncrementStep,
@@ -30,6 +31,7 @@ export function FontSizeStepper({
         <input
           type="number"
           min={min}
+          max={max}
           value={value}
           data-text-style-control="true"
           onPointerDown={inputPointerDown}
