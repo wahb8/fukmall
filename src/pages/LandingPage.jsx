@@ -11,43 +11,107 @@ function navigateTo(pathname) {
 
 export function LandingPage() {
   return (
-    <main className="app-shell landing-shell">
-      <div className="landing-top-actions" aria-label="Authentication actions">
-        <button className="action-button" type="button">
-          sign-up
-        </button>
-        <button className="action-button" type="button">
-          log-in
-        </button>
-      </div>
+    <main className="app-shell landing-shell" id="top">
+      <div className="landing-frame">
+        <header className="landing-nav" aria-label="Primary navigation">
+          <a className="landing-brand" href="#top" aria-label="Kryopic home">
+            <img className="landing-brand-mark" src={logoConceptTransparent} alt="" />
+            <span className="landing-brand-name">Kryopic</span>
+          </a>
 
-      <div className="landing-layout">
-        <aside className="landing-side-panel" aria-label="Landing sidebar">
-          <div className="landing-side-panel-footer">
-            <button className="action-button" type="button">
-              Plans
-            </button>
-            <button className="action-button" type="button">
-              Settings
-            </button>
-          </div>
-        </aside>
-
-        <section className="landing-main" aria-label="Landing main area">
-          <div className="landing-main-stack">
-            <img
-              className="landing-logo"
-              src={logoConceptTransparent}
-              alt="Fukmall logo concept"
-            />
-
+          <div className="landing-nav-actions">
             <button
-              className="action-button active landing-create-button"
+              className="landing-nav-button landing-nav-button-ghost"
               type="button"
               onClick={() => navigateTo('/app')}
             >
-              Create
+              Log in
             </button>
+
+            <button
+              className="landing-nav-button landing-nav-button-solid"
+              type="button"
+              onClick={() => navigateTo('/app')}
+            >
+              Sign up
+            </button>
+          </div>
+        </header>
+
+        <section className="landing-hero">
+          <div className="landing-hero-copy">
+            <h1 className="landing-title">Start with clarity.</h1>
+            <p className="landing-subhead">
+              A focused editor for clean, fast visuals.
+            </p>
+
+            <div className="landing-hero-actions">
+              <button
+                className="landing-primary-cta"
+                type="button"
+                onClick={() => navigateTo('/app')}
+              >
+                Get started
+              </button>
+
+              <a className="landing-secondary-cta" href="#preview">
+                Preview
+              </a>
+            </div>
+          </div>
+
+          <div
+            className="landing-hero-visual"
+            id="preview"
+            role="img"
+            aria-label="Product preview"
+          >
+            <div className="landing-visual-stack">
+              <div className="landing-visual-glow" aria-hidden="true" />
+
+              <div className="landing-preview-shell" aria-hidden="true">
+                <div className="landing-preview-chrome">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+
+                <div className="landing-preview-layout">
+                  <div className="landing-preview-rail">
+                    <span className="landing-preview-tool landing-preview-tool-active" />
+                    <span className="landing-preview-tool" />
+                    <span className="landing-preview-tool" />
+                    <span className="landing-preview-tool" />
+                  </div>
+
+                  <div className="landing-preview-workspace">
+                    <div className="landing-preview-panel landing-preview-panel-top" />
+                    <div className="landing-preview-panel landing-preview-panel-bottom" />
+
+                    <div className="landing-preview-stage-card">
+                      <div className="landing-preview-tag-row">
+                        <span className="landing-preview-tag" />
+                        <span className="landing-preview-tag landing-preview-tag-short" />
+                      </div>
+
+                      <div className="landing-preview-artboard">
+                        <span className="landing-preview-block landing-preview-block-small" />
+                        <span className="landing-preview-block landing-preview-block-large" />
+                        <span className="landing-preview-block landing-preview-block-medium" />
+                        <span className="landing-preview-line" />
+                        <span className="landing-preview-line landing-preview-line-short" />
+
+                        <div className="landing-preview-chip-row">
+                          <span className="landing-preview-chip" />
+                          <span className="landing-preview-chip" />
+                          <span className="landing-preview-chip landing-preview-chip-short" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </div>

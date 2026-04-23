@@ -49,14 +49,16 @@ describe('AppRoot routing', () => {
     )
 
     expect(container.querySelector('.landing-shell')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'sign-up' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'log-in' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Plans' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Kryopic home' })).toBeInTheDocument()
+    expect(screen.getByText('Kryopic')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Start with clarity.' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Get started' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign up' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Preview' })).toBeInTheDocument()
   })
 
-  it('navigates to the editor when Create is clicked', async () => {
+  it('navigates to the editor when Get started is clicked', async () => {
     setPathname('/')
 
     const { container } = render(
@@ -65,7 +67,7 @@ describe('AppRoot routing', () => {
       </StrictMode>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Get started' }))
 
     await waitFor(() => {
       expect(window.location.pathname).toBe('/app')
