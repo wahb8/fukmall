@@ -142,6 +142,123 @@
   color: var(--ink);
 }
 
+.landing-shell {
+  position: relative;
+  --landing-rail-width: 220px;
+  min-height: 100vh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.landing-shell::before {
+  content: none;
+}
+
+.landing-layout {
+  width: 100%;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(195px, var(--landing-rail-width)) minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+}
+
+.landing-top-actions {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  z-index: 2;
+  display: inline-flex;
+  gap: 0.75rem;
+}
+
+.landing-side-panel {
+  position: relative;
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  border: 0;
+  outline: 0;
+  border-radius: 0;
+  background: #f4dfca;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.landing-side-panel-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.landing-side-panel-footer .action-button {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.78rem 0.9rem;
+  font-size: 1.02rem;
+  font-weight: 700;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+.landing-side-panel-footer .action-button:hover,
+.landing-side-panel-footer .action-button:focus-visible {
+  border-color: transparent;
+  background: #e9d4bf;
+}
+
+.landing-side-panel-footer .action-button:active {
+  background: #e2ccb6;
+}
+
+.landing-main {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 0;
+}
+
+.landing-main-stack {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 1.35rem;
+}
+
+.landing-logo {
+  display: block;
+  width: min(80px, 10vw);
+  max-width: 100%;
+  height: auto;
+  transform: translateX(-8px);
+}
+
+.landing-create-button {
+  min-width: 10rem;
+  padding-inline: 2rem;
+  padding-block: 0.95rem;
+  border-color: color-mix(in srgb, var(--selection) 38%, var(--line-strong));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent),
+    var(--panel);
+  box-shadow:
+    0 16px 38px rgba(68, 43, 15, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.landing-create-button.active {
+  border-color: var(--selection);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36), transparent),
+    color-mix(in srgb, var(--selection-fill) 72%, var(--panel));
+}
+
 .app-file-menu {
   position: fixed;
   top: 1.5rem;
