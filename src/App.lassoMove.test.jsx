@@ -207,7 +207,7 @@ describe('App lasso floating-selection drag', () => {
   it('keeps the floating selection under the pointer instead of jumping on drag', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -240,7 +240,7 @@ describe('App lasso floating-selection drag', () => {
   it('preserves Shift axis lock while dragging a floating lasso selection', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

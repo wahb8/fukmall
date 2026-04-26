@@ -162,7 +162,7 @@ describe('App resize handle routing', () => {
   }) => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -189,7 +189,7 @@ describe('App resize handle routing', () => {
   it('interior frame drag still moves without resizing', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -215,7 +215,7 @@ describe('App resize handle routing', () => {
   it('selected lower-layer side handles still resize when an overlapping top layer receives the pointer event', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -253,7 +253,7 @@ describe('App resize handle routing', () => {
   it('keeps selection chrome outside the opacity-applied artwork wrapper', () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -271,7 +271,7 @@ describe('App resize handle routing', () => {
   it('box text handle resize updates font size and keeps the text layer visible', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -316,7 +316,7 @@ describe('App resize handle routing', () => {
   it('a newly auto-fit text box shrinks across the next drag without snapping to the minimum font size', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

@@ -13,6 +13,7 @@ describe('AppRoot routing', () => {
   const originalPathname = window.location.pathname
 
   beforeEach(() => {
+    window.localStorage.clear()
     vi
       .spyOn(HTMLCanvasElement.prototype, 'getContext')
       .mockImplementation(function mockGetContext(contextType) {
@@ -72,7 +73,16 @@ describe('AppRoot routing', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/app')
       expect(container.querySelector('.app-shell')).not.toBeNull()
-      expect(container.textContent).toContain('Create Layer')
+      expect(container.querySelector('.canvas-panel')).not.toBeNull()
+      expect(container.querySelector('.canvas-composer-shell')).not.toBeNull()
+      expect(container.querySelector('.canvas-stage')).not.toBeNull()
+      expect(container.querySelector('.canvas-caption-area')).not.toBeNull()
+      expect(container.querySelector('.canvas-slide-panel-right')).not.toBeNull()
+      expect(container.querySelector('.canvas-slide-panel-bottom')).not.toBeNull()
+      expect(container.querySelector('.canvas-prompt-input')).not.toBeNull()
+      expect(container.textContent).not.toContain('Create Layer')
+      expect(screen.getByRole('button', { name: 'File' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
     })
   })
 
@@ -87,7 +97,97 @@ describe('AppRoot routing', () => {
 
     await waitFor(() => {
       expect(container.querySelector('.app-shell')).not.toBeNull()
-      expect(container.textContent).toContain('Create Layer')
+      expect(container.querySelector('.canvas-panel')).not.toBeNull()
+      expect(container.querySelector('.canvas-composer-shell')).not.toBeNull()
+      expect(container.querySelector('.canvas-stage')).not.toBeNull()
+      expect(container.querySelector('.canvas-caption-area')).not.toBeNull()
+      expect(container.querySelector('.canvas-slide-panel-right')).not.toBeNull()
+      expect(container.querySelector('.canvas-slide-panel-bottom')).not.toBeNull()
+      expect(container.querySelector('.canvas-prompt-input')).not.toBeNull()
+      expect(container.textContent).not.toContain('Create Layer')
+    })
+
+    expect(screen.getByPlaceholderText('Describe what you want to create...')).toBeInTheDocument()
+    expect(screen.queryByText('Add a caption...')).toBeNull()
+    expect(container.querySelectorAll('.canvas-caption-lines span')).toHaveLength(2)
+    expect(screen.getByRole('complementary', { name: 'Canvas side tools' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: 'Canvas lower side tools' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tune' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Post' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'File' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'File' }))
+    expect(screen.getByRole('menuitem', { name: 'New File' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Open File' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Save File' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Export PNG' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Export JPEG' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument()
+    expect(container.querySelector('.editor-topbar')).toBeNull()
+    expect(container.querySelector('.asset-sidebar')).toBeNull()
+    expect(container.querySelector('.sidebar')).toBeNull()
+    expect(container.querySelector('input[type="file"][accept=".kryop,application/json"]')).not.toBeNull()
+    expect(container.querySelector('input[type="file"][accept="image/*"]')).toBeNull()
+  })
+
+  it('updates the visible stage metrics when document dimensions change', async () => {
+    setPathname('/app')
+
+    const { container } = render(
+      <StrictMode>
+        <AppRoot />
+      </StrictMode>,
+    )
+
+    await waitFor(() => {
+      expect(container.querySelector('.workspace-main-column')).not.toBeNull()
+    })
+
+    const getStageLayoutValue = (propertyName) => (
+      container
+        .querySelector('.workspace-main-column')
+        ?.style
+        .getPropertyValue(propertyName)
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'File' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'New File' }))
+    fireEvent.change(screen.getByLabelText('Width'), { target: { value: '1000' } })
+    fireEvent.change(screen.getByLabelText('Height'), { target: { value: '1000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => {
+      expect(getStageLayoutValue('--stage-display-width')).toBe('428px')
+      expect(getStageLayoutValue('--stage-display-height')).toBe('428px')
+    })
+
+    const projectFileContents = JSON.stringify({
+      app: 'Fukmall',
+      version: 2,
+      document: {
+        name: 'Wide',
+        width: 1600,
+        height: 900,
+        layers: [],
+        selectedLayerId: null,
+        selectedLayerIds: [],
+      },
+    })
+    const projectFile = new File([projectFileContents], 'wide.kryop', { type: 'application/json' })
+
+    Object.defineProperty(projectFile, 'text', {
+      value: vi.fn().mockResolvedValue(projectFileContents),
+    })
+
+    fireEvent.change(
+      container.querySelector('input[type="file"][accept=".kryop,application/json"]'),
+      { target: { files: [projectFile] } },
+    )
+
+    await waitFor(() => {
+      expect(getStageLayoutValue('--stage-display-width')).toBe('428px')
+      expect(getStageLayoutValue('--stage-display-height')).toBe('240.75px')
     })
   })
 })

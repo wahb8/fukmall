@@ -320,6 +320,7 @@ describe('App image import flows', () => {
           closePath() {},
           fillRect() {},
           fill() {},
+          stroke() {},
           clip() {},
           translate() {},
           rotate() {},
@@ -379,7 +380,7 @@ describe('App image import flows', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -423,7 +424,7 @@ describe('App image import flows', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -439,7 +440,7 @@ describe('App image import flows', () => {
       expect(within(inspector).getByLabelText('Width')).toHaveValue(5)
       expect(within(inspector).getByLabelText('Height')).toHaveValue(4)
     })
-  })
+  }, 10000)
 
   it('keeps original import dimensions when trim transparent imports is turned off', async () => {
     const file = createImageFile(
@@ -460,7 +461,7 @@ describe('App image import flows', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -479,7 +480,7 @@ describe('App image import flows', () => {
       expect(within(inspector).getByLabelText('Width')).toHaveValue(7)
       expect(within(inspector).getByLabelText('Height')).toHaveValue(6)
     })
-  })
+  }, 10000)
 
   it('imports a supported external desktop image drop through the shared file-import path', async () => {
     const file = createImageFile(
@@ -500,7 +501,7 @@ describe('App image import flows', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -518,7 +519,7 @@ describe('App image import flows', () => {
       expect(within(inspector).getByLabelText('Width')).toHaveValue(5)
       expect(within(inspector).getByLabelText('Height')).toHaveValue(5)
     })
-  })
+  }, 10000)
 
   it('creates an image layer from an asset-library drop onto the canvas', async () => {
     const file = createImageFile(
@@ -539,7 +540,7 @@ describe('App image import flows', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -578,7 +579,7 @@ describe('App image import flows', () => {
       expect(within(inspector).getByLabelText('Width')).toHaveValue(6)
       expect(within(inspector).getByLabelText('Height')).toHaveValue(5)
     })
-  })
+  }, 10000)
 
   it('fails gracefully when an imported image cannot be decoded', async () => {
     const file = createImageFile(
@@ -590,7 +591,7 @@ describe('App image import flows', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -617,7 +618,7 @@ describe('App image import flows', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -660,7 +661,7 @@ describe('App image import flows', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

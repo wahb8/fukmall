@@ -97,7 +97,7 @@ describe('App inspector history coalescing', () => {
   it('coalesces repeated opacity changes into one undo/redo step', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -130,7 +130,7 @@ describe('App inspector history coalescing', () => {
   it('starts a new history step when a different property is adjusted', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -165,7 +165,7 @@ describe('App inspector history coalescing', () => {
   it('starts a new history step when a different layer is adjusted', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -215,7 +215,7 @@ describe('App inspector history coalescing', () => {
   it('does not create a redundant history entry for a no-op adjustment burst', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -241,7 +241,7 @@ describe('App inspector history coalescing', () => {
   it('keeps text resize auto-fit as one coherent undoable adjustment', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -283,7 +283,7 @@ describe('App inspector history coalescing', () => {
   it('lets the full-layer font size control override auto-fit after a text resize', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -318,7 +318,7 @@ describe('App inspector history coalescing', () => {
   it('keeps auto-fit font size stable when bold is toggled and preserves undo/redo', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -361,7 +361,7 @@ describe('App inspector history coalescing', () => {
   it('clamps oversized inspector font size input and stops the stepper at the max', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -386,7 +386,7 @@ describe('App inspector history coalescing', () => {
   it('clamps oversized inspector letter spacing and line height input values', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import addImageIcon from './assets/add image.svg'
+import penTabIcon from './assets/pen.svg'
+import shareTabIcon from './assets/share.svg'
 import { AddLayerPanel } from './components/editor/AddLayerPanel'
 import { AssetLibraryPanel } from './components/editor/AssetLibraryPanel'
 import { EditorToolbar } from './components/editor/EditorToolbar'
@@ -21,13 +23,14 @@ import {
   DEFAULT_TEXT_SHADOW_OFFSET_X,
   DEFAULT_TEXT_SHADOW_OFFSET_Y,
   DEFAULT_TEXT_SHADOW_OPACITY,
-  DISPLAY_DOCUMENT_WIDTH,
   HANDLE_DIRECTIONS,
   MAX_ASSET_LIBRARY_ITEMS,
   MAX_FONT_SIZE,
   MAX_LAYER_SIZE,
   MAX_LETTER_SPACING,
   MAX_LINE_HEIGHT,
+  MAX_STAGE_DISPLAY_HEIGHT,
+  MAX_STAGE_DISPLAY_WIDTH,
   MAX_VIEWPORT_ZOOM,
   MIN_FONT_SIZE,
   MIN_DOCUMENT_DIMENSION,
@@ -157,7 +160,7 @@ import {
   renderTextLayerToCanvas,
   trimImageSourceTransparentBounds,
 } from './lib/raster'
-import { screenToWorld, worldToScreen, zoomAtPoint } from './lib/viewport'
+import { getFittedStageMetrics, screenToWorld, worldToScreen, zoomAtPoint } from './lib/viewport'
 import {
   appendStrokePoint,
   drawDot,
@@ -204,6 +207,7 @@ const VISIBLE_PIXEL_ALPHA_THRESHOLD = 8
 const THEME_STORAGE_KEY = 'fukmall.theme'
 const TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY = 'fukmall.trim-transparent-imports'
 const INSPECTOR_ADJUSTMENT_IDLE_MS = 450
+const DEFAULT_EDITOR_CHROME_ENABLED = false
 
 function createStartupDocument() {
   return loadCurrentDocumentFromStorage()
@@ -649,7 +653,7 @@ function isEditableTarget(target) {
 function isSelectionPreservingUiTarget(target) {
   return target instanceof HTMLElement && (
     isEditableTarget(target) ||
-    target.closest('.sidebar, .inspector-panel, .inspector-panel-body') ||
+    target.closest('.sidebar, .inspector-panel, .inspector-panel-body, .canvas-caption-area') ||
     target.closest(
       'button, a, label, select, option, summary, [role="button"], [role="dialog"], .modal-backdrop',
     )
@@ -1017,7 +1021,7 @@ function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
   return documentState.layers.at(-1)?.id ?? null
 }
 
-function App() {
+function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
   const appShellRef = useRef(null)
   const canvasRef = useRef(null)
   const canvasSurfaceRef = useRef(null)
@@ -1162,7 +1166,17 @@ function App() {
   const editorIcons = useMemo(() => getEditorIcons(theme), [theme])
   const currentDocumentSignature = useMemo(() => serializeProjectFile(documentState), [documentState])
   const hasUnsavedChanges = currentDocumentSignature !== savedDocumentSignature
-  const documentScale = DISPLAY_DOCUMENT_WIDTH / Math.max(documentWidth, 1)
+  const stageMetrics = useMemo(() => getFittedStageMetrics(
+    documentWidth,
+    documentHeight,
+    MAX_STAGE_DISPLAY_WIDTH,
+    MAX_STAGE_DISPLAY_HEIGHT,
+  ), [documentHeight, documentWidth])
+  const documentScale = stageMetrics.scale
+  const stageLayoutStyle = {
+    '--stage-display-width': `${stageMetrics.width}px`,
+    '--stage-display-height': `${stageMetrics.height}px`,
+  }
   const selectedLayerShadow = selectedLayer?.type === 'text' && !selectedLayer?.isTextShadow && selectedLayer.shadowLayerId
     ? findLayer(documentState, selectedLayer.shadowLayerId)
     : null
@@ -1931,6 +1945,10 @@ function App() {
   ])
 
   useEffect(() => {
+    if (!editorChromeEnabled) {
+      return undefined
+    }
+
     function handleOutsideCanvasPointerDown(event) {
       const target = event.target
 
@@ -1974,7 +1992,7 @@ function App() {
     return () => {
       window.removeEventListener('pointerdown', handleOutsideCanvasPointerDown)
     }
-  }, [commit, editingTextLayerId, selectedLayerIds.length])
+  }, [commit, editingTextLayerId, editorChromeEnabled, selectedLayerIds.length])
 
   useEffect(() => {
     const overlayCanvas = overlayCanvasRef.current
@@ -2127,6 +2145,10 @@ function App() {
   ])
 
   useEffect(() => {
+    if (!editorChromeEnabled) {
+      return undefined
+    }
+
     function handlePointerMove(event) {
       const interaction = interactionRef.current
       const canvas = canvasRef.current
@@ -3248,6 +3270,7 @@ function App() {
     documentState,
     documentWidth,
     drawRasterLayer,
+    editorChromeEnabled,
     globalColors,
     isSnapEnabled,
     setTransient,
@@ -3255,6 +3278,10 @@ function App() {
   ])
 
   useEffect(() => {
+    if (!editorChromeEnabled) {
+      return undefined
+    }
+
     function handleKeyDown(event) {
       if (isEditableTarget(event.target)) {
         return
@@ -3370,6 +3397,7 @@ function App() {
     deleteSelectedRectRegion,
     deleteFloatingSelection,
     documentState,
+    editorChromeEnabled,
     floatingSelection,
     lassoSelection,
     rectSelection,
@@ -3599,22 +3627,6 @@ function App() {
   const toggleDocumentLayerSelection = useCallback((layerId) => {
     finishCoalescedInspectorAdjustment()
     setTransient((currentDocument) => toggleLayerInSelection(currentDocument, layerId))
-  }, [finishCoalescedInspectorAdjustment, setTransient])
-
-  const clearDocumentSelection = useCallback(() => {
-    finishCoalescedInspectorAdjustment()
-    setTransient((currentDocument) => {
-      const fallbackSelectedLayerId = getFallbackSelectedLayerId(
-        currentDocument,
-        currentDocument.selectedLayerId,
-      )
-
-      if (!fallbackSelectedLayerId) {
-        return clearSelection(currentDocument)
-      }
-
-      return selectSingleLayer(currentDocument, fallbackSelectedLayerId)
-    })
   }, [finishCoalescedInspectorAdjustment, setTransient])
 
   const clearDocumentSelectionExplicitly = useCallback(() => {
@@ -4088,6 +4100,10 @@ function App() {
   }, [hasUnsavedChanges])
 
   useEffect(() => {
+    if (!editorChromeEnabled) {
+      return undefined
+    }
+
     function handleWindowDrop() {
       resetExternalImageDragState()
     }
@@ -4103,7 +4119,7 @@ function App() {
       window.removeEventListener('drop', handleWindowDrop)
       window.removeEventListener('dragend', handleWindowDragEnd)
     }
-  }, [resetExternalImageDragState])
+  }, [editorChromeEnabled, resetExternalImageDragState])
 
   function handleSaveFile() {
     setIsFileMenuOpen(false)
@@ -6817,13 +6833,17 @@ function App() {
       return null
     }
 
-    const isEditingText = layer.type === 'text' && layer.id === editingTextLayerId
-    const showEraserCursor = currentTool === 'eraser' && isErasableLayer(layer)
-    const showBucketCursor = currentTool === 'bucket' && canFillLayerWithBucket(layer)
-    const showGradientCursor = currentTool === 'gradient' && canApplyGradientToLayer(layer)
-    const showPenCursor = currentTool === 'pen' && canPaintWithPenOnLayer(layer)
-    const showLassoCursor = currentTool === 'lasso' && canLassoLayer(layer)
-    const showRectSelectCursor = currentTool === 'rectSelect' && canLassoLayer(layer)
+    const isEditingText = (
+      editorChromeEnabled &&
+      layer.type === 'text' &&
+      layer.id === editingTextLayerId
+    )
+    const showEraserCursor = editorChromeEnabled && currentTool === 'eraser' && isErasableLayer(layer)
+    const showBucketCursor = editorChromeEnabled && currentTool === 'bucket' && canFillLayerWithBucket(layer)
+    const showGradientCursor = editorChromeEnabled && currentTool === 'gradient' && canApplyGradientToLayer(layer)
+    const showPenCursor = editorChromeEnabled && currentTool === 'pen' && canPaintWithPenOnLayer(layer)
+    const showLassoCursor = editorChromeEnabled && currentTool === 'lasso' && canLassoLayer(layer)
+    const showRectSelectCursor = editorChromeEnabled && currentTool === 'rectSelect' && canLassoLayer(layer)
     const textEditorOverlay = isEditingText
       ? getTextEditorOverlayGeometry(layer, textEditorSelection.start, textEditorSelection.end)
       : null
@@ -6833,17 +6853,19 @@ function App() {
       <div
         key={layer.id}
         ref={(node) => registerLayerElement(layer.id, node)}
-        className={showPenCursor
-          ? 'canvas-layer pen-enabled'
-          : showEraserCursor
-            ? 'canvas-layer eraser-enabled'
-            : showBucketCursor
-              ? 'canvas-layer bucket-enabled'
-              : showGradientCursor
-                ? 'canvas-layer gradient-enabled'
-                : showLassoCursor || showRectSelectCursor
-                  ? 'canvas-layer lasso-enabled'
-                  : 'canvas-layer'}
+        className={!editorChromeEnabled
+          ? 'canvas-layer canvas-layer-read-only'
+          : showPenCursor
+            ? 'canvas-layer pen-enabled'
+            : showEraserCursor
+              ? 'canvas-layer eraser-enabled'
+              : showBucketCursor
+                ? 'canvas-layer bucket-enabled'
+                : showGradientCursor
+                  ? 'canvas-layer gradient-enabled'
+                  : showLassoCursor || showRectSelectCursor
+                    ? 'canvas-layer lasso-enabled'
+                    : 'canvas-layer'}
         style={{
           left: `${layerTopLeft.x}px`,
           top: `${layerTopLeft.y}px`,
@@ -6852,8 +6874,12 @@ function App() {
           transform: `rotate(${layer.rotation}deg) scale(${layer.scaleX}, ${layer.scaleY})`,
           zIndex: index + 1,
         }}
-        onPointerDown={(event) => handleLayerPointerDown(event, layer)}
-        onDoubleClick={(event) => handleTextLayerDoubleClick(event, layer)}
+        onPointerDown={editorChromeEnabled
+          ? (event) => handleLayerPointerDown(event, layer)
+          : undefined}
+        onDoubleClick={editorChromeEnabled
+          ? (event) => handleTextLayerDoubleClick(event, layer)
+          : undefined}
       >
         <div className="layer-artwork" style={{ opacity: layer.opacity }}>
           {layer.type === 'text' && (
@@ -7127,19 +7153,8 @@ function App() {
     )
   }
 
-  return (
-    <main
-      ref={appShellRef}
-      className="app-shell"
-      data-theme={theme}
-      onPointerDownCapture={(event) => flushPendingFontSizeInputDraft(event.target)}
-      onDragEnter={handleExternalImageDragEnter}
-      onDragOver={handleExternalImageDragOver}
-      onDragLeave={handleExternalImageDragLeave}
-      onDrop={(event) => {
-        void handleExternalImageDrop(event)
-      }}
-    >
+  const fileAndSettingsControls = (
+    <>
       <input
         ref={openFileInputRef}
         className="sr-only"
@@ -7191,6 +7206,106 @@ function App() {
         onSaveFile={handleSaveFile}
         onExport={handleExport}
       />
+    </>
+  )
+  const canvasCaptionArea = (
+    <section className="canvas-caption-area" aria-label="Caption">
+      <div className="canvas-caption-lines" aria-hidden="true">
+        <span />
+        <span />
+      </div>
+    </section>
+  )
+  const canvasUtilityPanels = (
+    <>
+      <aside className="canvas-slide-panel canvas-slide-panel-right" aria-label="Canvas side tools">
+        <span className="canvas-slide-tab" aria-label="Tools">
+          <img src={penTabIcon} alt="" aria-hidden="true" />
+        </span>
+        <div className="canvas-slide-actions">
+          <button type="button">Tune</button>
+          <button type="button">Crop</button>
+          <button type="button">Mask</button>
+          <button type="button">FX</button>
+        </div>
+      </aside>
+      <aside className="canvas-slide-panel canvas-slide-panel-bottom" aria-label="Canvas lower side tools">
+        <span className="canvas-slide-tab" aria-label="More">
+          <img src={shareTabIcon} alt="" aria-hidden="true" />
+        </span>
+        <div className="canvas-slide-actions">
+          <button type="button">Draft</button>
+          <button type="button">Alt</button>
+          <button type="button">Notes</button>
+          <button type="button">Post</button>
+        </div>
+      </aside>
+    </>
+  )
+
+  if (!editorChromeEnabled) {
+    return (
+      <main
+        ref={appShellRef}
+        className="app-shell editor-shell-minimal"
+        data-theme={theme}
+      >
+        {fileAndSettingsControls}
+        <section className="editor-panel editor-panel-minimal">
+          <div className="workspace-main-column editor-canvas-only" style={stageLayoutStyle}>
+            <section className="canvas-panel canvas-panel-minimal" aria-label="Canvas panel">
+              <div className="canvas-composer-shell">
+                {canvasUtilityPanels}
+                <div
+                  ref={canvasRef}
+                  className="canvas-stage canvas-stage-read-only"
+                  role="presentation"
+                >
+                  <div
+                    className="canvas-viewport"
+                    style={{
+                      width: `${documentWidth}px`,
+                      height: `${documentHeight}px`,
+                      transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * documentScale})`,
+                    }}
+                  >
+                    <div
+                      ref={canvasSurfaceRef}
+                      className="canvas-surface"
+                      style={{
+                        width: `${documentWidth}px`,
+                        height: `${documentHeight}px`,
+                      }}
+                    >
+                      {documentState.layers.map(renderLayer)}
+                    </div>
+                  </div>
+                </div>
+                {canvasCaptionArea}
+              </div>
+            </section>
+
+            <PromptShell />
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  return (
+    <main
+      ref={appShellRef}
+      className="app-shell"
+      data-theme={theme}
+      onPointerDownCapture={(event) => flushPendingFontSizeInputDraft(event.target)}
+      onDragEnter={handleExternalImageDragEnter}
+      onDragOver={handleExternalImageDragOver}
+      onDragLeave={handleExternalImageDragLeave}
+      onDrop={(event) => {
+        void handleExternalImageDrop(event)
+      }}
+    >
+      {fileAndSettingsControls}
       <section className="editor-panel">
         <EditorToolbar
           icons={editorIcons}
@@ -7266,52 +7381,56 @@ function App() {
             />
           </aside>
 
-          <div className="workspace-main-column">
+          <div className="workspace-main-column" style={stageLayoutStyle}>
             <section className="canvas-panel">
-              <div
-                ref={canvasRef}
-                className={[
-                  'canvas-stage',
-                  isCanvasAssetDropActive ? 'asset-drop-active' : '',
-                  isExternalImageDragActive ? 'external-file-drop-active' : '',
-                ].filter(Boolean).join(' ')}
-                onPointerDown={handleCanvasPointerDown}
-                onDoubleClick={handleCanvasDoubleClick}
-                onDragOver={handleCanvasDragOver}
-                onDragLeave={() => setIsCanvasAssetDropActive(false)}
-                onDrop={(event) => {
-                  void handleCanvasAssetDrop(event)
-                }}
-                onContextMenu={(event) => {
-                  if (currentTool === 'zoom') {
-                    event.preventDefault()
-                  }
-                }}
-                role="presentation"
-              >
-                <ExternalImageDropOverlay isVisible={isExternalImageDragActive} />
+              <div className="canvas-composer-shell">
+                {canvasUtilityPanels}
                 <div
-                  className="canvas-viewport"
-                  style={{
-                    width: `${documentWidth}px`,
-                    height: `${documentHeight}px`,
-                    transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * documentScale})`,
+                  ref={canvasRef}
+                  className={[
+                    'canvas-stage',
+                    isCanvasAssetDropActive ? 'asset-drop-active' : '',
+                    isExternalImageDragActive ? 'external-file-drop-active' : '',
+                  ].filter(Boolean).join(' ')}
+                  onPointerDown={handleCanvasPointerDown}
+                  onDoubleClick={handleCanvasDoubleClick}
+                  onDragOver={handleCanvasDragOver}
+                  onDragLeave={() => setIsCanvasAssetDropActive(false)}
+                  onDrop={(event) => {
+                    void handleCanvasAssetDrop(event)
                   }}
+                  onContextMenu={(event) => {
+                    if (currentTool === 'zoom') {
+                      event.preventDefault()
+                    }
+                  }}
+                  role="presentation"
                 >
+                  <ExternalImageDropOverlay isVisible={isExternalImageDragActive} />
                   <div
-                    ref={canvasSurfaceRef}
-                    className="canvas-surface"
+                    className="canvas-viewport"
                     style={{
                       width: `${documentWidth}px`,
                       height: `${documentHeight}px`,
+                      transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * documentScale})`,
                     }}
                   >
-                    {documentState.layers.map(renderLayer)}
-                    {renderLayerSelectionOverlays()}
-                    {renderSharedSelectionOverlay()}
-                    <canvas ref={overlayCanvasRef} className="canvas-overlay" aria-hidden="true" />
+                    <div
+                      ref={canvasSurfaceRef}
+                      className="canvas-surface"
+                      style={{
+                        width: `${documentWidth}px`,
+                        height: `${documentHeight}px`,
+                      }}
+                    >
+                      {documentState.layers.map(renderLayer)}
+                      {renderLayerSelectionOverlays()}
+                      {renderSharedSelectionOverlay()}
+                      <canvas ref={overlayCanvasRef} className="canvas-overlay" aria-hidden="true" />
+                    </div>
                   </div>
                 </div>
+                {canvasCaptionArea}
               </div>
             </section>
 

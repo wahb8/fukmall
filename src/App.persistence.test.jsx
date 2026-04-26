@@ -65,7 +65,7 @@ describe('App current document persistence', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -83,7 +83,7 @@ describe('App current document persistence', () => {
   it('creating a new file updates the persisted current document', async () => {
     render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -114,7 +114,7 @@ describe('App current document persistence', () => {
   it('opening a file updates the persisted current document', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -169,7 +169,7 @@ describe('App current document persistence', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

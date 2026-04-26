@@ -300,7 +300,7 @@ describe('App auto-fit font-specific regression coverage', () => {
     async (fontCase) => {
       const { container } = render(
         <StrictMode>
-          <App />
+          <App editorChromeEnabled />
         </StrictMode>,
       )
 
@@ -323,7 +323,7 @@ describe('App auto-fit font-specific regression coverage', () => {
     async (fontCase) => {
       const { container } = render(
         <StrictMode>
-          <App />
+          <App editorChromeEnabled />
         </StrictMode>,
       )
 
@@ -342,7 +342,7 @@ describe('App auto-fit font-specific regression coverage', () => {
     for (const fontCase of PRIMARY_FONT_CASES) {
       const { container, unmount } = render(
         <StrictMode>
-          <App />
+          <App editorChromeEnabled />
         </StrictMode>,
       )
 
@@ -368,7 +368,7 @@ describe('App auto-fit font-specific regression coverage', () => {
     async (fontCase) => {
       const { container } = render(
         <StrictMode>
-          <App />
+          <App editorChromeEnabled />
         </StrictMode>,
       )
 

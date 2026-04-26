@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { clampZoom, screenToWorld, worldToScreen, zoomAtPoint } from './viewport'
+import {
+  clampZoom,
+  getFittedStageMetrics,
+  screenToWorld,
+  worldToScreen,
+  zoomAtPoint,
+} from './viewport'
 
 describe('viewport helpers', () => {
   it('clamps zoom to the provided bounds', () => {
@@ -24,5 +30,25 @@ describe('viewport helpers', () => {
 
     expect(nextViewport.zoom).toBe(2)
     expect(after).toEqual(before)
+  })
+
+  it('fits stage metrics to the active document aspect ratio', () => {
+    expect(getFittedStageMetrics(1000, 1000, 428, 570)).toEqual({
+      width: 428,
+      height: 428,
+      scale: 0.428,
+    })
+
+    const wideStage = getFittedStageMetrics(1600, 900, 428, 570)
+
+    expect(wideStage.width).toBeCloseTo(428)
+    expect(wideStage.height).toBeCloseTo(240.75)
+    expect(wideStage.scale).toBeCloseTo(0.2675)
+
+    const tallStage = getFittedStageMetrics(900, 1600, 428, 570)
+
+    expect(tallStage.width).toBeCloseTo(320.625)
+    expect(tallStage.height).toBeCloseTo(570)
+    expect(tallStage.scale).toBeCloseTo(0.35625)
   })
 })

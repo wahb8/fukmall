@@ -221,7 +221,7 @@ describe('App partial text styling', () => {
   it('applies font family only to the selected inline-edit text range', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -256,7 +256,7 @@ describe('App partial text styling', () => {
   it('applies font size only to the selected inline-edit text range', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -280,7 +280,7 @@ describe('App partial text styling', () => {
   it('applies bold only to the selected inline-edit text range', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -305,7 +305,7 @@ describe('App partial text styling', () => {
   it('applies color only to the selected inline-edit text range', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -327,7 +327,7 @@ describe('App partial text styling', () => {
   it('falls back to whole-layer styling when no text range is selected', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -370,7 +370,7 @@ describe('App partial text styling', () => {
   it('keeps the mixed-style preview visible immediately during edit mode', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -404,7 +404,7 @@ describe('App partial text styling', () => {
   it('preserves selected-range styling through undo and redo', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -437,7 +437,7 @@ describe('App partial text styling', () => {
   it('keeps selected-range mixed styles on the shared export text render path after inline editing', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -486,7 +486,7 @@ describe('App partial text styling', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

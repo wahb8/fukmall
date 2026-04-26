@@ -99,7 +99,7 @@ describe('App tool-panel error lifecycle', () => {
 
     render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -128,7 +128,7 @@ describe('App tool-panel error lifecycle', () => {
 
     render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -150,7 +150,7 @@ describe('App tool-panel error lifecycle', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -191,7 +191,7 @@ describe('App tool-panel error lifecycle', () => {
 
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -214,7 +214,7 @@ describe('App tool-panel error lifecycle', () => {
 
     render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

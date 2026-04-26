@@ -122,7 +122,7 @@ describe('App text edit and transform mode boundaries', () => {
   it('applies a pending font size input on the first outside click without requiring an extra click', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -151,7 +151,7 @@ describe('App text edit and transform mode boundaries', () => {
   it('double-clicking the transform selection frame enters edit mode every time', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -174,7 +174,7 @@ describe('App text edit and transform mode boundaries', () => {
   it('clicking outside the text editor exits edit mode and returns to transform mode', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

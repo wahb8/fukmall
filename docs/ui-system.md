@@ -201,12 +201,13 @@ The current color direction is a clean dark neutral scrollbar in light UI and a 
 
 ## Stage and Canvas
 
-The visible stage is styled as a phone-like artboard container:
+The visible stage is styled as an artboard container that fits the active document into the editor's
+display box:
 
-- stage width: `428px`
-- stage height: `570px`
-- underlying document size: `1080 x 1440`
-- document aspect ratio: `3:4`
+- max stage width: `428px`
+- max stage height: `570px`
+- underlying document size: the active document's stored `width` and `height`
+- document aspect ratio: derived from the active document
 - viewport uses `transform-origin: top left`
 
 The background combines:
@@ -214,6 +215,10 @@ The background combines:
 - subtle graph-paper grid lines
 - white-to-cream gradients
 - soft rounded corners
+
+The stage now sits inside a post-composer shell that adds a compact caption area directly below
+the canvas. The caption area is editor chrome, not document content, and the canvas/document display
+size remains controlled by the stage metrics above.
 
 ## Controls
 

@@ -94,7 +94,7 @@ describe('App selection routing', () => {
   it('single-clicking a different canvas layer selects it immediately', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -107,7 +107,7 @@ describe('App selection routing', () => {
   it('double-clicking a text layer still enters text editing after selecting it', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -134,7 +134,7 @@ describe('App selection routing', () => {
   it('shift-click multi-selection still works across canvas layers', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -159,7 +159,7 @@ describe('App selection routing', () => {
   it('clicking an empty stage area still explicitly deselects', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -179,7 +179,7 @@ describe('App selection routing', () => {
   it('clicking outside the canvas on non-preserving UI clears selection explicitly', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

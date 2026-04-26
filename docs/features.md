@@ -51,11 +51,11 @@ loaded by `src/App.jsx`.
 
 ### Imported Image Placement
 
-- direct image import places the image centered within the `1080 x 1440` document when possible
+- direct image import places the image centered within the active document bounds when possible
 - dragging a supported image file in from the desktop now reuses this same centered direct-import placement behavior
 - asset-library drop places the image around the drop point
 - if an imported image would land partly outside the document, its position is clamped back into bounds
-- this keeps large imports, including full-canvas `1080 x 1440` images, from appearing incorrectly offset
+- this keeps large imports, including full-canvas images, from appearing incorrectly offset
 
 ### Raster Layers
 
@@ -487,7 +487,7 @@ Supported behavior includes:
 - right-click or `Alt` with the zoom tool zooms out instead of in
 - double-clicking the zoom tool button resets the viewport to `zoom: 1`, `offsetX: 0`, and `offsetY: 0`
 
-The stage visually represents a 1080 x 1440 document inside a 428px-wide display frame.
+The stage visually represents the active document dimensions fitted inside the editor display frame.
 
 There is also a prompt-style input rendered below the canvas, but it is currently presentational only and is not wired into document generation or editing behavior.
 
@@ -511,7 +511,7 @@ Supported export types:
 
 Export behavior:
 
-- renders at the real `1080 x 1440` document size, not the scaled preview size
+- renders at the active document's real size, not the scaled preview size
 - includes visible artwork layers only
 - respects layer order, visibility, opacity, position, scale, and rotation
 - excludes editor UI such as panels, selection frames, lasso overlays, and snap guides

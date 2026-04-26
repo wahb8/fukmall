@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from 'react'
 import './App.css'
-import App from './App'
 import { EditorPage } from './pages/EditorPage'
 import { LandingPage } from './pages/LandingPage'
 
@@ -53,5 +52,3 @@ export default function AppRoot() {
 
   return <LandingPage />
 }
-
-export { App, normalizePathname }

@@ -132,7 +132,7 @@ describe('App background layer editing', () => {
   it('seeds the background as a normal raster layer and lets raster-only inspector edits apply to it', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

@@ -182,7 +182,7 @@ describe('App live auto-fit box resize runtime', () => {
   it('keeps live auto-fit resize above the minimum on slight shrink and updates the selection frame', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -238,7 +238,7 @@ describe('App live auto-fit box resize runtime', () => {
   it('bases repeated live auto-fit resize steps on the pointer-down text layer snapshot', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -273,7 +273,7 @@ describe('App live auto-fit box resize runtime', () => {
   it('keeps corner-resized auto-fit box text above the minimum after an enlarge then slight shrink across drags', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -339,7 +339,7 @@ describe('App live auto-fit box resize runtime', () => {
   it('keeps multi-selection auto-fit box resize stable when reversing from grow to shrink', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -415,7 +415,7 @@ describe('App live auto-fit box resize runtime', () => {
   it('initializes exact-size auto-fit creation through the shared resize path before the first drag', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -451,7 +451,7 @@ describe('App live auto-fit box resize runtime', () => {
   it('rebases editor-created box text once, then keeps a stable auto-fit source across later drags', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -488,7 +488,7 @@ describe('App live auto-fit box resize runtime', () => {
   it('recovers upward after touching the minimum fitted font size region', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

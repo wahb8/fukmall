@@ -94,7 +94,7 @@ describe('App layer flip controls', () => {
   it('flips the selected image layer horizontally and supports undo/redo', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -134,7 +134,7 @@ describe('App layer flip controls', () => {
   it('flips the selected text layer vertically without leaving the text inspector flow', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 

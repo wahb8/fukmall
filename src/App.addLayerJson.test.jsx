@@ -61,7 +61,7 @@ describe('App Add Layer JSON flow', () => {
   it('preserves the final runtime text layer width and height from JSON', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -85,7 +85,7 @@ describe('App Add Layer JSON flow', () => {
   it('preserves the final runtime text layer width and height after Apply JSON then Create Layer', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -110,7 +110,7 @@ describe('App Add Layer JSON flow', () => {
   it('fits JSON-created text into the requested box during direct Create From JSON', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -134,7 +134,7 @@ describe('App Add Layer JSON flow', () => {
   it('fits JSON-created text into the requested box after Apply JSON then Create Layer', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -159,7 +159,7 @@ describe('App Add Layer JSON flow', () => {
   it('does not clear selection when clicking inside the inspector panel body', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
@@ -187,7 +187,7 @@ describe('App Add Layer JSON flow', () => {
   it('does not clear selection when interacting with an inspector input', async () => {
     const { container } = render(
       <StrictMode>
-        <App />
+        <App editorChromeEnabled />
       </StrictMode>,
     )
 
