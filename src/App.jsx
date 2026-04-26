@@ -11,6 +11,7 @@ import { FileMenu } from './components/editor/FileMenu'
 import { FontSizeStepper } from './components/editor/FontSizeStepper'
 import { LayerFlipControls } from './components/editor/LayerFlipControls'
 import { LayerPanel } from './components/editor/LayerPanel'
+import { PostSidebar } from './components/editor/PostSidebar'
 import { PromptShell } from './components/editor/PromptShell'
 import { NewFileModal } from './components/editor/modals/NewFileModal'
 import { SettingsModal } from './components/editor/modals/SettingsModal'
@@ -208,6 +209,40 @@ const THEME_STORAGE_KEY = 'fukmall.theme'
 const TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY = 'fukmall.trim-transparent-imports'
 const INSPECTOR_ADJUSTMENT_IDLE_MS = 450
 const DEFAULT_EDITOR_CHROME_ENABLED = false
+const PLACEHOLDER_POST_SIDEBAR_POSTS = [
+  {
+    id: 'morning-drop',
+    title: 'Morning drop',
+    subtitle: 'Carousel concept',
+    detail: 'Draft',
+    thumbnailLabel: 'MD',
+    thumbnailBackground: 'linear-gradient(135deg, rgba(217, 119, 6, 0.26), rgba(15, 118, 110, 0.18))',
+  },
+  {
+    id: 'linen-story',
+    title: 'Linen story',
+    subtitle: 'Caption polish',
+    detail: '4h',
+    thumbnailLabel: 'LS',
+    thumbnailBackground: 'linear-gradient(135deg, rgba(15, 118, 110, 0.2), rgba(255, 255, 255, 0.72))',
+  },
+  {
+    id: 'soft-launch',
+    title: 'Soft launch',
+    subtitle: 'Product highlight',
+    detail: 'Tue',
+    thumbnailLabel: 'SL',
+    thumbnailBackground: 'linear-gradient(135deg, rgba(244, 114, 182, 0.18), rgba(217, 119, 6, 0.18))',
+  },
+  {
+    id: 'weekend-edit',
+    title: 'Weekend edit',
+    subtitle: 'Visual notes',
+    detail: 'Apr 18',
+    thumbnailLabel: 'WE',
+    thumbnailBackground: 'linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(15, 118, 110, 0.16))',
+  },
+]
 
 function createStartupDocument() {
   return loadCurrentDocumentFromStorage()
@@ -229,6 +264,15 @@ function loadTrimTransparentImportsFromStorage() {
   }
 
   return window.localStorage.getItem(TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY) !== 'false'
+}
+
+function navigateTo(pathname) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.history.pushState({}, '', pathname)
+  window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
 function getSupportedImageFiles(files) {
@@ -1088,6 +1132,9 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
   const [savedDocumentSignature, setSavedDocumentSignature] = useState(() => (
     serializeProjectFile(documentState)
   ))
+  const [activeSidebarPostId, setActiveSidebarPostId] = useState(
+    () => PLACEHOLDER_POST_SIDEBAR_POSTS[0]?.id ?? null,
+  )
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
   const [textEditorSelection, setTextEditorSelection] = useState({ start: 0, end: 0 })
@@ -7153,7 +7200,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
     )
   }
 
-  const fileAndSettingsControls = (
+  const fileAndSettingsSupport = (
     <>
       <input
         ref={openFileInputRef}
@@ -7191,22 +7238,42 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
         ))}
         onToggleTrimTransparentImports={() => setTrimTransparentImports((currentValue) => !currentValue)}
       />
-      <FileMenu
-        fileMenuRef={fileMenuRef}
-        isOpen={isFileMenuOpen}
-        isOpeningFile={isOpeningFile}
-        isExporting={isExporting}
-        onToggle={() => setIsFileMenuOpen((currentValue) => !currentValue)}
-        onOpenSettings={() => {
-          setIsFileMenuOpen(false)
-          setIsSettingsModalOpen(true)
-        }}
-        onNewFile={handleNewFile}
-        onOpenFile={handleOpenFileClick}
-        onSaveFile={handleSaveFile}
-        onExport={handleExport}
-      />
     </>
+  )
+  const fileAndSettingsControls = (
+    <FileMenu
+      fileMenuRef={fileMenuRef}
+      isOpen={isFileMenuOpen}
+      isOpeningFile={isOpeningFile}
+      isExporting={isExporting}
+      onToggle={() => setIsFileMenuOpen((currentValue) => !currentValue)}
+      onOpenSettings={() => {
+        setIsFileMenuOpen(false)
+        setIsSettingsModalOpen(true)
+      }}
+      onNewFile={handleNewFile}
+      onOpenFile={handleOpenFileClick}
+      onSaveFile={handleSaveFile}
+      onExport={handleExport}
+    />
+  )
+  const inlineFileAndSettingsControls = (
+    <FileMenu
+      className="app-file-menu app-file-menu-inline"
+      fileMenuRef={fileMenuRef}
+      isOpen={isFileMenuOpen}
+      isOpeningFile={isOpeningFile}
+      isExporting={isExporting}
+      onToggle={() => setIsFileMenuOpen((currentValue) => !currentValue)}
+      onOpenSettings={() => {
+        setIsFileMenuOpen(false)
+        setIsSettingsModalOpen(true)
+      }}
+      onNewFile={handleNewFile}
+      onOpenFile={handleOpenFileClick}
+      onSaveFile={handleSaveFile}
+      onExport={handleExport}
+    />
   )
   const canvasCaptionArea = (
     <section className="canvas-caption-area" aria-label="Caption">
@@ -7250,44 +7317,55 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
         className="app-shell editor-shell-minimal"
         data-theme={theme}
       >
+        {fileAndSettingsSupport}
         {fileAndSettingsControls}
-        <section className="editor-panel editor-panel-minimal">
-          <div className="workspace-main-column editor-canvas-only" style={stageLayoutStyle}>
-            <section className="canvas-panel canvas-panel-minimal" aria-label="Canvas panel">
-              <div className="canvas-composer-shell">
-                {canvasUtilityPanels}
-                <div
-                  ref={canvasRef}
-                  className="canvas-stage canvas-stage-read-only"
-                  role="presentation"
-                >
+        <div className="editor-shell-layout editor-shell-layout-minimal">
+          <PostSidebar
+            posts={PLACEHOLDER_POST_SIDEBAR_POSTS}
+            activePostId={activeSidebarPostId}
+            onNewPost={handleNewFile}
+            onSelectPost={setActiveSidebarPostId}
+            logoHref="/"
+            onLogoClick={() => navigateTo('/')}
+          />
+          <section className="editor-panel editor-panel-minimal">
+            <div className="workspace-main-column editor-canvas-only" style={stageLayoutStyle}>
+              <section className="canvas-panel canvas-panel-minimal" aria-label="Canvas panel">
+                <div className="canvas-composer-shell">
+                  {canvasUtilityPanels}
                   <div
-                    className="canvas-viewport"
-                    style={{
-                      width: `${documentWidth}px`,
-                      height: `${documentHeight}px`,
-                      transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * documentScale})`,
-                    }}
+                    ref={canvasRef}
+                    className="canvas-stage canvas-stage-read-only"
+                    role="presentation"
                   >
                     <div
-                      ref={canvasSurfaceRef}
-                      className="canvas-surface"
+                      className="canvas-viewport"
                       style={{
                         width: `${documentWidth}px`,
                         height: `${documentHeight}px`,
+                        transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * documentScale})`,
                       }}
                     >
-                      {documentState.layers.map(renderLayer)}
+                      <div
+                        ref={canvasSurfaceRef}
+                        className="canvas-surface"
+                        style={{
+                          width: `${documentWidth}px`,
+                          height: `${documentHeight}px`,
+                        }}
+                      >
+                        {documentState.layers.map(renderLayer)}
+                      </div>
                     </div>
                   </div>
+                  {canvasCaptionArea}
                 </div>
-                {canvasCaptionArea}
-              </div>
-            </section>
+              </section>
 
-            <PromptShell />
-          </div>
-        </section>
+              <PromptShell />
+            </div>
+          </section>
+        </div>
       </main>
     )
   }
@@ -7305,9 +7383,10 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
         void handleExternalImageDrop(event)
       }}
     >
-      {fileAndSettingsControls}
+      {fileAndSettingsSupport}
       <section className="editor-panel">
         <EditorToolbar
+          startControls={inlineFileAndSettingsControls}
           icons={editorIcons}
           currentTool={currentTool}
           activeBrushTool={activeBrushTool}

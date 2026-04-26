@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
+import { OnboardingModal } from '../components/onboarding/OnboardingModal'
 
 function navigateTo(pathname) {
   if (typeof window === 'undefined') {
@@ -10,6 +12,8 @@ function navigateTo(pathname) {
 }
 
 export function LandingPage() {
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
+
   return (
     <main className="app-shell landing-shell" id="top">
       <div className="landing-frame">
@@ -23,7 +27,7 @@ export function LandingPage() {
             <button
               className="landing-nav-button landing-nav-button-ghost"
               type="button"
-              onClick={() => navigateTo('/app')}
+              onClick={() => setIsOnboardingOpen(true)}
             >
               Log in
             </button>
@@ -31,7 +35,7 @@ export function LandingPage() {
             <button
               className="landing-nav-button landing-nav-button-solid"
               type="button"
-              onClick={() => navigateTo('/app')}
+              onClick={() => setIsOnboardingOpen(true)}
             >
               Sign up
             </button>
@@ -40,7 +44,7 @@ export function LandingPage() {
 
         <section className="landing-hero">
           <div className="landing-hero-copy">
-            <h1 className="landing-title">Start with clarity.</h1>
+            <h1 className="landing-title">Create your entire week&apos;s post in one sitting.</h1>
             <p className="landing-subhead">
               A focused editor for clean, fast visuals.
             </p>
@@ -115,6 +119,14 @@ export function LandingPage() {
           </div>
         </section>
       </div>
+
+      {isOnboardingOpen ? (
+        <OnboardingModal
+          isOpen={isOnboardingOpen}
+          onClose={() => setIsOnboardingOpen(false)}
+          onComplete={() => navigateTo('/app')}
+        />
+      ) : null}
     </main>
   )
 }

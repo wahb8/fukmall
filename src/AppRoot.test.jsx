@@ -59,6 +59,35 @@ describe('AppRoot routing', () => {
     expect(screen.getByRole('link', { name: 'Preview' })).toBeInTheDocument()
   })
 
+  it('opens onboarding from Log in and Sign up without leaving the landing page', async () => {
+    setPathname('/')
+
+    const { container } = render(
+      <StrictMode>
+        <AppRoot />
+      </StrictMode>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
+
+    expect(window.location.pathname).toBe('/')
+    expect(screen.getByRole('dialog', { name: 'Business onboarding' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', {
+      name: 'What kind of business do you have?',
+    })).toBeInTheDocument()
+
+    fireEvent.pointerDown(container.querySelector('.onboarding-backdrop'))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Business onboarding' })).toBeNull()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }))
+
+    expect(window.location.pathname).toBe('/')
+    expect(screen.getByRole('dialog', { name: 'Business onboarding' })).toBeInTheDocument()
+  })
+
   it('navigates to the editor when Get started is clicked', async () => {
     setPathname('/')
 
@@ -73,6 +102,7 @@ describe('AppRoot routing', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/app')
       expect(container.querySelector('.app-shell')).not.toBeNull()
+      expect(container.querySelector('.post-sidebar')).not.toBeNull()
       expect(container.querySelector('.canvas-panel')).not.toBeNull()
       expect(container.querySelector('.canvas-composer-shell')).not.toBeNull()
       expect(container.querySelector('.canvas-stage')).not.toBeNull()
@@ -81,6 +111,30 @@ describe('AppRoot routing', () => {
       expect(container.querySelector('.canvas-slide-panel-bottom')).not.toBeNull()
       expect(container.querySelector('.canvas-prompt-input')).not.toBeNull()
       expect(container.textContent).not.toContain('Create Layer')
+      expect(screen.getByRole('button', { name: 'File' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
+    })
+  })
+
+  it('navigates to the editor when onboarding is completed', async () => {
+    setPathname('/')
+
+    const { container } = render(
+      <StrictMode>
+        <AppRoot />
+      </StrictMode>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Restaurant' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(screen.getByRole('button', { name: 'I am a new business' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start Creating!' }))
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/app')
+      expect(container.querySelector('.app-shell')).not.toBeNull()
+      expect(container.querySelector('.post-sidebar')).not.toBeNull()
       expect(screen.getByRole('button', { name: 'File' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
     })
@@ -97,6 +151,7 @@ describe('AppRoot routing', () => {
 
     await waitFor(() => {
       expect(container.querySelector('.app-shell')).not.toBeNull()
+      expect(container.querySelector('.post-sidebar')).not.toBeNull()
       expect(container.querySelector('.canvas-panel')).not.toBeNull()
       expect(container.querySelector('.canvas-composer-shell')).not.toBeNull()
       expect(container.querySelector('.canvas-stage')).not.toBeNull()
@@ -114,6 +169,12 @@ describe('AppRoot routing', () => {
     expect(screen.getByRole('complementary', { name: 'Canvas lower side tools' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Tune' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Post' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Kryopic home' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New Post' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Morning drop' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'New Post' }))
+    expect(screen.getByRole('dialog', { name: 'New file dimensions' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.getByRole('button', { name: 'File' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'File' }))
@@ -129,6 +190,11 @@ describe('AppRoot routing', () => {
     expect(container.querySelector('.sidebar')).toBeNull()
     expect(container.querySelector('input[type="file"][accept=".kryop,application/json"]')).not.toBeNull()
     expect(container.querySelector('input[type="file"][accept="image/*"]')).toBeNull()
+    fireEvent.click(screen.getByRole('link', { name: 'Kryopic home' }))
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/')
+      expect(container.querySelector('.landing-shell')).not.toBeNull()
+    })
   })
 
   it('updates the visible stage metrics when document dimensions change', async () => {

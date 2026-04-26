@@ -142,6 +142,10 @@
   color: var(--ink);
 }
 
+.app-shell.editor-shell-minimal {
+  padding: 0;
+}
+
 .landing-shell {
   position: relative;
   min-height: 100vh;
@@ -187,21 +191,21 @@
 .landing-brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.72rem;
+  gap: 1rem;
   color: var(--landing-ink);
   text-decoration: none;
 }
 
 .landing-brand-mark {
   display: block;
-  width: 2.55rem;
-  height: 2.55rem;
+  width: 3.45rem;
+  height: 3.45rem;
   object-fit: contain;
 }
 
 .landing-brand-name {
   color: var(--landing-ink);
-  font-size: 1.05rem;
+  font-size: 1.48rem;
   font-weight: 700;
   letter-spacing: -0.03em;
 }
@@ -331,10 +335,10 @@
 .landing-title {
   margin: 0;
   color: var(--landing-ink);
-  max-width: 7ch;
-  font-size: clamp(3.6rem, 7vw, 6.1rem);
+  max-width: 9.5ch;
+  font-size: clamp(2.35rem, 4.8vw, 4.15rem);
   font-weight: 700;
-  line-height: 0.91;
+  line-height: 0.96;
   letter-spacing: -0.075em;
 }
 
@@ -581,11 +585,23 @@
 .app-file-menu {
   position: fixed;
   top: 1.5rem;
-  left: 1.5rem;
+  right: 1.5rem;
   z-index: 40;
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
+}
+
+.app-file-menu-inline {
+  position: static;
+  top: auto;
+  left: auto;
+  z-index: auto;
+}
+
+.app-file-menu:not(.app-file-menu-inline) .topbar-menu-dropdown {
+  left: auto;
+  right: 0;
 }
 
 .modal-backdrop {
@@ -721,10 +737,37 @@
   gap: 1.25rem;
 }
 
+.editor-shell-layout {
+  width: min(1220px, 100%);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.editor-shell-layout-minimal {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  gap: 0;
+}
+
 .editor-panel-minimal {
-  width: min(520px, 100%);
+  width: min(100%, 520px);
   min-height: calc(100vh - 4rem);
+  margin: 0 auto;
   justify-content: center;
+}
+
+.editor-shell-layout-minimal .editor-panel-minimal {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 2rem 2rem 2rem 1.5rem;
 }
 
 .editor-topbar,
@@ -748,6 +791,13 @@
 
 .toolbar-tools,
 .toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.toolbar-start {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -1116,6 +1166,13 @@
   gap: 1.25rem;
 }
 
+.editor-shell-layout-minimal .workspace-main-column {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  align-items: center;
+}
+
 .canvas-panel {
   padding: 1.15rem;
   display: flex;
@@ -1124,7 +1181,244 @@
 }
 
 .canvas-panel-minimal {
+  width: fit-content;
+  max-width: 100%;
+  align-self: center;
+  padding: 1.7rem;
+}
+
+.post-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-self: stretch;
+  min-height: 100vh;
+  max-height: 100vh;
+  padding: 1.35rem 1rem 1.35rem 1.1rem;
+  border-right: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 82%, transparent), color-mix(in srgb, var(--bg) 88%, transparent)),
+    var(--panel-soft);
+  box-sizing: border-box;
+}
+
+.post-sidebar-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.post-sidebar-brand {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 0.18rem;
+  border-radius: 16px;
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    background 160ms ease;
+}
+
+.post-sidebar-brand:hover,
+.post-sidebar-brand:focus-visible {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+}
+
+.post-sidebar-brand-mark {
+  display: block;
+  width: 2.4rem;
+  height: 2.4rem;
+  object-fit: contain;
+}
+
+.post-sidebar-new-post {
+  border: 1px solid transparent;
+  border-radius: 22px;
+  padding: 0.88rem 1rem 0.88rem 0.48rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.post-sidebar-new-post:hover,
+.post-sidebar-new-post:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--surface-hover) 82%, transparent);
+}
+
+.post-sidebar-new-post:active {
+  background: color-mix(in srgb, var(--surface-active) 86%, transparent);
+}
+
+.post-sidebar-list-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.post-sidebar-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.post-sidebar-list-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  padding: 0.28rem 0.58rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.post-sidebar-post-list {
+  --panel-scrollbar-thumb: var(--scrollbar-thumb-warm);
+  --panel-scrollbar-thumb-hover: var(--scrollbar-thumb-warm-hover);
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 0.2rem;
+  padding-bottom: 0.1rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--panel-scrollbar-thumb) var(--scrollbar-track);
+}
+
+.post-sidebar-post-list::-webkit-scrollbar {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.post-sidebar-post-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.post-sidebar-post-list::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--panel-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+.post-sidebar-post-list:hover::-webkit-scrollbar-thumb {
+  background: var(--panel-scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.post-sidebar-post {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.72rem;
   width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 0.62rem;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.post-sidebar-post:hover,
+.post-sidebar-post:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+}
+
+.post-sidebar-post.active {
+  border-color: var(--selection);
+  background: color-mix(in srgb, var(--layer-selected-bg) 72%, var(--surface) 28%);
+  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.12);
+}
+
+.post-sidebar-post-thumbnail {
+  width: 3rem;
+  height: 3rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(217, 119, 6, 0.18), rgba(15, 118, 110, 0.16)),
+    var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+.post-sidebar-post-thumbnail-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.post-sidebar-post-thumbnail-fallback {
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.post-sidebar-post-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+
+.post-sidebar-post-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.post-sidebar-post-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.post-sidebar-post-detail {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .canvas-composer-shell {
@@ -2359,6 +2653,21 @@
     grid-template-columns: 1fr;
   }
 
+  .editor-shell-layout:not(.editor-shell-layout-minimal) {
+    grid-template-columns: 1fr;
+  }
+
+  .post-sidebar {
+    position: static;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .editor-shell-layout-minimal .editor-panel-minimal {
+    min-height: 0;
+    padding-left: 1rem;
+  }
+
   .asset-grid {
     column-count: 3;
   }
@@ -2421,6 +2730,10 @@
   }
 
   .landing-preview-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-shell-layout-minimal {
     grid-template-columns: 1fr;
   }
 

@@ -164,6 +164,7 @@ function ColorSwatchPanel({
 
 export function EditorToolbar({
   icons = getEditorIcons('light'),
+  startControls = null,
   currentTool,
   activeBrushTool,
   penSize,
@@ -196,12 +197,15 @@ export function EditorToolbar({
 }) {
   return (
     <header className="editor-topbar">
-      <ToolButtons
-        currentTool={currentTool}
-        icons={icons}
-        onActivateTool={onActivateTool}
-        onResetViewport={onResetViewport}
-      />
+      <div className="toolbar-start">
+        {startControls}
+        <ToolButtons
+          currentTool={currentTool}
+          icons={icons}
+          onActivateTool={onActivateTool}
+          onResetViewport={onResetViewport}
+        />
+      </div>
       {toolPanelError.isRendered && (
         <div
           className={`tool-panel-error${toolPanelError.isVisible ? ' visible' : ''}${toolPanelError.isFading ? ' fading' : ''}`}

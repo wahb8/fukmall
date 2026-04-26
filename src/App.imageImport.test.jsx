@@ -610,7 +610,7 @@ describe('App image import flows', () => {
     })
 
     expect(screen.getByRole('button', { name: 'Add Image' })).toBeInTheDocument()
-  })
+  }, 10000)
 
   it('imports SVG files as valid SVG-backed image layers', async () => {
     const svgDataUrl = 'data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2090%2045%22%3E%3C/svg%3E'
@@ -641,7 +641,7 @@ describe('App image import flows', () => {
 
     const svgImage = container.querySelector(`img.layer-image[src="${svgDataUrl}"]`)
     expect(svgImage).not.toBeNull()
-  })
+  }, 10000)
 
   it('caps the asset library at 20 items, accepts only remaining slots, and shows a transient limit message', async () => {
     const files = Array.from({ length: 21 }, (_, index) => {

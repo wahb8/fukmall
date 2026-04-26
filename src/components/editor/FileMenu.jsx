@@ -1,5 +1,6 @@
 export function FileMenu({
   fileMenuRef,
+  className = 'app-file-menu',
   isOpen,
   isOpeningFile,
   isExporting,
@@ -11,7 +12,7 @@ export function FileMenu({
   onExport,
 }) {
   return (
-    <div ref={fileMenuRef} className="app-file-menu">
+    <div ref={fileMenuRef} className={className}>
       <button
         className={isOpen ? 'action-button active' : 'action-button'}
         type="button"

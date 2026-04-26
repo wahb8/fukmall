@@ -26,7 +26,7 @@ export function NewFileModal({
         <div className="modal-header">
           <div>
             <p className="eyebrow">New File</p>
-            <h2>Document Size</h2>
+            <h2>Post Size</h2>
           </div>
         </div>
         <div className="modal-body">
