@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
 import { OnboardingModal } from '../components/onboarding/OnboardingModal'
-import { SiteFooter } from '../components/site/SiteFooter'
 import { navigateTo } from '../navigation'
 import './PricingPage.css'
 
@@ -119,6 +118,7 @@ export function PricingPage() {
             onClick={(event) => handleNavigate(event, '/')}
           >
             <img className="landing-brand-mark" src={logoConceptTransparent} alt="" />
+            <span className="landing-brand-name">Kryopic</span>
           </a>
 
           <div className="landing-nav-actions pricing-nav-actions">
@@ -292,9 +292,6 @@ export function PricingPage() {
         </section>
 
       </div>
-
-      <SiteFooter />
-
       {isOnboardingOpen ? (
         <OnboardingModal
           isOpen={isOnboardingOpen}

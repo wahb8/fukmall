@@ -167,11 +167,8 @@
 
 .landing-shell {
   position: relative;
-  display: flex;
-  flex-direction: column;
   min-height: 100vh;
-  overflow-x: hidden;
-  overflow-y: visible;
+  overflow: hidden;
   background:
     linear-gradient(rgba(120, 92, 55, 0.032) 1px, transparent 1px),
     linear-gradient(90deg, rgba(120, 92, 55, 0.032) 1px, transparent 1px),
@@ -207,10 +204,9 @@
 
 .landing-frame {
   position: relative;
-  flex: 1 0 auto;
   z-index: 1;
   width: min(1200px, 100%);
-  min-height: 0;
+  min-height: calc(100vh - 4rem);
   margin: 0 auto;
   display: grid;
   grid-template-rows: auto 1fr;
@@ -238,6 +234,13 @@
   width: 3.45rem;
   height: 3.45rem;
   object-fit: contain;
+}
+
+.landing-brand-name {
+  color: var(--landing-ink);
+  font-size: 1.48rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
 }
 
 .landing-pricing-button {
@@ -644,127 +647,6 @@
 
 .landing-preview-chip-short {
   width: 3rem;
-}
-
-.site-footer {
-  position: relative;
-  flex-shrink: 0;
-  width: 100%;
-  margin-top: 0;
-  box-sizing: border-box;
-  padding: clamp(0.28rem, 0.65vw, 0.44rem) clamp(1rem, 3vw, 2rem) clamp(0.42rem, 0.9vw, 0.65rem);
-  border-top: 1px solid color-mix(in srgb, var(--landing-line) 88%, white);
-  background:
-    linear-gradient(180deg, rgba(255, 247, 239, 0.22), rgba(255, 245, 236, 0.52)),
-    rgba(255, 248, 241, 0.34);
-  overflow: visible;
-}
-
-.site-footer-shell {
-  position: relative;
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(0, 0.8fr));
-  gap: clamp(0.65rem, 1.2vw, 0.95rem);
-  padding: 0;
-  align-items: center;
-  overflow: visible;
-}
-
-.site-footer-brand,
-.site-footer-group {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
-}
-
-.site-footer-brand {
-  display: grid;
-  gap: 0.12rem;
-  align-content: start;
-  max-width: min(23rem, 100%);
-}
-
-.site-footer-brand-link {
-  width: fit-content;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.9rem;
-  color: var(--landing-ink);
-  text-decoration: none;
-}
-
-.site-footer-brand-mark {
-  display: block;
-  width: 2rem;
-  height: 2rem;
-  object-fit: contain;
-}
-
-.site-footer-brand-name {
-  color: var(--landing-ink);
-  font-size: 0.98rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-}
-
-.site-footer-tagline {
-  margin: 0;
-  color: var(--landing-muted);
-  font-size: 0.82rem;
-  line-height: 1.32;
-}
-
-.site-footer-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.18rem;
-  align-items: flex-start;
-  justify-content: center;
-  min-width: 0;
-}
-
-.site-footer-group-title {
-  color: var(--landing-muted);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  line-height: 1;
-}
-
-.site-footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.14rem 0.62rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  min-width: 0;
-}
-
-.site-footer-link {
-  width: fit-content;
-  display: inline-flex;
-  align-items: center;
-  color: var(--landing-ink);
-  text-decoration: none;
-  font-size: 0.86rem;
-  font-weight: 600;
-  line-height: 1.1;
-  transition:
-    transform 160ms ease,
-    color 160ms ease,
-    opacity 160ms ease;
-}
-
-.site-footer-link:hover,
-.site-footer-link:focus-visible {
-  transform: translateX(1px);
-  color: var(--landing-accent-soft);
 }
 
 .app-file-menu {
@@ -2834,16 +2716,6 @@
     padding: 0.2rem 0 0;
   }
 
-  .site-footer-shell {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 0.55rem;
-    align-items: start;
-  }
-
-  .site-footer-brand {
-    max-width: none;
-  }
-
   .workspace-grid {
     grid-template-columns: 1fr;
   }
@@ -2878,7 +2750,7 @@
   }
 
   .landing-frame {
-    min-height: 0;
+    min-height: calc(100vh - 2rem);
     gap: 2.25rem;
   }
 
@@ -2890,19 +2762,6 @@
   .landing-nav-actions {
     width: auto;
     justify-content: flex-start;
-  }
-
-  .site-footer-shell {
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-  }
-
-  .site-footer-group {
-    gap: 0.16rem;
-  }
-
-  .site-footer-links {
-    gap: 0.12rem 0.55rem;
   }
 
   .landing-title {

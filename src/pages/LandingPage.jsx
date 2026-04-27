@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
 import { OnboardingModal } from '../components/onboarding/OnboardingModal'
-import { SiteFooter } from '../components/site/SiteFooter'
 import { navigateTo } from '../navigation'
 
 export function LandingPage() {
@@ -13,6 +12,7 @@ export function LandingPage() {
         <header className="landing-nav" aria-label="Primary navigation">
           <a className="landing-brand" href="#top" aria-label="Kryopic home">
             <img className="landing-brand-mark" src={logoConceptTransparent} alt="" />
+            <span className="landing-brand-name">Kryopic</span>
           </a>
 
           <div className="landing-nav-actions">
@@ -123,9 +123,6 @@ export function LandingPage() {
         </section>
 
       </div>
-
-      <SiteFooter />
-
       {isOnboardingOpen ? (
         <OnboardingModal
           isOpen={isOnboardingOpen}
