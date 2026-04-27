@@ -123,6 +123,14 @@ export function PricingPage() {
 
           <div className="landing-nav-actions pricing-nav-actions">
             <button
+              className="landing-pricing-button"
+              type="button"
+              onClick={() => navigateTo('/pricing')}
+            >
+              Pricing
+            </button>
+
+            <button
               className="landing-nav-button landing-nav-button-ghost"
               type="button"
               onClick={() => setIsOnboardingOpen(true)}

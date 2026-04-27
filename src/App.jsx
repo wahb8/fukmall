@@ -244,9 +244,14 @@ const PLACEHOLDER_POST_SIDEBAR_POSTS = [
   },
 ]
 
-function createStartupDocument() {
-  return loadCurrentDocumentFromStorage()
-    ?? createInitialDocument(DEFAULT_DOCUMENT_WIDTH, DEFAULT_DOCUMENT_HEIGHT)
+function createStartupState() {
+  const savedDocument = loadCurrentDocumentFromStorage()
+
+  return {
+    document: savedDocument
+      ?? createInitialDocument(DEFAULT_DOCUMENT_WIDTH, DEFAULT_DOCUMENT_HEIGHT),
+    isFirstEntryCanvasVisible: savedDocument == null,
+  }
 }
 
 function loadThemeFromStorage() {
@@ -1066,6 +1071,7 @@ function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
 }
 
 function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
+  const startupState = useMemo(() => createStartupState(), [])
   const appShellRef = useRef(null)
   const canvasRef = useRef(null)
   const canvasSurfaceRef = useRef(null)
@@ -1099,7 +1105,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
     reset: resetHistory,
     canUndo,
     canRedo,
-  } = useHistory(createStartupDocument())
+  } = useHistory(startupState.document)
   const documentStateRef = useRef(documentState)
   documentStateRef.current = documentState
   const {
@@ -1132,6 +1138,9 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
   const [savedDocumentSignature, setSavedDocumentSignature] = useState(() => (
     serializeProjectFile(documentState)
   ))
+  const [isFirstEntryCanvasVisible, setIsFirstEntryCanvasVisible] = useState(
+    () => startupState.isFirstEntryCanvasVisible,
+  )
   const [activeSidebarPostId, setActiveSidebarPostId] = useState(
     () => PLACEHOLDER_POST_SIDEBAR_POSTS[0]?.id ?? null,
   )
@@ -1879,6 +1888,10 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
       return
     }
 
+    if (isFirstEntryCanvasVisible) {
+      return
+    }
+
     const savedSuccessfully = saveCurrentDocumentToStorage(documentState, window.localStorage)
 
     if (savedSuccessfully) {
@@ -1890,7 +1903,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
       hasShownAutosaveErrorRef.current = true
       showToolPanelError('Current document could not be autosaved locally.')
     }
-  }, [documentState, showToolPanelError])
+  }, [documentState, isFirstEntryCanvasVisible, showToolPanelError])
 
   useEffect(() => {
     function handlePointerDownOutside(event) {
@@ -4056,6 +4069,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
     const normalizedDocument = normalizeDocumentState(nextDocumentState)
 
     resetEditorRuntimeState()
+    setIsFirstEntryCanvasVisible(false)
     setIsNewFileModalOpen(false)
     setIsUnsavedChangesModalOpen(false)
     setSavedDocumentSignature(serializeProjectFile(normalizedDocument))
@@ -7200,6 +7214,37 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
     )
   }
 
+  function handleFirstEntryCanvasPointerDown(event) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  function handleFirstEntryCanvasActivate(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    handleNewFile()
+  }
+
+  function renderFirstEntryCanvasOverlay() {
+    if (!isFirstEntryCanvasVisible) {
+      return null
+    }
+
+    return (
+      <button
+        className="canvas-first-entry-overlay"
+        type="button"
+        aria-label="Create a new post"
+        onPointerDown={handleFirstEntryCanvasPointerDown}
+        onClick={handleFirstEntryCanvasActivate}
+      >
+        <span className="canvas-first-entry-callout" aria-hidden="true">
+          <span className="canvas-first-entry-plus">+</span>
+        </span>
+      </button>
+    )
+  }
+
   const fileAndSettingsSupport = (
     <>
       <input
@@ -7354,6 +7399,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
                           height: `${documentHeight}px`,
                         }}
                       >
+                        {renderFirstEntryCanvasOverlay()}
                         {documentState.layers.map(renderLayer)}
                       </div>
                     </div>
@@ -7502,6 +7548,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
                         height: `${documentHeight}px`,
                       }}
                     >
+                      {renderFirstEntryCanvasOverlay()}
                       {documentState.layers.map(renderLayer)}
                       {renderLayerSelectionOverlays()}
                       {renderSharedSelectionOverlay()}
