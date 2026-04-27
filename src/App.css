@@ -167,8 +167,11 @@
 
 .landing-shell {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
   background:
     linear-gradient(rgba(120, 92, 55, 0.032) 1px, transparent 1px),
     linear-gradient(90deg, rgba(120, 92, 55, 0.032) 1px, transparent 1px),
@@ -204,12 +207,13 @@
 
 .landing-frame {
   position: relative;
+  flex: 1 0 auto;
   z-index: 1;
   width: min(1200px, 100%);
-  min-height: calc(100vh - 4rem);
+  min-height: 0;
   margin: 0 auto;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   gap: clamp(2.5rem, 5vw, 4.25rem);
 }
 
@@ -644,48 +648,44 @@
 
 .site-footer {
   position: relative;
+  flex-shrink: 0;
+  width: 100%;
+  margin-top: 0;
+  box-sizing: border-box;
+  padding: clamp(0.28rem, 0.65vw, 0.44rem) clamp(1rem, 3vw, 2rem) clamp(0.42rem, 0.9vw, 0.65rem);
+  border-top: 1px solid color-mix(in srgb, var(--landing-line) 88%, white);
+  background:
+    linear-gradient(180deg, rgba(255, 247, 239, 0.22), rgba(255, 245, 236, 0.52)),
+    rgba(255, 248, 241, 0.34);
+  overflow: visible;
 }
 
 .site-footer-shell {
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(0, 0.8fr));
-  gap: clamp(1.25rem, 3vw, 2rem);
-  padding: clamp(1.45rem, 3vw, 1.9rem);
-  border: 1px solid var(--landing-line);
-  border-radius: 32px;
-  background:
-    radial-gradient(circle at top right, rgba(254, 228, 206, 0.52), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 247, 239, 0.76)),
-    rgba(255, 250, 243, 0.8);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.66),
-    0 20px 46px rgba(24, 33, 45, 0.08);
-  overflow: hidden;
-}
-
-.site-footer-shell::before {
-  content: '';
-  position: absolute;
-  inset: auto auto -36% -10%;
-  width: 15rem;
-  height: 15rem;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(254, 228, 206, 0.38), transparent 72%);
-  pointer-events: none;
+  gap: clamp(0.65rem, 1.2vw, 0.95rem);
+  padding: 0;
+  align-items: center;
+  overflow: visible;
 }
 
 .site-footer-brand,
 .site-footer-group {
   position: relative;
   z-index: 1;
+  min-width: 0;
 }
 
 .site-footer-brand {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.12rem;
   align-content: start;
-  max-width: 23rem;
+  max-width: min(23rem, 100%);
 }
 
 .site-footer-brand-link {
@@ -699,14 +699,14 @@
 
 .site-footer-brand-mark {
   display: block;
-  width: 3rem;
-  height: 3rem;
+  width: 2rem;
+  height: 2rem;
   object-fit: contain;
 }
 
 .site-footer-brand-name {
   color: var(--landing-ink);
-  font-size: 1.2rem;
+  font-size: 0.98rem;
   font-weight: 700;
   letter-spacing: -0.03em;
 }
@@ -714,29 +714,36 @@
 .site-footer-tagline {
   margin: 0;
   color: var(--landing-muted);
-  line-height: 1.68;
+  font-size: 0.82rem;
+  line-height: 1.32;
 }
 
 .site-footer-group {
-  display: grid;
-  gap: 0.9rem;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
 }
 
 .site-footer-group-title {
   color: var(--landing-muted);
-  font-size: 0.76rem;
+  font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  line-height: 1;
 }
 
 .site-footer-links {
-  display: grid;
-  gap: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.14rem 0.62rem;
   margin: 0;
   padding: 0;
   list-style: none;
+  min-width: 0;
 }
 
 .site-footer-link {
@@ -745,7 +752,9 @@
   align-items: center;
   color: var(--landing-ink);
   text-decoration: none;
+  font-size: 0.86rem;
   font-weight: 600;
+  line-height: 1.1;
   transition:
     transform 160ms ease,
     color 160ms ease,
@@ -2826,12 +2835,13 @@
   }
 
   .site-footer-shell {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.55rem;
+    align-items: start;
   }
 
   .site-footer-brand {
     max-width: none;
-    grid-column: 1 / -1;
   }
 
   .workspace-grid {
@@ -2868,7 +2878,7 @@
   }
 
   .landing-frame {
-    min-height: calc(100vh - 2rem);
+    min-height: 0;
     gap: 2.25rem;
   }
 
@@ -2884,9 +2894,15 @@
 
   .site-footer-shell {
     grid-template-columns: 1fr;
-    gap: 1.25rem;
-    padding: 1.25rem;
-    border-radius: 26px;
+    gap: 0.5rem;
+  }
+
+  .site-footer-group {
+    gap: 0.16rem;
+  }
+
+  .site-footer-links {
+    gap: 0.12rem 0.55rem;
   }
 
   .landing-title {

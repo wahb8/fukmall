@@ -122,8 +122,9 @@ export function LandingPage() {
           </div>
         </section>
 
-        <SiteFooter />
       </div>
+
+      <SiteFooter />
 
       {isOnboardingOpen ? (
         <OnboardingModal

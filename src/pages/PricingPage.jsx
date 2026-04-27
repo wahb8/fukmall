@@ -291,8 +291,9 @@ export function PricingPage() {
           </section>
         </section>
 
-        <SiteFooter />
       </div>
+
+      <SiteFooter />
 
       {isOnboardingOpen ? (
         <OnboardingModal
