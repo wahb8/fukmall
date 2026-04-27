@@ -4083,6 +4083,15 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
     setIsNewFileModalOpen(true)
   }
 
+  const handleSelectNewFilePreset = useCallback((preset) => {
+    if (!preset) {
+      return
+    }
+
+    setNewFileWidthInput(String(preset.width))
+    setNewFileHeightInput(String(preset.height))
+  }, [])
+
   function handleNewFile() {
     setIsFileMenuOpen(false)
 
@@ -7267,6 +7276,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
         width={newFileWidthInput}
         height={newFileHeightInput}
         minDimension={MIN_DOCUMENT_DIMENSION}
+        onPresetSelect={handleSelectNewFilePreset}
         onClose={handleCancelNewFile}
         onNameChange={(event) => setNewFileNameInput(event.target.value)}
         onWidthChange={(event) => setNewFileWidthInput(event.target.value)}

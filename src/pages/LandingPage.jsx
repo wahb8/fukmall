@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
-import { OnboardingModal } from '../components/onboarding/OnboardingModal'
+import { AuthModal } from '../components/site/AuthModal'
 import { navigateTo } from '../navigation'
 
 export function LandingPage() {
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
+  const [authModalMode, setAuthModalMode] = useState(null)
 
   return (
     <main className="app-shell landing-shell" id="top">
@@ -27,7 +27,7 @@ export function LandingPage() {
             <button
               className="landing-nav-button landing-nav-button-ghost"
               type="button"
-              onClick={() => setIsOnboardingOpen(true)}
+              onClick={() => setAuthModalMode('login')}
             >
               Log in
             </button>
@@ -35,7 +35,7 @@ export function LandingPage() {
             <button
               className="landing-nav-button landing-nav-button-solid"
               type="button"
-              onClick={() => setIsOnboardingOpen(true)}
+              onClick={() => setAuthModalMode('signup')}
             >
               Sign up
             </button>
@@ -123,13 +123,11 @@ export function LandingPage() {
         </section>
 
       </div>
-      {isOnboardingOpen ? (
-        <OnboardingModal
-          isOpen={isOnboardingOpen}
-          onClose={() => setIsOnboardingOpen(false)}
-          onComplete={() => navigateTo('/app')}
-        />
-      ) : null}
+      <AuthModal
+        isOpen={authModalMode !== null}
+        mode={authModalMode ?? 'login'}
+        onClose={() => setAuthModalMode(null)}
+      />
     </main>
   )
 }

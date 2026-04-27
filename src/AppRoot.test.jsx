@@ -53,7 +53,7 @@ describe('AppRoot routing', () => {
     expect(screen.getByRole('link', { name: 'Kryopic home' })).toBeInTheDocument()
     expect(screen.getByText('Kryopic')).toBeInTheDocument()
     expect(screen.getByRole('heading', {
-      name: 'Create your entire week\'s post in one sitting.',
+      name: 'Create your entire week\'s posts in one sitting.',
     })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pricing' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Get started' })).toBeInTheDocument()
@@ -83,7 +83,7 @@ describe('AppRoot routing', () => {
     expect(screen.getByRole('heading', { name: 'Enterprise' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'log-in' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'sign-up' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Get Started' })).toHaveLength(3)
+    expect(screen.getAllByRole('button', { name: 'Get Started' })).toHaveLength(4)
     expect(screen.getByLabelText('Free price')).toHaveTextContent('0 KWD / month')
     expect(screen.getByLabelText('Business price')).toHaveTextContent('29 KWD / month')
     expect(screen.getByLabelText('Enterprise price')).toHaveTextContent('49 KWD / month')
@@ -91,12 +91,13 @@ describe('AppRoot routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'sign-up' }))
 
     expect(window.location.pathname).toBe('/pricing')
-    expect(screen.getByRole('dialog', { name: 'Business onboarding' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Sign up' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create account' })).toBeInTheDocument()
 
-    fireEvent.pointerDown(container.querySelector('.onboarding-backdrop'))
+    fireEvent.pointerDown(container.querySelector('.auth-modal-backdrop'))
 
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Business onboarding' })).toBeNull()
+      expect(screen.queryByRole('dialog', { name: 'Sign up' })).toBeNull()
     })
 
     fireEvent.click(screen.getByRole('link', { name: 'Kryopic home' }))
@@ -104,12 +105,12 @@ describe('AppRoot routing', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/')
       expect(screen.getByRole('heading', {
-        name: 'Create your entire week\'s post in one sitting.',
+        name: 'Create your entire week\'s posts in one sitting.',
       })).toBeInTheDocument()
     })
   })
 
-  it('opens onboarding from Log in and Sign up without leaving the landing page', async () => {
+  it('opens auth popups from Log in and Sign up without leaving the landing page', async () => {
     setPathname('/')
 
     const { container } = render(
@@ -121,21 +122,20 @@ describe('AppRoot routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
 
     expect(window.location.pathname).toBe('/')
-    expect(screen.getByRole('dialog', { name: 'Business onboarding' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', {
-      name: 'What kind of business do you have?',
-    })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Log in' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Log in' })).toHaveLength(2)
 
-    fireEvent.pointerDown(container.querySelector('.onboarding-backdrop'))
+    fireEvent.pointerDown(container.querySelector('.auth-modal-backdrop'))
 
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Business onboarding' })).toBeNull()
+      expect(screen.queryByRole('dialog', { name: 'Log in' })).toBeNull()
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign up' }))
 
     expect(window.location.pathname).toBe('/')
-    expect(screen.getByRole('dialog', { name: 'Business onboarding' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Sign up' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Name')).toBeInTheDocument()
   })
 
   it('navigates to the editor when Get started is clicked', async () => {
@@ -166,8 +166,8 @@ describe('AppRoot routing', () => {
     })
   })
 
-  it('navigates to the editor when onboarding is completed', async () => {
-    setPathname('/')
+  it('navigates to the editor when onboarding is completed from pricing', async () => {
+    setPathname('/pricing')
 
     const { container } = render(
       <StrictMode>
@@ -175,7 +175,7 @@ describe('AppRoot routing', () => {
       </StrictMode>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Get Started' })[0])
     fireEvent.click(screen.getByRole('button', { name: 'Restaurant' }))
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))

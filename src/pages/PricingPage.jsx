@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
 import { OnboardingModal } from '../components/onboarding/OnboardingModal'
+import { AuthModal } from '../components/site/AuthModal'
 import { navigateTo } from '../navigation'
 import './PricingPage.css'
 
@@ -106,6 +107,7 @@ function handleNavigate(event, pathname) {
 
 export function PricingPage() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
+  const [authModalMode, setAuthModalMode] = useState(null)
 
   return (
     <main className="app-shell landing-shell pricing-shell">
@@ -133,7 +135,7 @@ export function PricingPage() {
             <button
               className="landing-nav-button landing-nav-button-ghost"
               type="button"
-              onClick={() => setIsOnboardingOpen(true)}
+              onClick={() => setAuthModalMode('login')}
             >
               log-in
             </button>
@@ -141,7 +143,7 @@ export function PricingPage() {
             <button
               className="landing-nav-button landing-nav-button-solid"
               type="button"
-              onClick={() => setIsOnboardingOpen(true)}
+              onClick={() => setAuthModalMode('signup')}
             >
               sign-up
             </button>
@@ -300,6 +302,11 @@ export function PricingPage() {
         </section>
 
       </div>
+      <AuthModal
+        isOpen={authModalMode !== null}
+        mode={authModalMode ?? 'login'}
+        onClose={() => setAuthModalMode(null)}
+      />
       {isOnboardingOpen ? (
         <OnboardingModal
           isOpen={isOnboardingOpen}
