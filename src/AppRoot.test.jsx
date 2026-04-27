@@ -52,11 +52,61 @@ describe('AppRoot routing', () => {
     expect(container.querySelector('.landing-shell')).not.toBeNull()
     expect(screen.getByRole('link', { name: 'Kryopic home' })).toBeInTheDocument()
     expect(screen.getByText('Kryopic')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Start with clarity.' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', {
+      name: 'Create your entire week\'s post in one sitting.',
+    })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pricing' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Get started' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Sign up' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Preview' })).toBeInTheDocument()
+  })
+
+  it('navigates to the pricing page and back home from the landing page', async () => {
+    setPathname('/')
+
+    const { container } = render(
+      <StrictMode>
+        <AppRoot />
+      </StrictMode>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pricing' }))
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/pricing')
+    })
+
+    expect(screen.getByRole('heading', { name: 'Three tiers, one calm workflow.' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Free' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Business' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Enterprise' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'log-in' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'sign-up' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Get Started' })).toHaveLength(3)
+    expect(screen.getByLabelText('Free price')).toHaveTextContent('0 KWD / month')
+    expect(screen.getByLabelText('Business price')).toHaveTextContent('29 KWD / month')
+    expect(screen.getByLabelText('Enterprise price')).toHaveTextContent('49 KWD / month')
+
+    fireEvent.click(screen.getByRole('button', { name: 'sign-up' }))
+
+    expect(window.location.pathname).toBe('/pricing')
+    expect(screen.getByRole('dialog', { name: 'Business onboarding' })).toBeInTheDocument()
+
+    fireEvent.pointerDown(container.querySelector('.onboarding-backdrop'))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Business onboarding' })).toBeNull()
+    })
+
+    fireEvent.click(screen.getByRole('link', { name: 'Kryopic home' }))
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/')
+      expect(screen.getByRole('heading', {
+        name: 'Create your entire week\'s post in one sitting.',
+      })).toBeInTheDocument()
+    })
   })
 
   it('opens onboarding from Log in and Sign up without leaving the landing page', async () => {
@@ -128,7 +178,7 @@ describe('AppRoot routing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign up' }))
     fireEvent.click(screen.getByRole('button', { name: 'Restaurant' }))
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    fireEvent.click(screen.getByRole('button', { name: 'I am a new business' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
     fireEvent.click(screen.getByRole('button', { name: 'Start Creating!' }))
 
     await waitFor(() => {

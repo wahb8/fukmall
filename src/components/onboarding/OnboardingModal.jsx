@@ -1,13 +1,37 @@
 import { useEffect, useRef, useState } from 'react'
+import cafeImage from '../../assets/cafe.png'
+import clothingImage from '../../assets/clothing.png'
+import ecommerceImage from '../../assets/e-commerce.png'
+import otherImage from '../../assets/other.png'
+import restaurantImage from '../../assets/resturant.png'
+import startupImage from '../../assets/startup.png'
 import './OnboardingModal.css'
 
 const BUSINESS_TYPES = [
-  'Restaurant',
-  'Cafe',
-  'Clothing',
-  'E-commerce',
-  'Startup',
-  'Other',
+  {
+    name: 'Restaurant',
+    imageSrc: restaurantImage,
+  },
+  {
+    name: 'Cafe',
+    imageSrc: cafeImage,
+  },
+  {
+    name: 'Clothing',
+    imageSrc: clothingImage,
+  },
+  {
+    name: 'E-Commerce Shop',
+    imageSrc: ecommerceImage,
+  },
+  {
+    name: 'Startup',
+    imageSrc: startupImage,
+  },
+  {
+    name: 'Other',
+    imageSrc: otherImage,
+  },
 ]
 
 const UPLOAD_SLOT_COUNT = 5
@@ -177,20 +201,26 @@ export function OnboardingModal({
 
               <div className="onboarding-business-grid">
                 {BUSINESS_TYPES.map((option) => {
-                  const isSelected = option === selectedBusinessType
+                  const isSelected = option.name === selectedBusinessType
 
                   return (
                     <button
-                      key={option}
+                      key={option.name}
                       className={isSelected
                         ? 'onboarding-business-card active'
                         : 'onboarding-business-card'}
                       type="button"
-                      aria-label={option}
+                      aria-label={option.name}
                       aria-pressed={isSelected}
-                      onClick={() => setSelectedBusinessType(option)}
+                      onClick={() => setSelectedBusinessType(option.name)}
                     >
-                      <strong>{option}</strong>
+                      <img
+                        className="onboarding-business-card-image"
+                        src={option.imageSrc}
+                        alt=""
+                        aria-hidden="true"
+                      />
+                      <strong>{option.name}</strong>
                     </button>
                   )
                 })}
@@ -271,7 +301,7 @@ export function OnboardingModal({
                     type="button"
                     onClick={() => setCurrentPage(3)}
                   >
-                    I am a new business
+                    Skip for now
                   </button>
                   <button
                     className="action-button onboarding-action-button onboarding-action-button-primary"

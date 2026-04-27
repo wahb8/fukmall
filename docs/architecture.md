@@ -2,12 +2,12 @@
 
 ## High-Level Shape
 
-Fukmall is a client-side React + Vite editor built around a single large orchestration component in
-`src/App.jsx`.
+Fukmall is a client-side React + Vite app with a lightweight landing/entry shell in front of a
+single large editor orchestration component in `src/App.jsx`.
 
 At a high level, the app is split into four layers:
 
-1. React UI composition in `src/App.jsx` and `src/components/editor/`
+1. route-level UI composition in `src/AppRoot.jsx`, `src/pages/`, `src/components/onboarding/`, and `src/components/editor/`
 2. app-specific editor helpers in `src/editor/`
 3. reusable document, raster, text, history, and geometry helpers in `src/lib/`
 4. static assets and fonts in `src/assets/` and `public/`
@@ -21,6 +21,19 @@ responsive without committing every intermediate step into React history.
 ### React Shell
 
 `src/main.jsx` mounts the app in `StrictMode`.
+
+`src/AppRoot.jsx` is the current top-level route switch. It uses the existing pathname-based
+approach rather than a routing library:
+
+- `/` renders the marketing landing page
+- `/app` renders the editor route
+
+`src/pages/EditorPage.jsx` is intentionally thin and exists so route-level composition can stay out
+of `src/App.jsx`.
+
+The landing page in `src/pages/LandingPage.jsx` now also owns a large frontend-only onboarding
+modal that opens from the `Log in` and `Sign up` buttons and navigates to `/app` only after the
+user finishes or skips the onboarding flow.
 
 `src/App.jsx` still owns most product behavior:
 
@@ -36,6 +49,15 @@ responsive without committing every intermediate step into React history.
 
 Several stable UI sections have been extracted into presentational components, but `App.jsx`
 remains the control center for editor orchestration.
+
+The onboarding flow deliberately does not live in `App.jsx`. Its state is local to
+`src/components/onboarding/OnboardingModal.jsx`, including:
+
+- current onboarding step
+- selected business type
+- uploaded onboarding reference images
+
+This keeps pre-editor marketing/onboarding behavior separate from editor runtime complexity.
 
 ### Document State
 
@@ -88,6 +110,22 @@ These are mostly presentational editor sections:
 - modal surfaces
 
 They receive state and callbacks from `App.jsx` and generally avoid owning editor logic.
+
+### `src/components/onboarding/`
+
+This folder holds the frontend-only onboarding flow shown from the landing page before entering the
+editor.
+
+Current responsibilities:
+
+- business-type selection UI
+- business-type card imagery for the current onboarding options
+- five-slot reference-image intake UI with local preview URLs
+- replacement of already-filled upload slots plus multi-file fill of remaining empty slots
+- final placeholder step before entering `/app`
+
+This onboarding state is intentionally session-local and does not touch editor document state,
+project files, history, or persistence helpers.
 
 ### `src/editor/`
 

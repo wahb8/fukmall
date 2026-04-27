@@ -2,10 +2,15 @@ import { useSyncExternalStore } from 'react'
 import './App.css'
 import { EditorPage } from './pages/EditorPage'
 import { LandingPage } from './pages/LandingPage'
+import { PricingPage } from './pages/PricingPage'
 
 function normalizePathname(pathname) {
   if (pathname === '/app/' || pathname === '/app') {
     return '/app'
+  }
+
+  if (pathname === '/pricing/' || pathname === '/pricing') {
+    return '/pricing'
   }
 
   if (pathname === '/' || pathname === '') {
@@ -48,6 +53,10 @@ export default function AppRoot() {
 
   if (pathname === '/app') {
     return <EditorPage />
+  }
+
+  if (pathname === '/pricing') {
+    return <PricingPage />
   }
 
   return <LandingPage />

@@ -60,7 +60,7 @@ This document describes what each tracked file in the repo currently does.
 ### `src/main.jsx`
 
 - imports global CSS
-- mounts `App` into `#root`
+- mounts `AppRoot` into `#root`
 - wraps the app in `StrictMode`
 
 ### `src/index.css`
@@ -69,6 +69,26 @@ This document describes what each tracked file in the repo currently does.
 - registers the full local font catalog used by the editor UI and text inspector
 - sets global background/text defaults
 - forces the custom pointer cursor through the whole app
+
+### `src/AppRoot.jsx`
+
+- top-level pathname-driven route switch
+- renders the landing page at `/` and the editor route at `/app`
+- keeps the repo on the current no-router setup while separating the landing shell from editor
+  startup
+
+### `src/pages/LandingPage.jsx`
+
+- marketing/entry page shown at `/`
+- renders the Kryopic brand, hero copy, preview shell, `Pricing`, `Log in`, and `Sign up`
+- keeps onboarding-open state local to the landing page
+- routes `Get started` directly to `/app`
+- opens the frontend-only onboarding modal from `Log in` and `Sign up`
+
+### `src/pages/EditorPage.jsx`
+
+- thin editor-route wrapper
+- renders `src/App.jsx` without adding editor logic of its own
 
 ### `src/App.jsx`
 
@@ -210,7 +230,32 @@ This document describes what each tracked file in the repo currently does.
 
 - presentational confirmation modal shown before creating a new file with dirty state
 
+## Onboarding Components
+
+### `src/components/onboarding/OnboardingModal.jsx`
+
+- frontend-only onboarding flow launched from the landing page
+- owns current-step state, selected business type, and temporary uploaded-image previews
+- currently offers `Restaurant`, `Cafe`, `Clothing`, `E-Commerce Shop`, `Startup`, and `Other`
+- supports multi-image intake into the remaining empty upload slots, capped at five total
+- supports replacing an already-filled slot by clicking that slot and choosing a new image
+- navigates into `/app` only when onboarding completes
+
+### `src/components/onboarding/OnboardingModal.css`
+
+- scoped styles for the onboarding modal shell, business-card grid, upload slots, and final video
+  placeholder step
+- keeps onboarding actions transparent by default and reveals their filled background on
+  hover/focus
+- contains the current responsive layout rules that keep footer actions pinned to the bottom of the
+  modal content area
+
 ## Test Files
+
+### `src/AppRoot.test.jsx`
+
+- route-level coverage for landing-page rendering, onboarding entry points, `/app` navigation, and
+  editor-route mounting
 
 ### `src/lib/*.test.js`
 
@@ -238,6 +283,11 @@ This document describes what each tracked file in the repo currently does.
 - `AddLayerPanel.test.jsx` covers panel rendering and basic callback wiring for text/image modes
 - `LayerPanel.test.jsx` covers the dedicated scroll container, fixed footer add button, and preserved row callback wiring after the panel layout split
 
+### `src/components/onboarding/OnboardingModal.test.jsx`
+
+- focused onboarding coverage for business-type selection, upload gating, multi-file slot fill,
+  skip flow, and completion into `/app`
+
 ### `src/App.addLayerJson.test.jsx`
 
 - App-level integration coverage for the live Add Layer JSON flow
@@ -260,8 +310,9 @@ This document describes what each tracked file in the repo currently does.
 
 ### `src/App.css`
 
-- primary styling file for the entire editor
+- primary shared styling file for the landing shell and editor
 - defines colors, layout, panels, stage, controls, selection frames, responsive behavior, and visual language
+- contains the landing-page brand, hero, nav, preview-shell, and onboarding-entry styling
 - includes the capped layer-panel scroller so the layer rows scroll internally while the footer action remains fixed
 - defines both the default light-theme CSS variables and the dark-theme overrides applied through `.app-shell[data-theme='dark']`
 - contains the scoped native custom scrollbar styling for `.asset-panel-body`, `.add-layer-panel-body`, `.inspector-panel-body`, and `.layer-list-scroller`
@@ -431,6 +482,34 @@ This document describes what each tracked file in the repo currently does.
 ### `src/assets/hero.png`
 
 - leftover demo image asset from earlier seeded-document iterations
+
+### `src/assets/logo concept-transparent.png`
+
+- landing-page brand mark used in the Kryopic header
+
+### `src/assets/cafe.png`
+
+- onboarding business-type card image for `Cafe`
+
+### `src/assets/clothing.png`
+
+- onboarding business-type card image for `Clothing`
+
+### `src/assets/e-commerce.png`
+
+- onboarding business-type card image for `E-Commerce Shop`
+
+### `src/assets/other.png`
+
+- onboarding business-type card image for `Other`
+
+### `src/assets/resturant.png`
+
+- onboarding business-type card image for `Restaurant`
+
+### `src/assets/startup.png`
+
+- onboarding business-type card image for `Startup`
 
 ### `src/assets/BadeenDisplay-Regular.ttf`
 

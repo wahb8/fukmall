@@ -210,6 +210,34 @@
   letter-spacing: -0.03em;
 }
 
+.landing-pricing-button {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  margin-right: 0.28rem;
+  padding: 0.64rem 0.98rem;
+  background: transparent;
+  color: var(--landing-muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.landing-pricing-button:hover,
+.landing-pricing-button:focus-visible {
+  transform: translateY(-1px);
+  background: rgba(36, 50, 65, 0.12);
+  color: var(--landing-muted);
+  box-shadow: 0 12px 24px rgba(24, 33, 45, 0.06);
+}
+
 .landing-nav-actions {
   display: flex;
   align-items: center;
@@ -336,10 +364,14 @@
   margin: 0;
   color: var(--landing-ink);
   max-width: 9.5ch;
-  font-size: clamp(2.35rem, 4.8vw, 4.15rem);
+  font-size: clamp(2.85rem, 5.6vw, 4.95rem);
   font-weight: 700;
   line-height: 0.96;
   letter-spacing: -0.075em;
+}
+
+.landing-title-nowrap {
+  white-space: nowrap;
 }
 
 .landing-subhead {

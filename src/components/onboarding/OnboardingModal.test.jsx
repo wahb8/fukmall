@@ -43,7 +43,7 @@ describe('OnboardingModal', () => {
 
     const firstNextButton = screen.getByRole('button', { name: 'Next' })
     expect(firstNextButton).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'E-commerce' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'E-Commerce Shop' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Startup' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Clothing' }))
@@ -103,7 +103,7 @@ describe('OnboardingModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Cafe' }))
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    fireEvent.click(screen.getByRole('button', { name: 'I am a new business' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
 
     expect(screen.getByRole('img', {
       name: 'Future onboarding video placeholder',

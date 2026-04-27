@@ -1,15 +1,7 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
 import { OnboardingModal } from '../components/onboarding/OnboardingModal'
-
-function navigateTo(pathname) {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  window.history.pushState({}, '', pathname)
-  window.dispatchEvent(new PopStateEvent('popstate'))
-}
+import { navigateTo } from '../navigation'
 
 export function LandingPage() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
@@ -24,6 +16,14 @@ export function LandingPage() {
           </a>
 
           <div className="landing-nav-actions">
+            <button
+              className="landing-pricing-button"
+              type="button"
+              onClick={() => navigateTo('/pricing')}
+            >
+              Pricing
+            </button>
+
             <button
               className="landing-nav-button landing-nav-button-ghost"
               type="button"
@@ -44,7 +44,10 @@ export function LandingPage() {
 
         <section className="landing-hero">
           <div className="landing-hero-copy">
-            <h1 className="landing-title">Create your entire week&apos;s post in one sitting.</h1>
+            <h1 className="landing-title">
+              Create your <span className="landing-title-nowrap">entire week&apos;s</span> post{' '}
+              <span className="landing-title-nowrap">in one</span> sitting.
+            </h1>
             <p className="landing-subhead">
               A focused editor for clean, fast visuals.
             </p>

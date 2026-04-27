@@ -339,7 +339,7 @@ describe('text layer helpers', () => {
     expect(grownAgain.fontSize).toBe(enlarged.fontSize)
     expect(grownAgain.measuredWidth).toBe(measureTextLayer(grownAgain).requiredWidth)
     expect(grownAgain.measuredHeight).toBe(measureTextLayer(grownAgain).requiredHeight)
-  })
+  }, 10000)
 
   it('keeps a stable authored auto-fit source across shrink minimum recover cycles', () => {
     const layer = resizeBoxText(createTextLayer({

@@ -16,6 +16,51 @@ The initial document includes:
 This seed data is created in `src/editor/documentHelpers.js` through `createInitialDocument()` and
 loaded by `src/App.jsx`.
 
+## Landing And Onboarding
+
+The app now has a lightweight marketing/entry layer before the editor.
+
+Current landing behavior:
+
+- `/` renders the landing page
+- the landing page shows the Kryopic brand, hero copy, primary CTA, and a lightweight `Pricing`
+  nav action
+- `Get started` still navigates directly to `/app`
+- `Log in` and `Sign up` now open a frontend-only onboarding modal instead of navigating
+  immediately
+
+### Onboarding Flow
+
+The onboarding flow is intentionally local-only and does not perform real authentication.
+
+Current step flow:
+
+- page 1 asks `What kind of business do you have?`
+- page 1 currently offers:
+  - `Restaurant`
+  - `Cafe`
+  - `Clothing`
+  - `E-Commerce Shop`
+  - `Startup`
+  - `Other`
+- page 2 asks for example business-post images to personalize the experience
+- page 2 provides exactly five upload slots
+- empty-slot uploads can accept multiple images and fill the remaining empty slots in order, up to
+  five total
+- clicking a filled slot and choosing a new image replaces that specific slot
+- page 2 `Next` remains disabled until all five slots are filled
+- page 2 also provides `Skip for now` to continue without uploads
+- page 3 is currently a visual placeholder for a future informative video plus `Start Creating!`
+- `Start Creating!` navigates to `/app`
+
+Current constraints:
+
+- no backend/auth logic
+- no persistence
+- no server upload
+- no connection to editor document state or history
+- onboarding image previews are temporary local object URLs only
+
 ## Layer Types
 
 ### Shape Layers

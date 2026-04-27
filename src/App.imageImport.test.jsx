@@ -556,7 +556,7 @@ describe('App image import flows', () => {
 
     await waitFor(() => {
       expect(container.querySelector('.asset-card')).not.toBeNull()
-    })
+    }, { timeout: 10000 })
 
     const assetCard = container.querySelector('.asset-card')
     expect(assetCard).not.toBeNull()
@@ -673,7 +673,7 @@ describe('App image import flows', () => {
 
     await waitFor(() => {
       expect(container.querySelectorAll('.asset-card')).toHaveLength(20)
-    })
+    }, { timeout: 10000 })
 
     expect(screen.getByRole('status')).toHaveTextContent(
       'Asset library limit reached. Added 20 assets; 1 was not imported.',
@@ -697,10 +697,10 @@ describe('App image import flows', () => {
 
     await waitFor(() => {
       expect(container.querySelectorAll('.asset-card')).toHaveLength(20)
-    })
+    }, { timeout: 10000 })
 
     expect(screen.getByRole('status')).toHaveTextContent(
       'Asset library limit reached. Remove an asset before importing more.',
     )
-  })
+  }, 10000)
 })

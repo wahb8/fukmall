@@ -132,8 +132,9 @@
 }
 
 .onboarding-business-card {
-  display: flex;
-  align-items: flex-end;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: stretch;
   min-height: 0;
   height: 100%;
   padding: 1.35rem;
@@ -150,11 +151,30 @@
     box-shadow 160ms ease;
 }
 
+.onboarding-business-card-image {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 1.1rem;
+  filter: saturate(0.88) contrast(0.96) brightness(0.96);
+  opacity: 0.82;
+  transform: scale(1);
+  transition:
+    filter 160ms ease,
+    opacity 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
 .onboarding-business-card strong {
   font-size: 1.15rem;
   font-weight: 700;
   color: color-mix(in srgb, var(--landing-muted, var(--muted)) 88%, #7b8087);
   transition: color 160ms ease;
+  align-self: end;
+  padding-top: 0.95rem;
 }
 
 .onboarding-business-card:hover,
@@ -163,6 +183,15 @@
   border-color: color-mix(in srgb, var(--accent) 38%, var(--landing-line-strong, var(--line-strong)));
   background: rgba(255, 255, 255, 0.54);
   box-shadow: 0 20px 34px rgba(24, 33, 45, 0.08);
+}
+
+.onboarding-business-card:hover .onboarding-business-card-image,
+.onboarding-business-card:focus-visible .onboarding-business-card-image,
+.onboarding-business-card.active .onboarding-business-card-image {
+  filter: saturate(1.04) contrast(1.02) brightness(1);
+  opacity: 1;
+  transform: scale(1.02);
+  box-shadow: 0 16px 32px rgba(24, 33, 45, 0.12);
 }
 
 .onboarding-business-card:hover strong,

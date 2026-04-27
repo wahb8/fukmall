@@ -1,6 +1,6 @@
 # Fukmall (will probably change the name later)
 
-Fukmall is a client-side React + Vite layered composition editor prototype. It behaves like a compact design tool for a mobile-sized document, with layered artwork editing, text editing, raster painting, erasing, bucket fill, gradients, lasso selection, snapping, asset import, project-file save/open, and flattened PNG/JPEG export.
+Fukmall is a client-side React + Vite composition editor prototype with a lightweight marketing/entry shell in front of the editor. It behaves like a compact design tool for a mobile-sized document, with layered artwork editing, text editing, raster painting, erasing, bucket fill, gradients, lasso selection, snapping, asset import, project-file save/open, and flattened PNG/JPEG export.
 
 The Add Layer JSON flow now also supports an exact case-sensitive `"Layer name"` field for both JSON-created text and image layers. When that field is present and non-empty after trimming, the created layer uses that name; otherwise the existing default naming behavior is preserved.
 
@@ -34,7 +34,11 @@ Other useful scripts:
 
 ## Project Shape
 
+- `src/AppRoot.jsx` is the current top-level route switch between the landing page and the editor route.
+- `src/pages/LandingPage.jsx` owns the marketing landing experience, including the current frontend-only onboarding entry points.
+- `src/pages/EditorPage.jsx` is the thin editor-route wrapper around `src/App.jsx`.
 - `src/App.jsx` is the main app shell and currently owns most editor behavior.
+- `src/components/onboarding/` contains the large frontend-only onboarding modal and its tests/styles.
 - `src/lib/` contains the main helper seams for document state, bitmap operations, text layout, export, and file serialization.
 - `src/editor/` contains app-specific editor helpers and constants that sit above the lower-level domain modules.
 - `src/components/editor/` contains thin presentational editor sections extracted from `App.jsx`.
