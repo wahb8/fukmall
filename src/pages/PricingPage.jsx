@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
 import { OnboardingModal } from '../components/onboarding/OnboardingModal'
+import { SiteFooter } from '../components/site/SiteFooter'
 import { navigateTo } from '../navigation'
 import './PricingPage.css'
 
@@ -52,6 +53,53 @@ const PRICING_TIERS = [
   },
 ]
 
+const COMPARISON_ROWS = [
+  {
+    label: 'Content Delivery Speed',
+    agencies: '~ 1-3 Days',
+    kryopic: '~ 2-3 minutes',
+  },
+  {
+    label: 'Monthly Price',
+    agencies: '300-500 KWD/month',
+    kryopic: '~ 29 KWD/month',
+  },
+  {
+    label: 'Revision/Edits Time',
+    agencies: '~ 1-2 Days',
+    kryopic: 'Instant',
+  },
+  {
+    label: '24/7 Availability',
+    agencies: 'Not possible',
+    kryopic: 'Possible',
+  },
+  {
+    label: 'Communication Needed',
+    agencies: 'Constant back-and-forth',
+    kryopic: 'None / minimal',
+  },
+]
+
+const FAQ_ITEMS = [
+  {
+    question: 'Can I change plans later?',
+    answer: 'Yes. Plan changes can be supported from your account settings when billing is connected.',
+  },
+  {
+    question: 'What counts as a post or story?',
+    answer: 'Each generated post or story counts toward your monthly post limit.',
+  },
+  {
+    question: 'Do I need design experience?',
+    answer: 'No. Kryopic is designed to help businesses generate polished content without needing design experience.',
+  },
+  {
+    question: 'Is payment connected yet?',
+    answer: 'Not yet. This page is frontend-only for now, and checkout can be connected later.',
+  },
+]
+
 function handleNavigate(event, pathname) {
   event.preventDefault()
   navigateTo(pathname)
@@ -71,7 +119,6 @@ export function PricingPage() {
             onClick={(event) => handleNavigate(event, '/')}
           >
             <img className="landing-brand-mark" src={logoConceptTransparent} alt="" />
-            <span className="landing-brand-name">Kryopic</span>
           </a>
 
           <div className="landing-nav-actions pricing-nav-actions">
@@ -94,9 +141,57 @@ export function PricingPage() {
         </header>
 
         <section className="pricing-page-content">
+          <section className="pricing-intro pricing-enter pricing-enter-intro">
+            <div className="pricing-intro-shell">
+              <div className="pricing-intro-copy">
+                <h1 className="pricing-intro-title">
+                  Create better posts without the agency back-and-forth.
+                </h1>
+                <p className="pricing-intro-subhead">
+                  Choose the plan that fits your content pace, then start generating posts,
+                  captions, and campaign ideas in minutes.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="pricing-comparison pricing-enter pricing-enter-comparison">
+            <div className="pricing-comparison-shell">
+              <div className="pricing-comparison-intro">
+                <span className="pricing-comparison-kicker">Agency comparison</span>
+                <p className="pricing-comparison-summary">
+                  See how the usual agency workflow compares to Kryopic when speed, revisions, and
+                  cost all matter.
+                </p>
+              </div>
+
+              <div className="pricing-comparison-scroll">
+                <table className="pricing-comparison-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Feature</th>
+                      <th scope="col">Social Media Agencies</th>
+                      <th scope="col">Kryopic</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {COMPARISON_ROWS.map((row) => (
+                      <tr key={row.label}>
+                        <th scope="row">{row.label}</th>
+                        <td>{row.agencies}</td>
+                        <td className="pricing-comparison-kryopic-cell">{row.kryopic}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
           <div className="pricing-hero pricing-enter pricing-enter-hero">
             <div className="pricing-copy">
-              <h1 className="pricing-title">Three tiers, one calm workflow.</h1>
+              <h2 className="pricing-title">Three tiers, one calm workflow.</h2>
               <p className="pricing-subhead">
                 Start simple, move into a steadier weekly system, and choose the plan that best
                 matches the pace of your content workflow.
@@ -112,6 +207,9 @@ export function PricingPage() {
                   ? `pricing-card pricing-card-featured pricing-enter pricing-enter-card-${index + 1}`
                   : `pricing-card pricing-enter pricing-enter-card-${index + 1}`}
               >
+                {tier.featured ? (
+                  <span className="pricing-card-spotlight">Most popular</span>
+                ) : null}
                 <span className="pricing-card-badge">{tier.badge}</span>
 
                 <header className="pricing-card-header">
@@ -152,7 +250,48 @@ export function PricingPage() {
               </article>
             ))}
           </div>
+
+          <section className="pricing-faq pricing-enter pricing-enter-faq" aria-labelledby="pricing-faq-title">
+            <div className="pricing-section-heading">
+              <span className="pricing-section-kicker">FAQ</span>
+              <h2 className="pricing-section-title" id="pricing-faq-title">
+                A few quick answers before you choose a plan.
+              </h2>
+            </div>
+
+            <div className="pricing-faq-grid">
+              {FAQ_ITEMS.map((item) => (
+                <article key={item.question} className="pricing-faq-card">
+                  <h3 className="pricing-faq-question">{item.question}</h3>
+                  <p className="pricing-faq-answer">{item.answer}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="pricing-cta pricing-enter pricing-enter-cta">
+            <div className="pricing-cta-shell">
+              <div className="pricing-cta-copy">
+                <span className="pricing-cta-kicker">Start creating</span>
+                <h2 className="pricing-cta-title">Ready to create your next post?</h2>
+                <p className="pricing-cta-subhead">
+                  Pick the plan that fits your pace, then start generating polished content ideas
+                  in minutes.
+                </p>
+              </div>
+
+              <button
+                className="landing-primary-cta pricing-final-cta"
+                type="button"
+                onClick={() => setIsOnboardingOpen(true)}
+              >
+                Get Started
+              </button>
+            </div>
+          </section>
         </section>
+
+        <SiteFooter />
       </div>
 
       {isOnboardingOpen ? (
