@@ -27,13 +27,16 @@ approach rather than a routing library:
 
 - `/` renders the marketing landing page
 - `/app` renders the editor route
+- `/pricing` renders the pricing page
 
 `src/pages/EditorPage.jsx` is intentionally thin and exists so route-level composition can stay out
 of `src/App.jsx`.
 
-The landing page in `src/pages/LandingPage.jsx` now also owns a large frontend-only onboarding
-modal that opens from the `Log in` and `Sign up` buttons and navigates to `/app` only after the
-user finishes or skips the onboarding flow.
+The landing page in `src/pages/LandingPage.jsx` now owns a frontend-only auth modal that opens
+from the `Log in` and `Sign up` buttons, while the primary CTA still navigates directly to `/app`.
+
+`src/pages/PricingPage.jsx` follows the same pattern for its top-nav auth buttons and keeps the
+pricing comparison table, featured tier badge, FAQ section, and CTA stack.
 
 `src/App.jsx` still owns most product behavior:
 
@@ -50,6 +53,13 @@ user finishes or skips the onboarding flow.
 Several stable UI sections have been extracted into presentational components, but `App.jsx`
 remains the control center for editor orchestration.
 
+The editor shell now also includes a first-entry empty-canvas overlay in `/app`:
+
+- the initial empty state shows a centered plus sign inside the artboard
+- clicking the plus or the canvas in that state opens the existing New File flow
+- the overlay is UI-only and disappears after a file is created or opened
+- it does not alter document history or dimensions
+
 The onboarding flow deliberately does not live in `App.jsx`. Its state is local to
 `src/components/onboarding/OnboardingModal.jsx`, including:
 
@@ -58,6 +68,16 @@ The onboarding flow deliberately does not live in `App.jsx`. Its state is local 
 - uploaded onboarding reference images
 
 This keeps pre-editor marketing/onboarding behavior separate from editor runtime complexity.
+
+### `src/components/site/`
+
+This folder now holds shared non-editor site chrome such as the auth modal used on landing and
+pricing.
+
+Current responsibilities:
+
+- `AuthModal` for frontend-only login, sign-up, and reset-password placeholder flows
+- shared modal composition for the non-editor pages
 
 ### Document State
 
@@ -135,6 +155,8 @@ This folder holds app-level helpers that are more specific than the generic `src
 - seeded document creation and import-placement helpers
 - add-layer JSON parsing and form normalization
 - icon/theme asset mapping
+- initial document state helpers used to distinguish the first-entry canvas placeholder from a
+  restored or opened document
 
 This is the preferred seam for logic that belongs to the editor product but should not live inline
 in `App.jsx`.
@@ -213,6 +235,12 @@ The highest-risk areas remain lightly covered and rely on manual regression test
 
 There is now additional targeted App-level regression coverage for the font-sensitive box-text
 auto-fit path, including shrink/grow behavior and selection-bound sync across multiple fonts.
+
+Recent regression coverage also includes:
+
+- landing and pricing auth modal open/close behavior
+- pricing-page navigation and the onboarding-triggering `Get Started` buttons
+- the first-entry editor state and new-file modal behavior
 
 When adding features, prefer pushing logic into `src/lib/`, `src/editor/`, or extracted components
 first, then keep `App.jsx` as the integration layer.

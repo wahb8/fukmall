@@ -18,6 +18,7 @@ Stored in normal React state and not part of undo history:
 
 - open/closed inspector
 - new-file and unsaved-changes modal state
+- auth modal state on the landing and pricing pages
 - active tool
 - current UI theme
 - pen and eraser size
@@ -30,6 +31,7 @@ Stored in normal React state and not part of undo history:
 - file-menu open state
 - open/export busy flags
 - saved-document signature used for dirty-state tracking
+- first-entry empty-canvas UI state in `/app`
 
 Opening a file or creating a new file should clear this transient state and rebuild it from the new document context instead of trying to preserve the old runtime session.
 
@@ -44,6 +46,7 @@ Refs are used for mutable runtime objects that should not trigger rerenders:
 - copied layer buffer
 - last editable pen layer
 - hidden file/input refs and drag-preview image refs
+- auth modal reset/login view is local React state, not a document or history concern
 
 The active interaction object can also carry temporary movement metadata such as:
 
@@ -222,6 +225,18 @@ There are several related selection concepts:
 - extracted canvas content that can be moved independently before being committed/deleted
 
 These are separate because lasso/floating selection and rectangular marquee state are pixel-region state, not just layer selection state.
+
+## Empty-Canvas Entry State
+
+The first time a user enters `/app` without a restored document, the editor can show a UI-only
+empty-canvas prompt.
+
+This state is intentionally not part of the document snapshot:
+
+- it does not change canvas dimensions
+- it does not create a history entry
+- it does not persist after a file is opened or created
+- clicking the prompt or the canvas in that state reuses the existing New File flow
 
 ## Important Consequences
 

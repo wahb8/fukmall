@@ -26,8 +26,34 @@ Current landing behavior:
 - the landing page shows the Kryopic brand, hero copy, primary CTA, and a lightweight `Pricing`
   nav action
 - `Get started` still navigates directly to `/app`
-- `Log in` and `Sign up` now open a frontend-only onboarding modal instead of navigating
-  immediately
+- `Log in` and `Sign up` now open a frontend-only auth modal instead of navigating immediately
+- the auth modal includes a login state, sign-up state, and a lightweight reset-password substate
+
+### Pricing Page
+
+The pricing page is now treated like a complete marketing page rather than a bare table.
+
+Current pricing behavior:
+
+- a compact hero intro sits above the comparison table
+- the comparison table appears above the pricing headline
+- the `Business` tier is marked as `Most popular`
+- a short FAQ section sits below the pricing cards
+- a final CTA strip appears at the bottom of the page
+- the top-nav `log-in` and `sign-up` buttons open the shared auth modal
+- the pricing-card `Get Started` buttons still use the existing onboarding flow
+
+### Auth Modal
+
+The shared auth modal is intentionally minimal and frontend-only.
+
+Current auth behavior:
+
+- `Log in` shows email and password fields
+- `Sign up` shows name, email, and password fields
+- `Forgot password?` swaps the login panel into a reset-password state with a single email field
+- the reset-password action is left-aligned with the input column
+- the modal only manages local UI state and does not contact a backend
 
 ### Onboarding Flow
 
@@ -60,6 +86,17 @@ Current constraints:
 - no server upload
 - no connection to editor document state or history
 - onboarding image previews are temporary local object URLs only
+
+### Site Chrome
+
+The non-editor pages now use a shared warm site chrome with a softer, more integrated presentation.
+
+Current site-chrome behavior:
+
+- the landing and pricing pages share the same top-left Kryopic branding treatment
+- the pricing page keeps the `Pricing` nav button visible when already on `/pricing`
+- the non-editor pages use a subtle warm grid background for atmosphere
+- the footer experiment was removed, so the pages end cleanly without a bottom widget
 
 ## Layer Types
 
@@ -144,6 +181,32 @@ Current constraints:
 - erasing is stored as a mask bitmap
 - painting is stored in a separate overlay bitmap so text content can still be edited later
 - export uses the same run-based text rendering path, so mixed styles now match between the editor canvas and flattened export
+
+### New File Modal
+
+The `New File` modal now includes selectable preset panels for common post sizes.
+
+Current behavior:
+
+- `Square`, `Portrait`, and `Stories` presets are shown as selectable cards
+- each card uses the matching PNG artwork from `src/assets`
+- selecting a card updates the width and height inputs
+- manual width and height edits still work and can clear or update preset selection safely
+- the preset cards are taller and visually centered to match the warm modal system
+- the create flow still uses the existing new-file validation and document creation path
+
+### First-Entry Canvas State
+
+When the user enters `/app` with no restored document, the editor shows a first-entry empty canvas
+state.
+
+Current behavior:
+
+- a centered plus appears inside the artboard
+- the placeholder state uses a subtle warm gradient behind the plus
+- clicking the plus or the canvas opens the existing New File flow
+- the state is UI-only and disappears after a file is created or opened
+- normal editing behavior is unchanged once a document exists
 
 ### Text Shadows
 
