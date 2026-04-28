@@ -60,12 +60,14 @@ Current implemented pieces:
 - signed upload preparation/finalization functions for onboarding and future attachment flows
 - authenticated onboarding persistence for default `business_profiles` plus related `uploaded_assets`
 - `/app` onboarding gating that requires a default business profile before normal editor use
+- the minimal `/app` shell now loads persisted chats, prompt attachments, and saved generated-post
+  history through the existing schema and upload pipeline
 
 Still not implemented:
 
 - checkout creation
 - real OpenAI generation execution
-- broader profile editing beyond the first onboarding flow
+- full chat-to-generation persistence for assistant responses and generated results
 
 ## Current Test Coverage
 
@@ -81,6 +83,8 @@ Covered today:
 - `prepare-upload`, `finalize-upload`, and `upsert-business-profile` handler orchestration with
   mocked Supabase/Deno boundaries
 - frontend onboarding coverage for the modal flow, `/app` onboarding gate, and pricing CTA routing
+- frontend minimal-chat coverage for chat summaries, chat history rendering, prompt composer
+  behavior, and the browser chat-session data layer
 
 Not covered by unit tests yet:
 

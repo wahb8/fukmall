@@ -7,6 +7,7 @@ const buildWebhookEventFingerprintMock = vi.fn()
 const isSubscriptionEventMock = vi.fn()
 const normalizeSubscriptionStatusMock = vi.fn()
 const getPlanByVariantIdMock = vi.fn()
+const getPlanByIdMock = vi.fn()
 const createAdminClientMock = vi.fn()
 
 vi.mock('../_shared/lemon.ts', () => ({
@@ -20,6 +21,7 @@ vi.mock('../_shared/lemon.ts', () => ({
 
 vi.mock('../_shared/plans.ts', () => ({
   getPlanByVariantId: getPlanByVariantIdMock,
+  getPlanById: getPlanByIdMock,
 }))
 
 vi.mock('../_shared/supabase.ts', () => ({
@@ -76,6 +78,7 @@ describe('lemon-webhook edge function', () => {
     isSubscriptionEventMock.mockReset()
     normalizeSubscriptionStatusMock.mockReset()
     getPlanByVariantIdMock.mockReset()
+    getPlanByIdMock.mockReset()
     createAdminClientMock.mockReset()
   })
 
@@ -276,6 +279,221 @@ describe('lemon-webhook edge function', () => {
         user_id: '1fb64d91-7468-4c1e-827a-7a4bb93343fb',
         plan_code: 'business',
       },
+    })
+  })
+
+  it('falls back to the existing local plan when a follow-up webhook omits the variant id', async () => {
+    const subscriptionUpsertPayloads = []
+    const billingEventsQuery = createMaybeSingleQuery({
+      data: null,
+      error: null,
+    })
+    const subscriptionsQuery = createMaybeSingleQuery({
+      data: {
+        id: 'sub-row-1',
+        user_id: '1fb64d91-7468-4c1e-827a-7a4bb93343fb',
+        plan_id: 'plan-1',
+        current_period_start: '2026-04-01T00:00:00.000Z',
+      },
+      error: null,
+    })
+    const billingEventsTable = {
+      select: vi.fn(() => billingEventsQuery),
+      insert: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({
+            data: {
+              id: 'event-1',
+            },
+            error: null,
+          })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        eq: vi.fn(async () => ({
+          error: null,
+        })),
+      })),
+    }
+    const subscriptionsTable = {
+      select: vi.fn(() => subscriptionsQuery),
+      upsert: vi.fn(async (payload) => {
+        subscriptionUpsertPayloads.push(payload)
+
+        return {
+          error: null,
+        }
+      }),
+    }
+
+    createAdminClientMock.mockReturnValue({
+      from: vi.fn((table) => {
+        if (table === 'billing_webhook_events') {
+          return billingEventsTable
+        }
+
+        if (table === 'subscriptions') {
+          return subscriptionsTable
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+    })
+    verifyLemonWebhookSignatureMock.mockResolvedValue(true)
+    parseLemonPayloadMock.mockReturnValue({ payload: true })
+    extractLemonWebhookContextMock.mockReturnValue({
+      eventName: 'subscription_cancelled',
+      providerObjectId: 'provider-object-1',
+      providerSubscriptionId: 'provider-subscription-1',
+      customerId: 'customer-1',
+      variantId: null,
+      status: null,
+      currentPeriodStart: null,
+      renewsAt: null,
+      endsAt: '2026-05-01T00:00:00.000Z',
+      updatedAt: '2026-04-28T00:00:00.000Z',
+      userId: null,
+    })
+    buildWebhookEventFingerprintMock.mockResolvedValue('hash-1')
+    isSubscriptionEventMock.mockReturnValue(true)
+    normalizeSubscriptionStatusMock.mockReturnValue('canceled')
+    getPlanByVariantIdMock.mockRejectedValue(new Error('variant lookup should not run'))
+    getPlanByIdMock.mockResolvedValue({
+      id: 'plan-1',
+      code: 'business',
+    })
+
+    const handler = await loadHandler()
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      headers: {
+        'x-signature': 'signature',
+      },
+      body: '{}',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(getPlanByIdMock).toHaveBeenCalledWith(expect.anything(), 'plan-1')
+    expect(subscriptionUpsertPayloads[0]).toMatchObject({
+      user_id: '1fb64d91-7468-4c1e-827a-7a4bb93343fb',
+      plan_id: 'plan-1',
+      status: 'canceled',
+      current_period_start: '2026-04-01T00:00:00.000Z',
+      current_period_end: '2026-05-01T00:00:00.000Z',
+      cancel_at_period_end: true,
+    })
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      data: {
+        processed: true,
+        plan_code: 'business',
+      },
+    })
+  })
+
+  it('preserves the existing paid-through window when a cancellation webhook omits date fields', async () => {
+    const subscriptionUpsertPayloads = []
+    const billingEventsQuery = createMaybeSingleQuery({
+      data: null,
+      error: null,
+    })
+    const subscriptionsQuery = createMaybeSingleQuery({
+      data: {
+        id: 'sub-row-1',
+        user_id: '1fb64d91-7468-4c1e-827a-7a4bb93343fb',
+        plan_id: 'plan-1',
+        current_period_start: '2026-04-01T00:00:00.000Z',
+        current_period_end: '2026-05-01T00:00:00.000Z',
+        renewal_date: '2026-05-01T00:00:00.000Z',
+        canceled_at: '2026-04-20T00:00:00.000Z',
+        expired_at: null,
+      },
+      error: null,
+    })
+    const billingEventsTable = {
+      select: vi.fn(() => billingEventsQuery),
+      insert: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn(async () => ({
+            data: {
+              id: 'event-1',
+            },
+            error: null,
+          })),
+        })),
+      })),
+      update: vi.fn(() => ({
+        eq: vi.fn(async () => ({
+          error: null,
+        })),
+      })),
+    }
+    const subscriptionsTable = {
+      select: vi.fn(() => subscriptionsQuery),
+      upsert: vi.fn(async (payload) => {
+        subscriptionUpsertPayloads.push(payload)
+
+        return {
+          error: null,
+        }
+      }),
+    }
+
+    createAdminClientMock.mockReturnValue({
+      from: vi.fn((table) => {
+        if (table === 'billing_webhook_events') {
+          return billingEventsTable
+        }
+
+        if (table === 'subscriptions') {
+          return subscriptionsTable
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+    })
+    verifyLemonWebhookSignatureMock.mockResolvedValue(true)
+    parseLemonPayloadMock.mockReturnValue({ payload: true })
+    extractLemonWebhookContextMock.mockReturnValue({
+      eventName: 'subscription_cancelled',
+      providerObjectId: 'provider-object-1',
+      providerSubscriptionId: 'provider-subscription-1',
+      customerId: 'customer-1',
+      variantId: null,
+      status: null,
+      currentPeriodStart: null,
+      renewsAt: null,
+      endsAt: null,
+      updatedAt: null,
+      userId: null,
+    })
+    buildWebhookEventFingerprintMock.mockResolvedValue('hash-1')
+    isSubscriptionEventMock.mockReturnValue(true)
+    normalizeSubscriptionStatusMock.mockReturnValue('canceled')
+    getPlanByIdMock.mockResolvedValue({
+      id: 'plan-1',
+      code: 'business',
+    })
+
+    const handler = await loadHandler()
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      headers: {
+        'x-signature': 'signature',
+      },
+      body: '{}',
+    }))
+
+    expect(response.status).toBe(200)
+    expect(subscriptionUpsertPayloads[0]).toMatchObject({
+      user_id: '1fb64d91-7468-4c1e-827a-7a4bb93343fb',
+      plan_id: 'plan-1',
+      status: 'canceled',
+      current_period_start: '2026-04-01T00:00:00.000Z',
+      current_period_end: '2026-05-01T00:00:00.000Z',
+      renewal_date: '2026-05-01T00:00:00.000Z',
+      canceled_at: '2026-04-20T00:00:00.000Z',
+      cancel_at_period_end: true,
     })
   })
 })

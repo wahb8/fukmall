@@ -39,6 +39,10 @@ Current implementation detail:
 - the webhook audit table is `billing_webhook_events`
 - the current dedupe key is `event_hash`, a SHA-256 hash of the raw webhook body
 - non-subscription events can be marked `ignored` instead of forcing subscription updates
+- if a follow-up subscription webhook omits the Lemon variant ID, the handler reuses the already
+  synced local `plan_id` instead of failing the event unnecessarily
+- if a follow-up subscription webhook omits renewal or end-date fields, the handler preserves the
+  already synced local paid-through window instead of clearing it
 
 ## Local Subscription Model
 
@@ -50,6 +54,20 @@ The local database should keep:
 - relevant renewal or end dates
 
 Feature access should key off the local synced subscription row, not off direct frontend claims.
+
+Current local status normalization:
+
+- `on_trial` -> `trialing`
+- `active` -> `active`
+- `cancelled` / `canceled` -> `canceled`
+- `paused` / `unpaid` / payment-failure states -> `past_due`
+- `expired` -> `expired`
+
+Cancellation access rule:
+
+- a `canceled` subscription keeps access until `current_period_end` or `renewal_date`
+- after that window ends, the app falls back to the free plan or the next valid active
+  subscription row
 
 ## Plan Mapping
 

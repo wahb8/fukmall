@@ -9,6 +9,7 @@ import { EditorToolbar } from './components/editor/EditorToolbar'
 import { ExternalImageDropOverlay } from './components/editor/ExternalImageDropOverlay'
 import { FileMenu } from './components/editor/FileMenu'
 import { FontSizeStepper } from './components/editor/FontSizeStepper'
+import { ChatTimelinePanel } from './components/editor/ChatTimelinePanel'
 import { LayerFlipControls } from './components/editor/LayerFlipControls'
 import { LayerPanel } from './components/editor/LayerPanel'
 import { PostSidebar } from './components/editor/PostSidebar'
@@ -198,6 +199,16 @@ import {
   saveCurrentDocumentToStorage,
   serializeProjectFile,
 } from './lib/documentFiles'
+import {
+  buildChatTitleFromPrompt,
+  createChat,
+  deleteChat,
+  listChats,
+  loadChatSession,
+  renameChat,
+  submitUserPrompt,
+  uploadPromptAttachment,
+} from './lib/chatSessions'
 
 function isSupportedAssetFile(file) {
   return Boolean(file) && /^image\/(png|jpeg|jpg|svg\+xml|webp)$/i.test(file.type)
@@ -209,41 +220,6 @@ const THEME_STORAGE_KEY = 'fukmall.theme'
 const TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY = 'fukmall.trim-transparent-imports'
 const INSPECTOR_ADJUSTMENT_IDLE_MS = 450
 const DEFAULT_EDITOR_CHROME_ENABLED = false
-const PLACEHOLDER_POST_SIDEBAR_POSTS = [
-  {
-    id: 'morning-drop',
-    title: 'Morning drop',
-    subtitle: 'Carousel concept',
-    detail: 'Draft',
-    thumbnailLabel: 'MD',
-    thumbnailBackground: 'linear-gradient(135deg, rgba(217, 119, 6, 0.26), rgba(15, 118, 110, 0.18))',
-  },
-  {
-    id: 'linen-story',
-    title: 'Linen story',
-    subtitle: 'Caption polish',
-    detail: '4h',
-    thumbnailLabel: 'LS',
-    thumbnailBackground: 'linear-gradient(135deg, rgba(15, 118, 110, 0.2), rgba(255, 255, 255, 0.72))',
-  },
-  {
-    id: 'soft-launch',
-    title: 'Soft launch',
-    subtitle: 'Product highlight',
-    detail: 'Tue',
-    thumbnailLabel: 'SL',
-    thumbnailBackground: 'linear-gradient(135deg, rgba(244, 114, 182, 0.18), rgba(217, 119, 6, 0.18))',
-  },
-  {
-    id: 'weekend-edit',
-    title: 'Weekend edit',
-    subtitle: 'Visual notes',
-    detail: 'Apr 18',
-    thumbnailLabel: 'WE',
-    thumbnailBackground: 'linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(15, 118, 110, 0.16))',
-  },
-]
-
 function createStartupState() {
   const savedDocument = loadCurrentDocumentFromStorage()
 
@@ -1070,7 +1046,10 @@ function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
   return documentState.layers.at(-1)?.id ?? null
 }
 
-function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
+function App({
+  editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED,
+  defaultBusinessProfile = null,
+} = {}) {
   const startupState = useMemo(() => createStartupState(), [])
   const appShellRef = useRef(null)
   const canvasRef = useRef(null)
@@ -1141,9 +1120,18 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
   const [isFirstEntryCanvasVisible, setIsFirstEntryCanvasVisible] = useState(
     () => startupState.isFirstEntryCanvasVisible,
   )
-  const [activeSidebarPostId, setActiveSidebarPostId] = useState(
-    () => PLACEHOLDER_POST_SIDEBAR_POSTS[0]?.id ?? null,
-  )
+  const [chatSummaries, setChatSummaries] = useState([])
+  const [activeChatId, setActiveChatId] = useState(null)
+  const [activeChatTimeline, setActiveChatTimeline] = useState([])
+  const [activeChatSession, setActiveChatSession] = useState(null)
+  const [isChatListLoading, setIsChatListLoading] = useState(false)
+  const [isActiveChatLoading, setIsActiveChatLoading] = useState(false)
+  const [chatStatusMessage, setChatStatusMessage] = useState('')
+  const [chatStatusTone, setChatStatusTone] = useState('info')
+  const [promptComposerValue, setPromptComposerValue] = useState('')
+  const [promptComposerAttachments, setPromptComposerAttachments] = useState([])
+  const [isPromptSubmitting, setIsPromptSubmitting] = useState(false)
+  const [isPromptAttachmentUploading, setIsPromptAttachmentUploading] = useState(false)
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
   const [textEditorSelection, setTextEditorSelection] = useState({ start: 0, end: 0 })
@@ -1219,6 +1207,12 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
   const documentWidth = documentState.width ?? DEFAULT_DOCUMENT_WIDTH
   const documentHeight = documentState.height ?? DEFAULT_DOCUMENT_HEIGHT
   const documentName = normalizeNewFileNameInput(documentState.name, DEFAULT_DOCUMENT_NAME)
+  const defaultBusinessProfileId = defaultBusinessProfile?.id ?? null
+  const isMinimalEditorMode = !editorChromeEnabled
+  const activeChatSummary = useMemo(
+    () => chatSummaries.find((chat) => chat.id === activeChatId) ?? null,
+    [activeChatId, chatSummaries],
+  )
   const editorIcons = useMemo(() => getEditorIcons(theme), [theme])
   const currentDocumentSignature = useMemo(() => serializeProjectFile(documentState), [documentState])
   const hasUnsavedChanges = currentDocumentSignature !== savedDocumentSignature
@@ -1248,6 +1242,144 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
   const hasMultiSelection = selectedLayerIds.length > 1
   const hasActiveInspectorAdjustment = hasActiveSession()
   const currentTool = activeTool
+
+  const clearPromptComposer = useCallback(() => {
+    setPromptComposerValue('')
+    setPromptComposerAttachments([])
+  }, [])
+
+  const showChatStatusMessage = useCallback((message, tone = 'info') => {
+    setChatStatusMessage(message)
+    setChatStatusTone(tone)
+  }, [])
+
+  const refreshChatSummaries = useCallback(async (preferredChatId = null) => {
+    if (!isMinimalEditorMode) {
+      return []
+    }
+
+    setIsChatListLoading(true)
+
+    try {
+      const nextChats = await listChats()
+
+      setChatSummaries(nextChats)
+      setActiveChatId((currentChatId) => {
+        if (preferredChatId && nextChats.some((chat) => chat.id === preferredChatId)) {
+          return preferredChatId
+        }
+
+        if (currentChatId && nextChats.some((chat) => chat.id === currentChatId)) {
+          return currentChatId
+        }
+
+        return nextChats[0]?.id ?? null
+      })
+      return nextChats
+    } catch (error) {
+      console.error('Failed to load chats', error)
+      showChatStatusMessage(
+        error instanceof Error ? error.message : 'Unable to load chats.',
+        'error',
+      )
+      return []
+    } finally {
+      setIsChatListLoading(false)
+    }
+  }, [isMinimalEditorMode, showChatStatusMessage])
+
+  const ensureActiveChat = useCallback(async (preferredTitle = documentName) => {
+    if (activeChatId) {
+      return activeChatId
+    }
+
+    const createdChat = await createChat({
+      title: preferredTitle,
+      businessProfileId: defaultBusinessProfileId,
+    })
+
+    await refreshChatSummaries(createdChat.id)
+    return createdChat.id
+  }, [activeChatId, defaultBusinessProfileId, documentName, refreshChatSummaries])
+
+  useEffect(() => {
+    if (!isMinimalEditorMode) {
+      return undefined
+    }
+
+    let isMounted = true
+
+    async function loadChats() {
+      try {
+        await refreshChatSummaries()
+      } catch (error) {
+        if (!isMounted) {
+          return
+        }
+
+        console.error('Failed to initialize chats', error)
+      }
+    }
+
+    void loadChats()
+
+    return () => {
+      isMounted = false
+    }
+  }, [isMinimalEditorMode, refreshChatSummaries])
+
+  useEffect(() => {
+    if (!isMinimalEditorMode) {
+      return undefined
+    }
+
+    if (!activeChatId) {
+      setActiveChatSession(null)
+      setActiveChatTimeline([])
+      clearPromptComposer()
+      return undefined
+    }
+
+    let isMounted = true
+
+    async function loadActiveChatSession() {
+      setIsActiveChatLoading(true)
+
+      try {
+        const session = await loadChatSession(activeChatId)
+
+        if (!isMounted) {
+          return
+        }
+
+        setActiveChatSession(session?.chat ?? null)
+        setActiveChatTimeline(session?.timelineEntries ?? [])
+        setChatStatusMessage('')
+      } catch (error) {
+        if (!isMounted) {
+          return
+        }
+
+        console.error('Failed to load the active chat session', error)
+        setActiveChatSession(null)
+        setActiveChatTimeline([])
+        showChatStatusMessage(
+          error instanceof Error ? error.message : 'Unable to load the selected chat.',
+          'error',
+        )
+      } finally {
+        if (isMounted) {
+          setIsActiveChatLoading(false)
+        }
+      }
+    }
+
+    void loadActiveChatSession()
+
+    return () => {
+      isMounted = false
+    }
+  }, [activeChatId, clearPromptComposer, isMinimalEditorMode, showChatStatusMessage])
   const activeBrushTool = currentTool === 'eraser' ? 'eraser' : 'pen'
   const hasActiveLassoSelection = Boolean(lassoSelection?.isClosed)
   const hasActiveRectSelection = Boolean(rectSelection?.rect && !rectSelection?.isDragging)
@@ -4092,6 +4224,155 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
     setNewFileHeightInput(String(preset.height))
   }, [])
 
+  const handleSelectSidebarChat = useCallback((chatId) => {
+    setActiveChatId(chatId)
+    setChatStatusMessage('')
+    clearPromptComposer()
+  }, [clearPromptComposer])
+
+  const handleRenameSidebarChat = useCallback(async (chatId, nextTitle) => {
+    try {
+      await renameChat(chatId, nextTitle)
+      await refreshChatSummaries(chatId)
+
+      if (activeChatSession?.id === chatId) {
+        setActiveChatSession((currentSession) => (
+          currentSession ? { ...currentSession, title: nextTitle } : currentSession
+        ))
+      }
+    } catch (error) {
+      showChatStatusMessage(
+        error instanceof Error ? error.message : 'Unable to rename the chat.',
+        'error',
+      )
+    }
+  }, [activeChatSession?.id, refreshChatSummaries, showChatStatusMessage])
+
+  const handleDeleteSidebarChat = useCallback(async (chatId) => {
+    try {
+      const isDeletingActiveChat = chatId === activeChatId
+
+      await deleteChat(chatId)
+      const remainingChats = await refreshChatSummaries(isDeletingActiveChat ? null : activeChatId)
+
+      if (isDeletingActiveChat) {
+        setActiveChatSession(null)
+        setActiveChatTimeline([])
+        setActiveChatId(remainingChats[0]?.id ?? null)
+        clearPromptComposer()
+      }
+    } catch (error) {
+      showChatStatusMessage(
+        error instanceof Error ? error.message : 'Unable to delete the chat.',
+        'error',
+      )
+    }
+  }, [activeChatId, clearPromptComposer, refreshChatSummaries, showChatStatusMessage])
+
+  const handlePromptAttachmentsSelected = useCallback(async (files) => {
+    if (
+      !isMinimalEditorMode ||
+      isPromptSubmitting ||
+      !Array.isArray(files) ||
+      files.length === 0
+    ) {
+      return
+    }
+
+    setIsPromptAttachmentUploading(true)
+
+    try {
+      const chatId = await ensureActiveChat(documentName)
+      const uploadedAttachments = await Promise.all(
+        files.map((file) => uploadPromptAttachment(chatId, file)),
+      )
+
+      setPromptComposerAttachments((currentAttachments) => [
+        ...currentAttachments,
+        ...uploadedAttachments,
+      ])
+      setActiveChatId(chatId)
+      setChatStatusMessage('')
+    } catch (error) {
+      showChatStatusMessage(
+        error instanceof Error ? error.message : 'Unable to upload the selected images.',
+        'error',
+      )
+    } finally {
+      setIsPromptAttachmentUploading(false)
+    }
+  }, [documentName, ensureActiveChat, isMinimalEditorMode, isPromptSubmitting, showChatStatusMessage])
+
+  const handleRemovePromptAttachment = useCallback((assetId) => {
+    setPromptComposerAttachments((currentAttachments) => (
+      currentAttachments.filter((attachment) => attachment.id !== assetId)
+    ))
+  }, [])
+
+  const handleSubmitPromptComposer = useCallback(async () => {
+    if (!isMinimalEditorMode || isPromptSubmitting || isPromptAttachmentUploading) {
+      return
+    }
+
+    const normalizedPrompt = promptComposerValue.trim()
+
+    if (!normalizedPrompt) {
+      showChatStatusMessage('Enter a prompt before sending it.', 'error')
+      return
+    }
+
+    setIsPromptSubmitting(true)
+
+    try {
+      const chatId = await ensureActiveChat(documentName)
+
+      await submitUserPrompt({
+        chatId,
+        prompt: normalizedPrompt,
+        attachmentAssetIds: promptComposerAttachments.map((attachment) => attachment.id),
+      })
+
+      const currentChatTitle = activeChatSession?.title ?? activeChatSummary?.title ?? ''
+      const shouldAutoTitle = !currentChatTitle ||
+        currentChatTitle === 'Untitled chat' ||
+        currentChatTitle === DEFAULT_DOCUMENT_NAME
+
+      if (shouldAutoTitle) {
+        const suggestedTitle = buildChatTitleFromPrompt(normalizedPrompt)
+        await renameChat(chatId, suggestedTitle)
+      }
+
+      await refreshChatSummaries(chatId)
+      const session = await loadChatSession(chatId)
+
+      setActiveChatId(chatId)
+      setActiveChatSession(session?.chat ?? null)
+      setActiveChatTimeline(session?.timelineEntries ?? [])
+      clearPromptComposer()
+      setChatStatusMessage('')
+    } catch (error) {
+      showChatStatusMessage(
+        error instanceof Error ? error.message : 'Unable to save the prompt.',
+        'error',
+      )
+    } finally {
+      setIsPromptSubmitting(false)
+    }
+  }, [
+    activeChatSession?.title,
+    activeChatSummary?.title,
+    clearPromptComposer,
+    documentName,
+    ensureActiveChat,
+    isMinimalEditorMode,
+    isPromptAttachmentUploading,
+    isPromptSubmitting,
+    promptComposerAttachments,
+    promptComposerValue,
+    refreshChatSummaries,
+    showChatStatusMessage,
+  ])
+
   function handleNewFile() {
     setIsFileMenuOpen(false)
 
@@ -4116,7 +4397,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
     openNewFileModal()
   }, [])
 
-  const handleCreateNewFile = useCallback(() => {
+  const handleCreateNewFile = useCallback(async () => {
     const name = normalizeNewFileNameInput(newFileNameInput, DEFAULT_DOCUMENT_NAME)
     const width = normalizeNewFileDimensionInput(newFileWidthInput, DEFAULT_DOCUMENT_WIDTH)
     const height = normalizeNewFileDimensionInput(newFileHeightInput, DEFAULT_DOCUMENT_HEIGHT)
@@ -4125,7 +4406,39 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
     setNewFileWidthInput(String(width))
     setNewFileHeightInput(String(height))
     loadDocumentState(createInitialDocument(width, height, name))
-  }, [loadDocumentState, newFileHeightInput, newFileNameInput, newFileWidthInput])
+
+    if (isMinimalEditorMode) {
+      try {
+        const createdChat = await createChat({
+          title: name,
+          businessProfileId: defaultBusinessProfileId,
+        })
+
+        await refreshChatSummaries(createdChat.id)
+        setActiveChatId(createdChat.id)
+        setActiveChatSession(createdChat)
+        setActiveChatTimeline([])
+        clearPromptComposer()
+        setChatStatusMessage('')
+      } catch (error) {
+        console.error('Failed to create a chat for the new file', error)
+        showChatStatusMessage(
+          error instanceof Error ? error.message : 'The file was created, but the new chat could not be saved.',
+          'error',
+        )
+      }
+    }
+  }, [
+    clearPromptComposer,
+    defaultBusinessProfileId,
+    isMinimalEditorMode,
+    loadDocumentState,
+    newFileHeightInput,
+    newFileNameInput,
+    newFileWidthInput,
+    refreshChatSummaries,
+    showChatStatusMessage,
+  ])
 
   useEffect(() => {
     if (!isNewFileModalOpen) {
@@ -4141,7 +4454,7 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
 
       if (event.key === 'Enter') {
         event.preventDefault()
-        handleCreateNewFile()
+        void handleCreateNewFile()
       }
     }
 
@@ -7330,7 +7643,18 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
       onExport={handleExport}
     />
   )
-  const canvasCaptionArea = (
+  const canvasCaptionArea = isMinimalEditorMode ? (
+    <ChatTimelinePanel
+      title={activeChatSession?.title || 'Conversation'}
+      entries={activeChatTimeline}
+      isLoading={isActiveChatLoading}
+      statusMessage={chatStatusMessage}
+      statusTone={chatStatusTone}
+      emptyMessage={activeChatId
+        ? 'This chat is ready for your first prompt.'
+        : 'Create a new post or send a prompt to start a chat.'}
+    />
+  ) : (
     <section className="canvas-caption-area" aria-label="Caption">
       <div className="canvas-caption-lines" aria-hidden="true">
         <span />
@@ -7376,10 +7700,13 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
         {fileAndSettingsControls}
         <div className="editor-shell-layout editor-shell-layout-minimal">
           <PostSidebar
-            posts={PLACEHOLDER_POST_SIDEBAR_POSTS}
-            activePostId={activeSidebarPostId}
+            posts={chatSummaries}
+            activePostId={activeChatId}
+            isLoading={isChatListLoading}
             onNewPost={handleNewFile}
-            onSelectPost={setActiveSidebarPostId}
+            onSelectPost={handleSelectSidebarChat}
+            onRenamePost={handleRenameSidebarChat}
+            onDeletePost={handleDeleteSidebarChat}
             logoHref="/"
             onLogoClick={() => navigateTo('/')}
           />
@@ -7418,7 +7745,19 @@ function App({ editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED } = {}) {
                 </div>
               </section>
 
-              <PromptShell />
+              <PromptShell
+                value={promptComposerValue}
+                attachments={promptComposerAttachments}
+                disabled={isPromptAttachmentUploading || isPromptSubmitting}
+                isSubmitting={isPromptSubmitting}
+                isUploadingAttachments={isPromptAttachmentUploading}
+                statusMessage={chatStatusTone === 'error' ? chatStatusMessage : ''}
+                statusTone={chatStatusTone}
+                onChange={setPromptComposerValue}
+                onSubmit={handleSubmitPromptComposer}
+                onFilesSelected={handlePromptAttachmentsSelected}
+                onRemoveAttachment={handleRemovePromptAttachment}
+              />
             </div>
           </section>
         </div>

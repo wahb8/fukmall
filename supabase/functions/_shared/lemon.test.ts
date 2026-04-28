@@ -89,6 +89,10 @@ describe('lemon helpers', () => {
     const { normalizeSubscriptionStatus } = await import('./lemon.ts')
 
     expect(normalizeSubscriptionStatus('trialing', 'subscription_created')).toBe('trialing')
+    expect(normalizeSubscriptionStatus('on_trial', 'subscription_created')).toBe('trialing')
+    expect(normalizeSubscriptionStatus('cancelled', 'subscription_updated')).toBe('canceled')
+    expect(normalizeSubscriptionStatus('paused', 'subscription_updated')).toBe('past_due')
+    expect(normalizeSubscriptionStatus('unpaid', 'subscription_updated')).toBe('past_due')
     expect(normalizeSubscriptionStatus(null, 'subscription_cancelled')).toBe('canceled')
     expect(normalizeSubscriptionStatus(null, 'subscription_expired')).toBe('expired')
     expect(normalizeSubscriptionStatus(null, 'subscription_payment_failed')).toBe('past_due')

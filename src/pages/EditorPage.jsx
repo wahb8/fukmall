@@ -61,7 +61,7 @@ export function EditorPage() {
 
   return (
     <>
-      <App />
+      <App defaultBusinessProfile={businessProfile} />
       {!isCheckingProfile && supabase && auth.isAuthenticated && !businessProfile ? (
         <OnboardingModal
           isOpen

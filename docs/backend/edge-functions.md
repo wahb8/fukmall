@@ -56,6 +56,12 @@ Current behavior:
 - maps the billing variant to a local `plans` row
 - upserts local `subscriptions` state
 - preserves `subscriptions.current_period_start` safely instead of relying on `undefined` payload fields
+- normalizes Lemon statuses like `on_trial`, `cancelled`, `paused`, and `unpaid` into the
+  app-level subscription model
+- preserves access for `canceled` subscriptions until the paid-through date ends
+- falls back to the existing synced local plan if a subscription follow-up event omits a variant ID
+- preserves the existing local billing dates if a sparse follow-up event omits renewal or end-date
+  fields
 
 Current limitation:
 

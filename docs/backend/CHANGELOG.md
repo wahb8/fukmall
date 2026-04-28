@@ -25,3 +25,8 @@
 - added shared storage helpers plus the `prepare-upload`, `finalize-upload`, and `upsert-business-profile` Edge Functions
 - added the first authenticated onboarding flow in the frontend, including `/app` onboarding gating and signed upload persistence through Supabase
 - added unit coverage for onboarding UI flows, onboarding route gating, storage helpers, and the new upload/profile Edge Functions
+- tightened the Lemon Squeezy webhook sync so provider status variants normalize correctly, canceled subscriptions keep access through period end, and follow-up events can reuse the already synced local plan when variant IDs are omitted
+- fixed the Lemon Squeezy webhook sync to preserve existing paid-through dates and prior cancel/expire timestamps when sparse follow-up events omit those fields
+- documented the new minimal `/app` chat/file integration layer that now loads persisted chats,
+  prompt attachments, and generated-post history through the existing Supabase schema and signed
+  upload flow

@@ -218,9 +218,23 @@ This document describes what each tracked file in the repo currently does.
 - presentational inspector control for `Flip Horizontal` and `Flip Vertical`
 - keeps the flip-button UI out of `App.jsx` while leaving document mutation and history wiring in `App`
 
+### `src/components/editor/PostSidebar.jsx`
+
+- chat/file sidebar used by the minimal `/app` shell
+- renders the saved-chat list, active-chat state, inline rename flow, delete action, and `New Post`
+  entry point
+
+### `src/components/editor/ChatTimelinePanel.jsx`
+
+- presentational conversation/history panel rendered below the canvas in the minimal `/app` shell
+- shows saved user/assistant messages, attachment previews, generated-post previews, and empty or
+  loading states
+
 ### `src/components/editor/PromptShell.jsx`
 
-- presentational wrapper around the currently unwired prompt-style input below the canvas
+- prompt composer used below the canvas
+- supports a controlled prompt value, attachment uploads, attachment removal, submit handling, and
+  inline status messaging
 
 ### `src/components/editor/modals/NewFileModal.jsx`
 
@@ -249,6 +263,21 @@ This document describes what each tracked file in the repo currently does.
   hover/focus
 - contains the current responsive layout rules that keep footer actions pinned to the bottom of the
   modal content area
+
+## Client Data Helpers
+
+### `src/lib/storageAssets.js`
+
+- shared browser-side helpers for invoking upload-related Edge Functions, uploading to signed
+  Supabase Storage URLs, reading local image dimensions, and creating signed preview URLs
+
+### `src/lib/chatSessions.js`
+
+- browser-side data layer for the minimal chat/file system
+- loads saved chat summaries and active-chat history from Supabase
+- creates, renames, and deletes chats
+- saves user prompts and prompt-attachment asset references
+- signs previews for uploaded attachments and saved generated-post records
 
 ## Test Files
 

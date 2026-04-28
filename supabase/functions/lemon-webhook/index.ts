@@ -8,7 +8,7 @@ import {
   parseLemonPayload,
   verifyLemonWebhookSignature,
 } from '../_shared/lemon.ts'
-import { getPlanByVariantId } from '../_shared/plans.ts'
+import { getPlanById, getPlanByVariantId } from '../_shared/plans.ts'
 import { createAdminClient } from '../_shared/supabase.ts'
 
 function looksLikeUuid(value: string | null) {
@@ -126,15 +126,18 @@ Deno.serve(async (request) => {
       throw new AppError('INVALID_WEBHOOK_PAYLOAD', 'Subscription event is missing the subscription ID.', 400)
     }
 
-    if (!context.variantId) {
-      throw new AppError('PLAN_MAPPING_NOT_FOUND', 'Subscription event is missing a plan variant ID.', 400)
-    }
-
-    const plan = await getPlanByVariantId(adminClient, context.variantId)
-
     const { data: existingSubscription, error: existingSubscriptionError } = await adminClient
       .from('subscriptions')
-      .select('id, user_id, current_period_start')
+      .select(`
+        id,
+        user_id,
+        plan_id,
+        current_period_start,
+        current_period_end,
+        renewal_date,
+        canceled_at,
+        expired_at
+      `)
       .eq('lemon_squeezy_subscription_id', context.providerSubscriptionId)
       .maybeSingle()
 
@@ -153,6 +156,34 @@ Deno.serve(async (request) => {
     }
 
     const normalizedStatus = normalizeSubscriptionStatus(context.status, context.eventName)
+    const plan = context.variantId
+      ? await getPlanByVariantId(adminClient, context.variantId)
+      : existingSubscription?.plan_id
+        ? await getPlanById(adminClient, existingSubscription.plan_id)
+        : null
+
+    if (!plan) {
+      throw new AppError(
+        'PLAN_MAPPING_NOT_FOUND',
+        'Subscription event could not be mapped to a local plan.',
+        400,
+      )
+    }
+
+    const syncedAt = new Date().toISOString()
+    const renewalDate = context.renewsAt ?? existingSubscription?.renewal_date ?? null
+    const currentPeriodEnd =
+      context.renewsAt ??
+      context.endsAt ??
+      existingSubscription?.current_period_end ??
+      existingSubscription?.renewal_date ??
+      null
+    const canceledAt = normalizedStatus === 'canceled'
+      ? context.updatedAt ?? existingSubscription?.canceled_at ?? syncedAt
+      : null
+    const expiredAt = normalizedStatus === 'expired'
+      ? context.endsAt ?? existingSubscription?.expired_at ?? syncedAt
+      : null
 
     const upsertPayload: Record<string, unknown> = {
       user_id: resolvedUserId,
@@ -160,14 +191,14 @@ Deno.serve(async (request) => {
       status: normalizedStatus,
       lemon_squeezy_customer_id: context.customerId,
       lemon_squeezy_subscription_id: context.providerSubscriptionId,
-      renewal_date: context.renewsAt,
-      canceled_at: normalizedStatus === 'canceled' ? context.updatedAt ?? new Date().toISOString() : null,
-      expired_at: normalizedStatus === 'expired' ? context.endsAt ?? new Date().toISOString() : null,
-      current_period_end: context.renewsAt ?? context.endsAt,
+      renewal_date: renewalDate,
+      canceled_at: canceledAt,
+      expired_at: expiredAt,
+      current_period_end: currentPeriodEnd,
       cancel_at_period_end: normalizedStatus === 'canceled',
       metadata: {
         last_event_name: context.eventName,
-        last_synced_at: new Date().toISOString(),
+        last_synced_at: syncedAt,
         payload,
       },
     }

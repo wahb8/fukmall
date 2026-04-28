@@ -118,8 +118,25 @@ export function normalizeSubscriptionStatus(
   rawStatus: string | null,
   eventName: string,
 ) {
-  if (rawStatus && ['trialing', 'active', 'canceled', 'expired', 'past_due'].includes(rawStatus)) {
-    return rawStatus
+  const normalizedRawStatus = rawStatus?.trim().toLowerCase() ?? null
+
+  if (normalizedRawStatus === 'on_trial' || normalizedRawStatus === 'trialing') {
+    return 'trialing'
+  }
+
+  if (normalizedRawStatus === 'cancelled' || normalizedRawStatus === 'canceled') {
+    return 'canceled'
+  }
+
+  if (normalizedRawStatus === 'paused' || normalizedRawStatus === 'unpaid') {
+    return 'past_due'
+  }
+
+  if (
+    normalizedRawStatus &&
+    ['active', 'expired', 'past_due'].includes(normalizedRawStatus)
+  ) {
+    return normalizedRawStatus
   }
 
   if (eventName === 'subscription_cancelled') {

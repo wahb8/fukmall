@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { getActiveSubscriptionWithPlan, getPlanByVariantId } from './plans.ts'
+import { getActiveSubscriptionWithPlan, getPlanById, getPlanByVariantId } from './plans.ts'
 
 function createSubscriptionQuery(result) {
   const chain = {
@@ -36,6 +36,7 @@ describe('plans helpers', () => {
           canceled_at: null,
           expired_at: null,
           cancel_at_period_end: false,
+          updated_at: '2026-04-28T00:00:00.000Z',
           metadata: null,
           plan: [{
             id: 'plan-1',
@@ -79,6 +80,54 @@ describe('plans helpers', () => {
         monthly_storage_limit_bytes: 1024,
         monthly_asset_upload_limit: 10,
         feature_flags: {},
+      },
+    })
+  })
+
+  it('keeps a canceled subscription active until its paid-through date ends', async () => {
+    const subscriptionQuery = createSubscriptionQuery({
+      data: [
+        {
+          id: 'sub-canceled',
+          user_id: 'user-1',
+          plan_id: 'plan-business',
+          status: 'canceled',
+          current_period_start: '2026-04-01T00:00:00.000Z',
+          current_period_end: '2099-05-01T00:00:00.000Z',
+          renewal_date: '2099-05-01T00:00:00.000Z',
+          canceled_at: '2026-04-28T00:00:00.000Z',
+          expired_at: null,
+          cancel_at_period_end: true,
+          updated_at: '2026-04-28T00:00:00.000Z',
+          metadata: null,
+          plan: [{
+            id: 'plan-business',
+            code: 'business',
+            name: 'Business',
+            monthly_generation_limit: 30,
+            monthly_edit_limit: 60,
+            monthly_storage_limit_bytes: 1024,
+            monthly_asset_upload_limit: 10,
+            feature_flags: null,
+          }],
+        },
+      ],
+      error: null,
+    })
+
+    const adminClient = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => subscriptionQuery),
+      })),
+    }
+
+    await expect(getActiveSubscriptionWithPlan(adminClient, 'user-1')).resolves.toMatchObject({
+      id: 'sub-canceled',
+      user_id: 'user-1',
+      status: 'canceled',
+      cancel_at_period_end: true,
+      plan: {
+        code: 'business',
       },
     })
   })
@@ -168,6 +217,7 @@ describe('plans helpers', () => {
 
     expect(freePlanQuery.eq).toHaveBeenNthCalledWith(1, 'code', 'free')
     expect(freePlanQuery.eq).toHaveBeenNthCalledWith(2, 'is_active', true)
+    expect(subscriptionQuery.in).toHaveBeenCalledWith('status', ['trialing', 'active', 'past_due', 'canceled'])
   })
 
   it('looks up an active plan by billing variant id', async () => {
@@ -227,5 +277,40 @@ describe('plans helpers', () => {
       code: 'PLAN_MAPPING_NOT_FOUND',
       status: 400,
     })
+
+    await expect(getPlanById(adminClientWithFailure, 'plan-1')).rejects.toMatchObject({
+      code: 'PLAN_LOOKUP_FAILED',
+      status: 500,
+    })
+
+    await expect(getPlanById(adminClientWithMissingPlan, 'plan-1')).rejects.toMatchObject({
+      code: 'PLAN_MAPPING_NOT_FOUND',
+      status: 400,
+    })
+  })
+
+  it('looks up an active plan by id', async () => {
+    const planQuery = createPlanQuery({
+      data: {
+        id: 'plan-1',
+        code: 'business',
+        name: 'Business',
+      },
+      error: null,
+    })
+    const adminClient = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => planQuery),
+      })),
+    }
+
+    await expect(getPlanById(adminClient, 'plan-1')).resolves.toEqual({
+      id: 'plan-1',
+      code: 'business',
+      name: 'Business',
+    })
+
+    expect(planQuery.eq).toHaveBeenNthCalledWith(1, 'id', 'plan-1')
+    expect(planQuery.eq).toHaveBeenNthCalledWith(2, 'is_active', true)
   })
 })

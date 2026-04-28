@@ -98,6 +98,32 @@ Current site-chrome behavior:
 - the non-editor pages use a subtle warm grid background for atmosphere
 - the footer experiment was removed, so the pages end cleanly without a bottom widget
 
+## Minimal Editor Chat Workspace
+
+The streamlined `/app` experience now behaves like a persisted chat/file shell instead of a purely
+visual prompt mockup.
+
+Current behavior:
+
+- the left sidebar now lists the user's saved chats instead of placeholder posts
+- creating a new file in the minimal editor mode also creates a matching chat record
+- the sidebar supports selecting, renaming, and deleting chats
+- the conversation panel below the canvas loads previous prompts, saved prompt attachments, and
+  saved generated-post records for the active chat
+- the prompt composer can upload image attachments through the existing signed upload flow and save
+  those asset references onto the user prompt
+- sending a prompt saves a real `chat_messages` row and refreshes the active chat history
+- chat titles can auto-update from the first meaningful prompt when the chat still has a generic
+  title such as `Untitled chat`
+
+Current constraints:
+
+- this pass only saves user prompts and prompt-attachment references directly from the client
+- assistant responses and generated-post rows are still expected to be written by the trusted
+  backend generation/edit flows
+- the minimal chat shell currently restores conversation history, not a full per-chat editor canvas
+  document snapshot
+
 ## Layer Types
 
 ### Shape Layers

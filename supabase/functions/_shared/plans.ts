@@ -27,6 +27,53 @@ export interface ActiveSubscription {
   plan: ActivePlan
 }
 
+function parseTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return null
+  }
+
+  const timestamp = Date.parse(value)
+  return Number.isNaN(timestamp) ? null : timestamp
+}
+
+function getAccessWindowEnd(subscription: {
+  current_period_end: string | null
+  renewal_date: string | null
+}) {
+  return parseTimestamp(subscription.current_period_end) ?? parseTimestamp(subscription.renewal_date)
+}
+
+function getSubscriptionAccessRank(
+  subscription: {
+    status: string
+    current_period_end: string | null
+    renewal_date: string | null
+  },
+  now = Date.now(),
+) {
+  if (subscription.status === 'active') {
+    return 4
+  }
+
+  if (subscription.status === 'trialing') {
+    return 3
+  }
+
+  if (subscription.status === 'past_due') {
+    return 2
+  }
+
+  if (subscription.status === 'canceled') {
+    const accessWindowEnd = getAccessWindowEnd(subscription)
+
+    if (accessWindowEnd && accessWindowEnd > now) {
+      return 1
+    }
+  }
+
+  return 0
+}
+
 async function getFallbackFreePlan(
   adminClient: SupabaseClient,
   userId: string,
@@ -103,6 +150,7 @@ export async function getActiveSubscriptionWithPlan(
       canceled_at,
       expired_at,
       cancel_at_period_end,
+      updated_at,
       metadata,
       plan:plans (
         id,
@@ -116,16 +164,38 @@ export async function getActiveSubscriptionWithPlan(
       )
     `)
     .eq('user_id', userId)
-    .in('status', ['trialing', 'active', 'past_due'])
+    .in('status', ['trialing', 'active', 'past_due', 'canceled'])
     .order('updated_at', { ascending: false })
-    .limit(1)
+    .limit(10)
 
   if (error) {
     throw new AppError('SUBSCRIPTION_LOOKUP_FAILED', 'Failed to load subscription.', 500)
   }
 
-  const row = data?.[0]
-  const plan = Array.isArray(row?.plan) ? row.plan[0] : row?.plan
+  const rankedRows = (data ?? [])
+    .map((row) => ({
+      row,
+      plan: Array.isArray(row?.plan) ? row.plan[0] : row?.plan,
+      rank: getSubscriptionAccessRank(row),
+      accessWindowEnd: getAccessWindowEnd(row),
+      updatedAt: parseTimestamp(row?.updated_at),
+    }))
+    .filter((entry) => entry.row && entry.plan && entry.rank > 0)
+    .sort((left, right) => {
+      if (right.rank !== left.rank) {
+        return right.rank - left.rank
+      }
+
+      if ((right.accessWindowEnd ?? 0) !== (left.accessWindowEnd ?? 0)) {
+        return (right.accessWindowEnd ?? 0) - (left.accessWindowEnd ?? 0)
+      }
+
+      return (right.updatedAt ?? 0) - (left.updatedAt ?? 0)
+    })
+
+  const selectedEntry = rankedRows[0]
+  const row = selectedEntry?.row
+  const plan = selectedEntry?.plan
 
   if (!row || !plan) {
     return getFallbackFreePlan(adminClient, userId)
@@ -173,6 +243,28 @@ export async function getPlanByVariantId(
 
   if (!data) {
     throw new AppError('PLAN_MAPPING_NOT_FOUND', 'No plan is mapped to that billing variant.', 400)
+  }
+
+  return data
+}
+
+export async function getPlanById(
+  adminClient: SupabaseClient,
+  planId: string,
+) {
+  const { data, error } = await adminClient
+    .from('plans')
+    .select('id, code, name')
+    .eq('id', planId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (error) {
+    throw new AppError('PLAN_LOOKUP_FAILED', 'Failed to load plan.', 500)
+  }
+
+  if (!data) {
+    throw new AppError('PLAN_MAPPING_NOT_FOUND', 'No active plan exists for that billing record.', 400)
   }
 
   return data

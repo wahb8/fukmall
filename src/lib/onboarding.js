@@ -1,4 +1,9 @@
-import { getSupabaseBrowserClient } from './supabaseBrowser'
+import {
+  createSignedAssetPreview as createSignedAssetPreviewRecord,
+  getRequiredSupabaseClient,
+  invokeEdgeFunction,
+  uploadAssetFile,
+} from './storageAssets'
 
 const BUSINESS_PROFILE_SELECT = `
   id,
@@ -28,143 +33,8 @@ const UPLOADED_ASSET_SELECT = `
   created_at
 `
 
-function getRequiredSupabaseClient() {
-  const supabase = getSupabaseBrowserClient()
-
-  if (!supabase) {
-    throw new Error('Supabase is not configured for onboarding.')
-  }
-
-  return supabase
-}
-
-async function extractFunctionErrorMessage(error, fallbackMessage) {
-  if (error?.context instanceof Response) {
-    try {
-      const payload = await error.context.json()
-      return payload?.error?.message || fallbackMessage
-    } catch {
-      return fallbackMessage
-    }
-  }
-
-  return error?.message || fallbackMessage
-}
-
-async function invokeFunction(functionName, body, fallbackMessage) {
-  const supabase = getRequiredSupabaseClient()
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body,
-  })
-
-  if (error) {
-    throw new Error(await extractFunctionErrorMessage(error, fallbackMessage))
-  }
-
-  if (!data?.ok) {
-    throw new Error(data?.error?.message || fallbackMessage)
-  }
-
-  return data.data
-}
-
-async function readImageDimensions(file) {
-  if (!(file instanceof File)) {
-    return {
-      width: null,
-      height: null,
-    }
-  }
-
-  return new Promise((resolve) => {
-    const objectUrl = URL.createObjectURL(file)
-    const image = new Image()
-
-    image.onload = () => {
-      resolve({
-        width: Number.isFinite(image.naturalWidth) && image.naturalWidth > 0
-          ? image.naturalWidth
-          : null,
-        height: Number.isFinite(image.naturalHeight) && image.naturalHeight > 0
-          ? image.naturalHeight
-          : null,
-      })
-      URL.revokeObjectURL(objectUrl)
-    }
-
-    image.onerror = () => {
-      resolve({
-        width: null,
-        height: null,
-      })
-      URL.revokeObjectURL(objectUrl)
-    }
-
-    image.src = objectUrl
-  })
-}
-
-async function uploadAssetFile({
-  file,
-  assetKind,
-}) {
-  const supabase = getRequiredSupabaseClient()
-  const prepareResult = await invokeFunction(
-    'prepare-upload',
-    {
-      asset_kind: assetKind,
-      file_name: file.name,
-      mime_type: file.type,
-      file_size_bytes: file.size,
-    },
-    'Unable to prepare the upload.',
-  )
-
-  const { bucket_name: bucketName, storage_path: storagePath, token } = prepareResult.upload
-  const uploadResult = await supabase.storage
-    .from(bucketName)
-    .uploadToSignedUrl(storagePath, token, file, {
-      contentType: file.type,
-      upsert: false,
-    })
-
-  if (uploadResult.error) {
-    throw new Error(uploadResult.error.message || 'Unable to upload the file.')
-  }
-
-  const dimensions = await readImageDimensions(file)
-  const finalizeResult = await invokeFunction(
-    'finalize-upload',
-    {
-      asset_kind: assetKind,
-      bucket_name: bucketName,
-      storage_path: storagePath,
-      original_file_name: file.name,
-      width: dimensions.width,
-      height: dimensions.height,
-    },
-    'Unable to finalize the upload.',
-  )
-
-  return finalizeResult.asset
-}
-
 async function createSignedAssetPreview(supabase, asset) {
-  const { data, error } = await supabase.storage
-    .from(asset.bucket_name)
-    .createSignedUrl(asset.storage_path, 60 * 60)
-
-  if (error) {
-    return {
-      ...asset,
-      previewUrl: null,
-    }
-  }
-
-  return {
-    ...asset,
-    previewUrl: data?.signedUrl ?? null,
-  }
+  return createSignedAssetPreviewRecord(supabase, asset, 60 * 60)
 }
 
 async function loadBusinessProfileAssets(supabase, profile) {
@@ -293,7 +163,7 @@ export async function saveBusinessProfile({
     ...referenceAssets.map((asset) => asset.id),
   ]
 
-  const saveResult = await invokeFunction(
+  const saveResult = await invokeEdgeFunction(
     'upsert-business-profile',
     {
       name,
