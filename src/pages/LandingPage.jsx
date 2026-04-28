@@ -1,10 +1,42 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
+import { useAuth } from '../auth/authContext'
 import { AuthModal } from '../components/site/AuthModal'
 import { navigateTo } from '../navigation'
 
-export function LandingPage() {
-  const [authModalMode, setAuthModalMode] = useState(null)
+export function LandingPage({
+  initialAuthMode = null,
+  initialAuthRedirectPath = '/app',
+}) {
+  const auth = useAuth()
+  const [authModalMode, setAuthModalMode] = useState(
+    !auth.isAuthenticated ? initialAuthMode : null,
+  )
+
+  async function handleSignOut() {
+    try {
+      await auth.signOut()
+    } catch (error) {
+      console.error('Failed to sign out', error)
+    }
+  }
+
+  function handleAuthModalClose() {
+    setAuthModalMode(null)
+
+    if (initialAuthMode) {
+      navigateTo('/', { replace: true })
+    }
+  }
+
+  function handlePrimaryCta() {
+    if (auth.isAuthenticated) {
+      navigateTo('/app')
+      return
+    }
+
+    setAuthModalMode('signup')
+  }
 
   return (
     <main className="app-shell landing-shell" id="top">
@@ -24,21 +56,43 @@ export function LandingPage() {
               Pricing
             </button>
 
-            <button
-              className="landing-nav-button landing-nav-button-ghost"
-              type="button"
-              onClick={() => setAuthModalMode('login')}
-            >
-              Log in
-            </button>
+            {auth.isAuthenticated ? (
+              <>
+                <button
+                  className="landing-nav-button landing-nav-button-ghost"
+                  type="button"
+                  onClick={() => navigateTo('/app')}
+                >
+                  Open app
+                </button>
 
-            <button
-              className="landing-nav-button landing-nav-button-solid"
-              type="button"
-              onClick={() => setAuthModalMode('signup')}
-            >
-              Sign up
-            </button>
+                <button
+                  className="landing-nav-button landing-nav-button-solid"
+                  type="button"
+                  onClick={handleSignOut}
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="landing-nav-button landing-nav-button-ghost"
+                  type="button"
+                  onClick={() => setAuthModalMode('login')}
+                >
+                  Log in
+                </button>
+
+                <button
+                  className="landing-nav-button landing-nav-button-solid"
+                  type="button"
+                  onClick={() => setAuthModalMode('signup')}
+                >
+                  Sign up
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -56,7 +110,7 @@ export function LandingPage() {
               <button
                 className="landing-primary-cta"
                 type="button"
-                onClick={() => navigateTo('/app')}
+                onClick={handlePrimaryCta}
               >
                 Get started
               </button>
@@ -126,7 +180,8 @@ export function LandingPage() {
       <AuthModal
         isOpen={authModalMode !== null}
         mode={authModalMode ?? 'login'}
-        onClose={() => setAuthModalMode(null)}
+        redirectPath={initialAuthRedirectPath}
+        onClose={handleAuthModalClose}
       />
     </main>
   )

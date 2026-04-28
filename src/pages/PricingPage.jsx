@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
-import { OnboardingModal } from '../components/onboarding/OnboardingModal'
+import { useAuth } from '../auth/authContext'
 import { AuthModal } from '../components/site/AuthModal'
 import { navigateTo } from '../navigation'
 import './PricingPage.css'
@@ -105,9 +105,39 @@ function handleNavigate(event, pathname) {
   navigateTo(pathname)
 }
 
-export function PricingPage() {
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
-  const [authModalMode, setAuthModalMode] = useState(null)
+export function PricingPage({
+  initialAuthMode = null,
+  initialAuthRedirectPath = '/app',
+}) {
+  const auth = useAuth()
+  const [authModalMode, setAuthModalMode] = useState(
+    !auth.isAuthenticated ? initialAuthMode : null,
+  )
+
+  async function handleSignOut() {
+    try {
+      await auth.signOut()
+    } catch (error) {
+      console.error('Failed to sign out', error)
+    }
+  }
+
+  function handleAuthModalClose() {
+    setAuthModalMode(null)
+
+    if (initialAuthMode) {
+      navigateTo('/pricing', { replace: true })
+    }
+  }
+
+  function handleGetStarted() {
+    if (auth.isAuthenticated) {
+      navigateTo('/app')
+      return
+    }
+
+    setAuthModalMode('signup')
+  }
 
   return (
     <main className="app-shell landing-shell pricing-shell">
@@ -132,21 +162,43 @@ export function PricingPage() {
               Pricing
             </button>
 
-            <button
-              className="landing-nav-button landing-nav-button-ghost"
-              type="button"
-              onClick={() => setAuthModalMode('login')}
-            >
-              log-in
-            </button>
+            {auth.isAuthenticated ? (
+              <>
+                <button
+                  className="landing-nav-button landing-nav-button-ghost"
+                  type="button"
+                  onClick={() => navigateTo('/app')}
+                >
+                  Open app
+                </button>
 
-            <button
-              className="landing-nav-button landing-nav-button-solid"
-              type="button"
-              onClick={() => setAuthModalMode('signup')}
-            >
-              sign-up
-            </button>
+                <button
+                  className="landing-nav-button landing-nav-button-solid"
+                  type="button"
+                  onClick={handleSignOut}
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="landing-nav-button landing-nav-button-ghost"
+                  type="button"
+                  onClick={() => setAuthModalMode('login')}
+                >
+                  Log in
+                </button>
+
+                <button
+                  className="landing-nav-button landing-nav-button-solid"
+                  type="button"
+                  onClick={() => setAuthModalMode('signup')}
+                >
+                  Sign up
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -252,7 +304,7 @@ export function PricingPage() {
                   <button
                     className={tier.featured ? 'landing-primary-cta pricing-card-cta' : 'landing-secondary-cta pricing-card-cta'}
                     type="button"
-                    onClick={() => setIsOnboardingOpen(true)}
+                    onClick={handleGetStarted}
                   >
                     Get Started
                   </button>
@@ -293,7 +345,7 @@ export function PricingPage() {
               <button
                 className="landing-primary-cta pricing-final-cta"
                 type="button"
-                onClick={() => setIsOnboardingOpen(true)}
+                onClick={handleGetStarted}
               >
                 Get Started
               </button>
@@ -305,15 +357,9 @@ export function PricingPage() {
       <AuthModal
         isOpen={authModalMode !== null}
         mode={authModalMode ?? 'login'}
-        onClose={() => setAuthModalMode(null)}
+        redirectPath={initialAuthRedirectPath}
+        onClose={handleAuthModalClose}
       />
-      {isOnboardingOpen ? (
-        <OnboardingModal
-          isOpen={isOnboardingOpen}
-          onClose={() => setIsOnboardingOpen(false)}
-          onComplete={() => navigateTo('/app')}
-        />
-      ) : null}
     </main>
   )
 }

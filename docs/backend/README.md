@@ -43,6 +43,52 @@ These docs currently assume the product behaves like this:
 - users are limited by subscription tier and usage quotas
 - the resulting work is saved as chat history and generated-post records
 
+## Current Implementation Snapshot
+
+The backend is no longer documentation-only.
+
+Current implemented pieces:
+
+- the core Supabase schema and baseline RLS policies
+- usage and webhook audit tables
+- initial Edge Function scaffolding for generation intake and Lemon webhook syncing
+- live frontend Supabase Auth wiring for email/password sign-up, email/password sign-in,
+  password-reset initiation, Google sign-in initiation, password-update recovery, and a protected
+  `/app` route
+- seeded `plans` rows for `free`, `business`, and `enterprise`
+- private Storage buckets and ownership-safe Storage object policies
+- signed upload preparation/finalization functions for onboarding and future attachment flows
+- authenticated onboarding persistence for default `business_profiles` plus related `uploaded_assets`
+- `/app` onboarding gating that requires a default business profile before normal editor use
+
+Still not implemented:
+
+- checkout creation
+- real OpenAI generation execution
+- broader profile editing beyond the first onboarding flow
+
+## Current Test Coverage
+
+The repo now includes executable unit coverage for the backend code that can run inside Vitest
+without a live Supabase runtime.
+
+Covered today:
+
+- shared backend helpers for errors, env validation, HTTP responses, Lemon payload handling,
+  subscription lookup, usage enforcement, request-auth resolution, and storage-path validation
+- `llm-generate-post` handler orchestration with mocked Supabase/Deno boundaries
+- `lemon-webhook` handler orchestration with mocked Supabase/Deno boundaries
+- `prepare-upload`, `finalize-upload`, and `upsert-business-profile` handler orchestration with
+  mocked Supabase/Deno boundaries
+- frontend onboarding coverage for the modal flow, `/app` onboarding gate, and pricing CTA routing
+
+Not covered by unit tests yet:
+
+- live SQL migration execution against a real Supabase database
+- real Supabase Auth redirect/provider behavior
+- real Edge Function runtime behavior inside Supabase
+- real Lemon webhook payload delivery from the provider
+
 ## Document Map
 
 - `architecture.md`: service boundaries, module responsibilities, and request flows

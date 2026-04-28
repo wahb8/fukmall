@@ -11,34 +11,100 @@ Every function should:
 - avoid leaking internal details
 - log important events
 
-## Planned Functions
+## Current Function Layer
+
+The first server-side function layer now exists in scaffold form:
+
+- shared auth, env, error, Supabase, Lemon, plan, and usage helpers in `supabase/functions/_shared/`
+- `llm-generate-post`
+- `lemon-webhook`
+- `prepare-upload`
+- `finalize-upload`
+- `upsert-business-profile`
+
+This is not the full backend yet. It is the first secure server boundary on top of the schema.
 
 ### `llm-generate-post`
 
-Purpose:
+Current behavior:
 
-- create a first generated post from a user prompt
+- verifies auth
+- validates prompt, dimensions, and attachment IDs
+- verifies chat ownership and optional business profile ownership
+- verifies asset ownership for prompt attachments
+- resolves the active subscription and current usage period
+- enforces the monthly generation limit before expensive work starts
+- creates a `chat_messages` row for the user request
+- creates a `generation_jobs` row with `status = 'pending'`
+- rolls back the request message if job creation fails, so intake does not leave orphaned history rows
+- returns `202 Accepted`
 
-Expected input:
+Current limitation:
 
-- `chat_id`
-- `prompt`
-- `width`
-- `height`
-- optional `attachment_ids`
+- it does not call OpenAI yet
+- it is an intake/job-creation boundary, not the final generation pipeline
 
-Expected behavior:
+### `lemon-webhook`
 
-- verify auth
-- verify chat ownership
-- verify subscription and usage limit
-- gather profile and onboarding context
-- gather a bounded amount of recent chat context
-- gather attachment metadata if provided
-- construct the OpenAI request
-- store generated image/caption outputs and metadata
-- create or update the generated post and version records
-- append usage event(s)
+Current behavior:
+
+- accepts verified `POST` webhooks only
+- verifies the Lemon Squeezy HMAC signature
+- hashes the raw payload for deduplication
+- writes or updates `billing_webhook_events`
+- ignores non-subscription events safely
+- maps the billing variant to a local `plans` row
+- upserts local `subscriptions` state
+- preserves `subscriptions.current_period_start` safely instead of relying on `undefined` payload fields
+
+Current limitation:
+
+- checkout creation and richer subscription reconciliation are still follow-up work
+
+### `prepare-upload`
+
+Current behavior:
+
+- verifies auth
+- validates upload asset kind, MIME type, file size, and optional chat ownership context
+- resolves the effective plan and current usage period
+- enforces asset-upload and storage limits before any object upload starts
+- issues a signed upload token for a user-owned private Storage path
+
+Current limitation:
+
+- it only covers the onboarding and attachment upload path so far
+
+### `finalize-upload`
+
+Current behavior:
+
+- verifies auth
+- validates the signed-upload destination against the current user and asset kind
+- loads Storage object metadata from the private bucket
+- writes a trusted `uploaded_assets` row only after the object exists
+- records the storage upload usage event
+- removes the uploaded object again if metadata persistence or usage recording fails
+
+Current limitation:
+
+- richer cleanup flows for later asset deletion are still follow-up work
+
+### `upsert-business-profile`
+
+Current behavior:
+
+- verifies auth
+- validates business name, business type, tone preferences, brand colors, and referenced asset IDs
+- verifies ownership and asset kind for the selected logo and reference images
+- creates or updates the default `business_profiles` row
+- links uploaded assets back to that business profile
+
+Current limitation:
+
+- this is the first onboarding/profile write surface, not the final full profile-management API
+
+## Planned Next Functions
 
 ### `llm-edit-post`
 
@@ -100,22 +166,6 @@ Expected behavior:
 - create a checkout link or signed handoff if needed
 - never let the client choose arbitrary pricing identifiers
 
-### `prepare-upload` (optional)
-
-Purpose:
-
-- centralize upload validation if direct client uploads need tighter control
-
-Expected input:
-
-- upload purpose
-- file metadata
-
-Expected behavior:
-
-- validate type, size, and ownership context
-- return approved upload destination details
-
 ## Response Shape
 
 Use consistent JSON responses:
@@ -146,7 +196,6 @@ Error response pattern:
 Recommended shared helper areas:
 
 - auth resolution
-- zod or equivalent schema validation
 - typed error helpers
 - usage enforcement
 - plan lookup

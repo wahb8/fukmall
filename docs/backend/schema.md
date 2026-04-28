@@ -1,277 +1,462 @@
 # Database Schema
 
-## Design Goals
+## Scope Of This Foundation Pass
 
-- keep the schema normalized
-- separate binary storage from relational records
-- preserve chat history and generated-post version history
-- make ownership explicit on every user-related record
-- support future changes without breaking core relationships
+The first database migration creates these core tables:
+
+- `profiles`
+- `business_profiles`
+- `plans`
+- `subscriptions`
+- `chats`
+- `chat_messages`
+- `generated_posts`
+- `uploaded_assets`
+- `generation_jobs`
+
+The second database migration adds:
+
+- `usage_periods`
+- `usage_events`
+- `billing_webhook_events`
+
+The third database migration adds:
+
+- seeded `plans` rows for `free`, `business`, and `enterprise`
+- `usage_periods.asset_upload_count`
+- private Storage buckets plus Storage object policies
+
+This matches the current MVP backend shape:
+
+- `profiles`: who the user is
+- `business_profiles`: how the user's brand should look and feel
+- `plans` and `subscriptions`: what the user is allowed to do
+- `chats`: a project or conversation
+- `chat_messages`: the prompt/response history inside that project
+- `generated_posts`: the actual AI-created content, including versions
+- `uploaded_assets`: logos, reference posts, prompt images, and other user files
+- `generation_jobs`: tracked AI work and its status
+
+## Foundation Helpers
+
+The migration also creates:
+
+- `public.set_updated_at()`: shared `updated_at` trigger function
+- `public.handle_new_auth_user()`: auto-creates a `profiles` row from `auth.users`
+- `public.touch_chat_last_message_at()`: updates chat activity when a new message is inserted
 
 ## Core Tables
 
 ### `profiles`
 
-One row per auth user.
+Purpose:
 
-Suggested columns:
+- stores the app-level user record tied to Supabase Auth
+
+Columns:
 
 - `id uuid primary key references auth.users(id) on delete cascade`
 - `email text`
 - `full_name text`
-- `avatar_path text`
-- `business_type text`
-- `brand_summary text`
-- `brand_voice text`
-- `default_locale text default 'en'`
-- `onboarding_completed boolean default false`
-- `created_at timestamptz default now()`
-- `updated_at timestamptz default now()`
+- `avatar_url text`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
 
 Notes:
 
-- keep profile data lightweight
-- richer brand context can live in a separate table if it grows
+- this is the anchor table for all user-owned records
+- the migration auto-creates this row when a new auth user is inserted
 
-### `profile_reference_assets`
+### `business_profiles`
 
-Reference assets collected during onboarding or later profile tuning.
+Purpose:
 
-Suggested columns:
+- stores brand identity and generation context
 
-- `id uuid primary key`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `profile_id uuid not null references profiles(id) on delete cascade`
-- `storage_path text not null`
-- `mime_type text not null`
-- `file_size_bytes integer not null`
-- `source text not null default 'onboarding'`
-- `created_at timestamptz default now()`
+Columns:
 
-### `subscription_plans`
-
-Local catalog of supported plans.
-
-Suggested columns:
-
-- `id uuid primary key`
-- `code text unique not null`
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null references profiles(id) on delete cascade`
 - `name text not null`
-- `tier_rank integer not null`
-- `monthly_generation_limit integer`
-- `monthly_edit_limit integer`
-- `monthly_storage_limit_mb integer`
-- `features jsonb not null default '{}'::jsonb`
-- `active boolean not null default true`
+- `business_type text not null`
+- `brand_description text`
+- `tone_preferences text[] not null default '{}'`
+- `style_preferences text[] not null default '{}'`
+- `brand_colors jsonb not null default '[]'::jsonb`
+- `reference_links jsonb not null default '[]'::jsonb`
+- `logo_asset_id uuid`
+- `is_default boolean not null default true`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
 
 Notes:
 
-- this is a local entitlement map, not the billing source of truth
+- one user can store multiple business profiles
+- a partial unique index enforces only one default business profile per user
+- `logo_asset_id` points to an `uploaded_assets` row after that table exists
+
+### `plans`
+
+Purpose:
+
+- defines subscription tiers and limits
+
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `code text unique not null`
+- `name text unique not null`
+- `description text`
+- `lemon_squeezy_variant_id text unique`
+- `monthly_generation_limit integer not null default 0`
+- `monthly_storage_limit_bytes bigint not null default 0`
+- `monthly_asset_upload_limit integer not null default 0`
+- `feature_flags jsonb not null default '{}'::jsonb`
+- `price_cents integer not null default 0`
+- `currency_code text not null default 'USD'`
+- `is_active boolean not null default true`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
+
+Notes:
+
+- this is a configuration table, not a per-user table
+- it is intended to map cleanly to Lemon Squeezy variants
+- the current migration seeds `free`, `business`, and `enterprise` rows so the app can enforce a
+  fallback free plan before billing is fully connected
 
 ### `subscriptions`
 
-Local snapshot of a user's subscription state synced from Lemon Squeezy.
+Purpose:
 
-Suggested columns:
+- stores each user's current billing snapshot and access tier
 
-- `id uuid primary key`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `plan_id uuid references subscription_plans(id)`
-- `provider text not null default 'lemon_squeezy'`
-- `provider_customer_id text`
-- `provider_subscription_id text unique`
-- `status text not null`
-- `renews_at timestamptz`
-- `ends_at timestamptz`
-- `cancel_at timestamptz`
-- `checkout_variant_id text`
-- `raw_snapshot jsonb not null default '{}'::jsonb`
-- `created_at timestamptz default now()`
-- `updated_at timestamptz default now()`
+Columns:
 
-### `billing_webhook_events`
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null references profiles(id) on delete cascade`
+- `plan_id uuid not null references plans(id)`
+- `status text not null default 'active'`
+- `lemon_squeezy_customer_id text`
+- `lemon_squeezy_subscription_id text unique`
+- `renewal_date timestamptz`
+- `canceled_at timestamptz`
+- `expired_at timestamptz`
+- `current_period_start timestamptz`
+- `current_period_end timestamptz`
+- `cancel_at_period_end boolean not null default false`
+- `metadata jsonb not null default '{}'::jsonb`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
 
-Idempotency and audit table for Lemon Squeezy webhook events.
+Notes:
 
-Suggested columns:
-
-- `id uuid primary key`
-- `provider text not null default 'lemon_squeezy'`
-- `provider_event_id text unique`
-- `event_type text not null`
-- `payload jsonb not null`
-- `processed_at timestamptz`
-- `status text not null default 'received'`
-- `error_message text`
-- `created_at timestamptz default now()`
+- a partial unique index enforces only one current paid/trialing subscription row per user
+- final truth still comes from verified Lemon Squeezy webhooks
 
 ### `chats`
 
-Top-level conversation container.
+Purpose:
 
-Suggested columns:
+- stores a single project or design conversation
 
-- `id uuid primary key`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `title text`
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null references profiles(id) on delete cascade`
+- `business_profile_id uuid`
+- `title text not null default 'Untitled chat'`
 - `status text not null default 'active'`
 - `last_message_at timestamptz`
-- `created_at timestamptz default now()`
-- `updated_at timestamptz default now()`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
 
-### `messages`
+Notes:
 
-Chat messages and generation turns.
+- the table stores a composite owner key `(id, user_id)` so child tables can reference a chat and
+  its owner together
+- `business_profile_id` ties a chat to the brand context used for generation
 
-Suggested columns:
+### `chat_messages`
 
-- `id uuid primary key`
-- `chat_id uuid not null references chats(id) on delete cascade`
-- `user_id uuid not null references auth.users(id) on delete cascade`
+Purpose:
+
+- stores each prompt/response message inside a chat
+
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `chat_id uuid not null`
+- `user_id uuid not null references profiles(id) on delete cascade`
 - `role text not null`
 - `message_type text not null default 'text'`
 - `content_text text`
 - `metadata jsonb not null default '{}'::jsonb`
-- `created_at timestamptz default now()`
+- `created_at timestamptz not null default now()`
 
 Notes:
 
-- `role` should support values such as `user`, `assistant`, and `system`
-- keep system messages limited and server-managed
+- `role` is constrained to `user`, `assistant`, or `system`
+- `message_type` is constrained to `text`, `generation_request`, `generation_result`,
+  `edit_request`, `error`, or `system`
+- the client can only insert `role = 'user'` rows under RLS; assistant/system messages are
+  expected to come from server-side workflows
+- client-side update and delete are intentionally blocked in this first pass to preserve chat
+  history integrity
+- a trigger updates `chats.last_message_at` after inserts
 
-### `message_attachments`
+### `uploaded_assets`
 
-Attachment metadata for user prompts or assistant responses.
+Purpose:
 
-Suggested columns:
+- stores metadata for files uploaded to Supabase Storage
 
-- `id uuid primary key`
-- `message_id uuid not null references messages(id) on delete cascade`
-- `user_id uuid not null references auth.users(id) on delete cascade`
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null references profiles(id) on delete cascade`
+- `business_profile_id uuid`
+- `chat_id uuid`
+- `asset_kind text not null`
+- `bucket_name text not null`
 - `storage_path text not null`
+- `original_file_name text`
 - `mime_type text not null`
-- `file_size_bytes integer not null`
-- `attachment_kind text not null`
-- `created_at timestamptz default now()`
+- `file_size_bytes bigint not null`
+- `width integer`
+- `height integer`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
+
+Notes:
+
+- file binaries live in Storage, not Postgres
+- a unique constraint on `(bucket_name, storage_path)` prevents duplicate path records
+- `asset_kind` covers logo, brand-reference, prompt attachment, chat attachment, generated input,
+  and fallback `other`
+- client-side metadata writes are intentionally blocked until the upload flow is implemented through
+  trusted backend/storage rules
 
 ### `generated_posts`
 
-Logical generated post record tied to a chat and owner.
+Purpose:
 
-Suggested columns:
+- stores AI-generated output records and their version history
 
-- `id uuid primary key`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `chat_id uuid not null references chats(id) on delete cascade`
-- `current_version_id uuid`
-- `title text`
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null references profiles(id) on delete cascade`
+- `chat_id uuid not null`
+- `source_message_id uuid`
+- `business_profile_id uuid`
+- `previous_post_id uuid`
+- `version_group_id uuid not null default gen_random_uuid()`
+- `version_number integer not null default 1`
 - `status text not null default 'draft'`
-- `requested_width integer`
-- `requested_height integer`
-- `created_at timestamptz default now()`
-- `updated_at timestamptz default now()`
-
-### `generated_post_versions`
-
-Append-only versions for each generated post.
-
-Suggested columns:
-
-- `id uuid primary key`
-- `generated_post_id uuid not null references generated_posts(id) on delete cascade`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `source_message_id uuid references messages(id)`
-- `version_number integer not null`
 - `prompt_text text`
 - `caption_text text`
+- `bucket_name text`
 - `image_storage_path text`
-- `preview_storage_path text`
-- `width integer`
-- `height integer`
-- `generation_model text`
-- `generation_status text not null`
+- `width integer not null`
+- `height integer not null`
 - `metadata jsonb not null default '{}'::jsonb`
-- `created_at timestamptz default now()`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
 
 Notes:
 
-- each edit should create a new version row
-- `generated_posts.current_version_id` should point to the latest active version
+- each edit or regeneration creates a new row in this table
+- `previous_post_id` links a version to the row it was derived from
+- `version_group_id` groups all versions of the same logical post
+- statuses are constrained to `draft`, `edited`, `final`, `exported`, or `failed`
+- generated image files are referenced by storage bucket/path, not stored inline
 
-### `assets`
+### `generation_jobs`
 
-User-owned reusable uploaded assets outside message attachments.
+Purpose:
 
-Suggested columns:
+- tracks the lifecycle of AI generation work
 
-- `id uuid primary key`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `storage_path text not null`
-- `mime_type text not null`
-- `file_size_bytes integer not null`
-- `label text`
-- `source text not null default 'library'`
-- `created_at timestamptz default now()`
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null references profiles(id) on delete cascade`
+- `chat_id uuid not null`
+- `source_message_id uuid`
+- `business_profile_id uuid`
+- `output_post_id uuid`
+- `status text not null default 'pending'`
+- `input_prompt text not null`
+- `requested_width integer`
+- `requested_height integer`
+- `provider text not null default 'openai'`
+- `model text`
+- `error_message text`
+- `request_payload jsonb not null default '{}'::jsonb`
+- `response_payload jsonb not null default '{}'::jsonb`
+- `queued_at timestamptz not null default now()`
+- `started_at timestamptz`
+- `completed_at timestamptz`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
+
+Notes:
+
+- statuses are constrained to `pending`, `processing`, `completed`, or `failed`
+- this supports the current synchronous MVP and gives a clean path to async job processing later
 
 ### `usage_periods`
 
-Usage buckets per user and billing window.
+Purpose:
 
-Suggested columns:
+- stores the active usage window and counters for a user
 
-- `id uuid primary key`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `subscription_id uuid references subscriptions(id)`
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null references profiles(id) on delete cascade`
+- `subscription_id uuid references subscriptions(id) on delete set null`
 - `period_start timestamptz not null`
 - `period_end timestamptz not null`
 - `generation_count integer not null default 0`
 - `edit_count integer not null default 0`
+- `asset_upload_count integer not null default 0`
 - `storage_bytes_used bigint not null default 0`
-- `created_at timestamptz default now()`
-- `updated_at timestamptz default now()`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
+
+Notes:
+
+- a unique constraint prevents duplicate windows for the same user
+- the current usage window is derived from the active subscription period when available
+- if no billing period is available, the backend can fall back to the current calendar month
+- `asset_upload_count` supports `monthly_asset_upload_limit` enforcement without relying on ad hoc
+  aggregate queries
 
 ### `usage_events`
 
-Append-only event log for billable or limited actions.
+Purpose:
 
-Suggested columns:
+- stores append-only usage audit records
 
-- `id uuid primary key`
-- `user_id uuid not null references auth.users(id) on delete cascade`
-- `usage_period_id uuid references usage_periods(id)`
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `user_id uuid not null references profiles(id) on delete cascade`
+- `usage_period_id uuid not null`
 - `event_type text not null`
+- `resource_type text`
 - `resource_id uuid`
 - `quantity integer not null default 1`
+- `storage_bytes_delta bigint not null default 0`
 - `metadata jsonb not null default '{}'::jsonb`
-- `created_at timestamptz default now()`
+- `created_at timestamptz not null default now()`
 
-## Relationships Summary
+Notes:
 
-- `auth.users 1:1 profiles`
-- `profiles 1:n profile_reference_assets`
-- `auth.users 1:n subscriptions`
-- `subscription_plans 1:n subscriptions`
-- `auth.users 1:n chats`
-- `chats 1:n messages`
-- `messages 1:n message_attachments`
+- `event_type` is constrained to `generation`, `edit`, `storage_upload`, `storage_delete`, or
+  `manual_adjustment`
+- `(usage_period_id, user_id)` references the matching owned usage period, so usage rows cannot be
+  cross-linked across users
+- this table is append-only from the product point of view
+- the migration also adds `public.record_usage_event(...)` to insert a usage event and atomically
+  update the matching `usage_periods` counters
+  update the matching `usage_periods` counters, including `asset_upload_count` for uploaded assets
+
+## Storage Bucket Layout
+
+Current private bucket families:
+
+- `brand-assets`
+- `chat-assets`
+- `generated-posts`
+
+Current owned path conventions:
+
+- `brand-assets/<user-id>/logos/...`
+- `brand-assets/<user-id>/references/...`
+- `chat-assets/<user-id>/attachments/...`
+- `generated-posts/<user-id>/renders/...`
+
+### `billing_webhook_events`
+
+Purpose:
+
+- stores Lemon Squeezy webhook payloads and processing state for audit/debugging
+
+Columns:
+
+- `id uuid primary key default gen_random_uuid()`
+- `provider text not null default 'lemon_squeezy'`
+- `event_name text not null`
+- `event_hash text not null unique`
+- `provider_object_id text`
+- `status text not null default 'received'`
+- `processing_attempts integer not null default 0`
+- `last_error text`
+- `payload jsonb not null`
+- `received_at timestamptz not null default now()`
+- `processed_at timestamptz`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
+
+Notes:
+
+- Lemon Squeezy does not always expose a dedicated event ID, so the current dedupe key is a stable
+  hash of the raw payload body
+- statuses are constrained to `received`, `processed`, `ignored`, or `failed`
+- this table is intentionally server-controlled only
+
+## Ownership And Relationship Rules
+
+The schema uses composite owner keys on several user-owned tables:
+
+- `business_profiles (id, user_id)`
+- `chats (id, user_id)`
+- `chat_messages (id, user_id)`
+- `uploaded_assets (id, user_id)`
+- `generated_posts (id, user_id)`
+- `generation_jobs (id, user_id)`
+
+This lets child tables reference both the resource and its owner together, which reduces the risk
+of cross-user linking mistakes.
+
+Key relationships:
+
+- `profiles 1:n business_profiles`
+- `profiles 1:n subscriptions`
+- `profiles 1:n chats`
+- `chats 1:n chat_messages`
+- `profiles 1:n uploaded_assets`
 - `chats 1:n generated_posts`
-- `generated_posts 1:n generated_post_versions`
-- `auth.users 1:n assets`
-- `auth.users 1:n usage_periods`
+- `chat_messages 1:n generated_posts` through `source_message_id`
+- `generated_posts` self-references through `previous_post_id`
+- `generated_posts` can be linked back from `generation_jobs.output_post_id`
+- `profiles 1:n usage_periods`
 - `usage_periods 1:n usage_events`
 
-## Naming Rules
+## Status Design
 
-- use plural table names
-- use `user_id` for owner references
-- use `storage_path` for Storage object references
-- use `created_at` and `updated_at` consistently
-- prefer explicit status columns over overloading JSON blobs
+Status values added in this migration:
 
-## Out Of Scope For V1 Schema
+- `subscriptions.status`: `trialing`, `active`, `canceled`, `expired`, `past_due`
+- `chats.status`: `active`, `archived`
+- `generated_posts.status`: `draft`, `edited`, `final`, `exported`, `failed`
+- `generation_jobs.status`: `pending`, `processing`, `completed`, `failed`
+- `usage_events.event_type`: `generation`, `edit`, `storage_upload`, `storage_delete`,
+  `manual_adjustment`
+- `billing_webhook_events.status`: `received`, `processed`, `ignored`, `failed`
 
-- team workspaces
-- shared organization billing
-- complex asset tagging systems
-- reusable prompt-template marketplace features
-- in-database vector search
+These status constraints support the current MVP flow and match the intended future job and content
+lifecycles.
+
+## What Is Intentionally Not In These Migrations
+
+Not yet included:
+
+- prompt-template version tables
+- generated export event tables
+- teams or multi-user workspaces
+
+Those should come in follow-up migrations once this foundation is in place.

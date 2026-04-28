@@ -654,6 +654,19 @@ Project file behavior:
 - the File menu closes on outside click or `Escape`
 - the UI theme toggle is separate from project files and remains controlled by local UI preference
 
+## Settings Modal
+
+The editor settings modal now includes both editor preferences and a business-profile editing section.
+
+Current behavior:
+
+- users can still toggle UI theme and transparent-import trimming from the same settings modal
+- the settings modal now also loads the saved default business profile
+- users can edit the onboarding-collected business name, business type, preferred caption tone, and brand colors
+- users can replace or remove the saved logo
+- users can add or remove saved reference images, up to five total
+- saving from settings reuses the same business-profile persistence flow as onboarding instead of creating a second write path
+
 ## Snapping
 
 Move snapping currently supports:

@@ -59,6 +59,7 @@ Rules:
 - never put service-role keys in Vite env files
 - never put OpenAI keys in Vite env files
 - never put Lemon webhook secrets in Vite env files
+- these frontend values are now required for the live auth UI to function
 
 ## Server-Side Environment Variables
 
@@ -112,6 +113,13 @@ Keep development and production fully separate:
 - different storage data
 - different service-role keys
 
+Configure auth provider settings separately in each project:
+
+- site URL for the environment
+- redirect URL for `/auth/callback`
+- redirect URL for `/auth/reset`
+- Google OAuth provider credentials if Google sign-in is enabled
+
 ### Lemon Squeezy
 
 Use separate environment-specific billing setup:
@@ -155,6 +163,7 @@ strong operational reason.
 3. create a dedicated Supabase dev project
 4. configure development Lemon webhook/test billing setup
 5. use development OpenAI credentials
+6. add the local dev auth redirect URLs in Supabase, including `/auth/callback` and `/auth/reset`
 
 ### Production
 
@@ -163,6 +172,7 @@ strong operational reason.
 3. create a dedicated Supabase production project
 4. configure production Lemon products, variants, and webhook endpoint
 5. use production OpenAI credentials
+6. add the production auth redirect URLs in Supabase, including `/auth/callback` and `/auth/reset`
 
 ## Current Scope
 

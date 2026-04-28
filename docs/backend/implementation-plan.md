@@ -37,18 +37,14 @@ Why first:
 Build next:
 
 - `profiles`
-- `profile_reference_assets`
-- `subscription_plans`
+- `business_profiles`
+- `plans`
 - `subscriptions`
-- `billing_webhook_events`
 - `chats`
-- `messages`
-- `message_attachments`
+- `chat_messages`
 - `generated_posts`
-- `generated_post_versions`
-- `assets`
-- `usage_periods`
-- `usage_events`
+- `uploaded_assets`
+- `generation_jobs`
 
 Why here:
 
@@ -68,6 +64,14 @@ Why here:
 
 - identity and ownership must exist before data access rules can be validated end-to-end
 
+Current status:
+
+- the frontend auth shell is now wired for email/password sign-up, login, reset initiation,
+  Google sign-in initiation, password recovery completion, and protected `/app` access
+- the authenticated onboarding flow now writes a default `business_profiles` row plus related
+  `uploaded_assets`
+- broader profile read/update UI still needs to be completed
+
 ### 4. RLS And Storage Policies
 
 Build next:
@@ -79,6 +83,12 @@ Build next:
 Why here:
 
 - security boundaries should be enforced before business features are exposed
+
+Current status:
+
+- baseline table RLS is live
+- private Storage buckets and user-owned Storage object policies are live
+- signed upload preparation/finalization is now wired for onboarding assets
 
 ### 5. Chat Persistence
 
@@ -99,12 +109,18 @@ Build next:
 
 - business type storage
 - brand profile fields
-- onboarding reference asset uploads
-- reusable asset library metadata
+- onboarding and prompt asset uploads
+- reusable asset metadata
 
 Why here:
 
 - AI generation quality depends on profile and asset context
+
+Current status:
+
+- the first onboarding flow is now live for authenticated users entering `/app`
+- onboarding currently collects business type, business name, optional logo, optional reference
+  images, preferred caption tone, and optional brand colors
 
 ### 7. Payment Plan Catalog And Checkout Setup
 
@@ -135,6 +151,7 @@ Why here:
 
 Build next:
 
+- usage tables and counters
 - usage period resolution
 - usage event recording
 - per-tier generation and edit limits

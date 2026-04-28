@@ -2,10 +2,45 @@ import { StrictMode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AppRoot from './AppRoot'
+import { AuthContext } from './auth/authContext'
 
 function setPathname(pathname) {
   window.history.pushState({}, '', pathname)
   window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+function createAuthValue(overrides = {}) {
+  const baseValue = {
+    status: 'ready',
+    isLoading: false,
+    isConfigured: true,
+    isAuthenticated: false,
+    user: null,
+    session: null,
+    isPasswordRecovery: false,
+    signUp: vi.fn(),
+    signInWithPassword: vi.fn(),
+    signInWithGoogle: vi.fn(),
+    sendPasswordResetEmail: vi.fn(),
+    updatePassword: vi.fn(),
+    signOut: vi.fn(),
+    clearPasswordRecovery: vi.fn(),
+  }
+
+  return {
+    ...baseValue,
+    ...overrides,
+  }
+}
+
+function renderWithAuth(authOverrides = {}) {
+  return render(
+    <StrictMode>
+      <AuthContext.Provider value={createAuthValue(authOverrides)}>
+        <AppRoot />
+      </AuthContext.Provider>
+    </StrictMode>,
+  )
 }
 
 describe('AppRoot routing', () => {
@@ -43,11 +78,7 @@ describe('AppRoot routing', () => {
   it('renders the themed landing page at /', () => {
     setPathname('/')
 
-    const { container } = render(
-      <StrictMode>
-        <AppRoot />
-      </StrictMode>,
-    )
+    const { container } = renderWithAuth()
 
     expect(container.querySelector('.landing-shell')).not.toBeNull()
     expect(screen.getByRole('link', { name: 'Kryopic home' })).toBeInTheDocument()
@@ -65,11 +96,7 @@ describe('AppRoot routing', () => {
   it('navigates to the pricing page and back home from the landing page', async () => {
     setPathname('/')
 
-    const { container } = render(
-      <StrictMode>
-        <AppRoot />
-      </StrictMode>,
-    )
+    const { container } = renderWithAuth()
 
     fireEvent.click(screen.getByRole('button', { name: 'Pricing' }))
 
@@ -81,14 +108,14 @@ describe('AppRoot routing', () => {
     expect(screen.getByRole('heading', { name: 'Free' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Business' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Enterprise' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'log-in' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'sign-up' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign up' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Get Started' })).toHaveLength(4)
     expect(screen.getByLabelText('Free price')).toHaveTextContent('0 KWD / month')
     expect(screen.getByLabelText('Business price')).toHaveTextContent('29 KWD / month')
     expect(screen.getByLabelText('Enterprise price')).toHaveTextContent('49 KWD / month')
 
-    fireEvent.click(screen.getByRole('button', { name: 'sign-up' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up' }))
 
     expect(window.location.pathname).toBe('/pricing')
     expect(screen.getByRole('dialog', { name: 'Sign up' })).toBeInTheDocument()
@@ -113,11 +140,7 @@ describe('AppRoot routing', () => {
   it('opens auth popups from Log in and Sign up without leaving the landing page', async () => {
     setPathname('/')
 
-    const { container } = render(
-      <StrictMode>
-        <AppRoot />
-      </StrictMode>,
-    )
+    const { container } = renderWithAuth()
 
     fireEvent.click(screen.getByRole('button', { name: 'Log in' }))
 
@@ -141,11 +164,13 @@ describe('AppRoot routing', () => {
   it('navigates to the editor when Get started is clicked', async () => {
     setPathname('/')
 
-    const { container } = render(
-      <StrictMode>
-        <AppRoot />
-      </StrictMode>,
-    )
+    const { container } = renderWithAuth({
+      isAuthenticated: true,
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+      },
+    })
 
     fireEvent.click(screen.getByRole('button', { name: 'Get started' }))
 
@@ -166,20 +191,18 @@ describe('AppRoot routing', () => {
     })
   })
 
-  it('navigates to the editor when onboarding is completed from pricing', async () => {
+  it('navigates authenticated users from pricing to the editor when Get Started is clicked', async () => {
     setPathname('/pricing')
 
-    const { container } = render(
-      <StrictMode>
-        <AppRoot />
-      </StrictMode>,
-    )
+    const { container } = renderWithAuth({
+      isAuthenticated: true,
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+      },
+    })
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Get Started' })[0])
-    fireEvent.click(screen.getByRole('button', { name: 'Restaurant' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Start Creating!' }))
 
     await waitFor(() => {
       expect(window.location.pathname).toBe('/app')
@@ -190,14 +213,76 @@ describe('AppRoot routing', () => {
     })
   })
 
-  it('renders the editor at /app', async () => {
+  it('opens sign up from pricing when an unauthenticated user clicks Get Started', async () => {
+    setPathname('/pricing')
+
+    renderWithAuth()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Get Started' })[0])
+
+    await waitFor(() => {
+      expect(screen.getByRole('dialog', { name: 'Sign up' })).toBeInTheDocument()
+    })
+
+    expect(window.location.pathname).toBe('/pricing')
+  })
+
+  it('redirects unauthenticated users away from /app and opens the login modal', async () => {
     setPathname('/app')
 
-    const { container } = render(
-      <StrictMode>
-        <AppRoot />
-      </StrictMode>,
-    )
+    renderWithAuth()
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/')
+      expect(screen.getByRole('dialog', { name: 'Log in' })).toBeInTheDocument()
+    })
+
+    expect(window.location.search).toContain('auth=login')
+  })
+
+  it('blocks /auth/reset when there is no recovery session', () => {
+    setPathname('/auth/reset')
+
+    renderWithAuth({
+      isAuthenticated: true,
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+      },
+      isPasswordRecovery: false,
+    })
+
+    expect(screen.getByRole('heading', { name: 'Reset link unavailable' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Update password' })).toBeNull()
+  })
+
+  it('renders the password reset form only for recovery sessions', () => {
+    setPathname('/auth/reset')
+
+    renderWithAuth({
+      isAuthenticated: true,
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+      },
+      isPasswordRecovery: true,
+    })
+
+    expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument()
+    expect(screen.getByLabelText('New password')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Update password' })).toBeInTheDocument()
+  })
+
+  it('renders the editor at /app for authenticated users', async () => {
+    setPathname('/app')
+
+    const { container } = renderWithAuth({
+      isAuthenticated: true,
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+      },
+    })
 
     await waitFor(() => {
       expect(container.querySelector('.app-shell')).not.toBeNull()
@@ -250,11 +335,13 @@ describe('AppRoot routing', () => {
   it('updates the visible stage metrics when document dimensions change', async () => {
     setPathname('/app')
 
-    const { container } = render(
-      <StrictMode>
-        <AppRoot />
-      </StrictMode>,
-    )
+    const { container } = renderWithAuth({
+      isAuthenticated: true,
+      user: {
+        id: 'user-1',
+        email: 'user@example.com',
+      },
+    })
 
     await waitFor(() => {
       expect(container.querySelector('.workspace-main-column')).not.toBeNull()

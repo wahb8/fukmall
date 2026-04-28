@@ -30,9 +30,15 @@ The frontend may not:
 
 - verify webhook signatures before processing
 - store raw payloads for audit/debugging
-- deduplicate events by provider event ID
+- deduplicate events reliably before reprocessing
 - keep handlers idempotent
 - update local subscription state only after verified events
+
+Current implementation detail:
+
+- the webhook audit table is `billing_webhook_events`
+- the current dedupe key is `event_hash`, a SHA-256 hash of the raw webhook body
+- non-subscription events can be marked `ignored` instead of forcing subscription updates
 
 ## Local Subscription Model
 

@@ -20,6 +20,13 @@ Optional later:
 - failed generation attempts by category
 - token or provider-cost analytics
 
+Current database support:
+
+- `usage_periods` stores per-window counters
+- `usage_events` stores append-only event history
+- `public.record_usage_event(...)` writes an event and updates counters together
+- `usage_periods.asset_upload_count` now tracks finalized user-upload counts per usage window
+
 ## Enforcement Model
 
 Usage enforcement should happen before expensive operations.
@@ -33,17 +40,28 @@ Recommended flow:
 5. perform the expensive operation
 6. record usage event and update counters
 
+Current implementation detail:
+
+- the first `llm-generate-post` function only checks quota and creates a pending job
+- usage should be recorded when the expensive generation actually succeeds, not when the request is
+  merely queued
+- onboarding and future attachment uploads now check both `monthly_asset_upload_limit` and
+  `monthly_storage_limit_bytes` before signed uploads are issued and again before metadata is
+  finalized
+
 ## Reliability Rules
 
 - usage events should be append-only
 - summary counters should be derived from or backed by event records
 - failed or rejected requests should not consume successful-generation quota unless explicitly intended
 - Edge Functions, not the client, must write usage records
+- users can read their own usage rows, but they cannot write them directly
 
 ## Suggested Limit Types
 
 - monthly generations
 - monthly edits
+- monthly asset uploads
 - storage quota
 
 These limits should be defined centrally by plan.
