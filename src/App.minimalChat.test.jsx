@@ -4,23 +4,30 @@ import App from './App'
 
 const {
   createChatMock,
+  cancelGenerationJobMock,
   deleteChatMock,
   generatePostMock,
   listChatsMock,
   loadChatSessionMock,
   renameChatMock,
+  exportDocumentImageMock,
   uploadPromptAttachmentMock,
+  waitForGenerationJobMock,
 } = vi.hoisted(() => ({
   createChatMock: vi.fn(),
+  cancelGenerationJobMock: vi.fn(),
   deleteChatMock: vi.fn(),
   generatePostMock: vi.fn(),
   listChatsMock: vi.fn(),
   loadChatSessionMock: vi.fn(),
   renameChatMock: vi.fn(),
+  exportDocumentImageMock: vi.fn(),
   uploadPromptAttachmentMock: vi.fn(),
+  waitForGenerationJobMock: vi.fn(),
 }))
 
 vi.mock('./lib/chatSessions', () => ({
+  cancelGenerationJob: cancelGenerationJobMock,
   createChat: createChatMock,
   deleteChat: deleteChatMock,
   generatePost: generatePostMock,
@@ -28,6 +35,11 @@ vi.mock('./lib/chatSessions', () => ({
   loadChatSession: loadChatSessionMock,
   renameChat: renameChatMock,
   uploadPromptAttachment: uploadPromptAttachmentMock,
+  waitForGenerationJob: waitForGenerationJobMock,
+}))
+
+vi.mock('./lib/exportDocument', () => ({
+  exportDocumentImage: exportDocumentImageMock,
 }))
 
 function createChatSummary(id, title, detail = 'Apr 28') {
@@ -72,12 +84,15 @@ describe('App minimal chat shell', () => {
     window.localStorage.clear()
     vi.restoreAllMocks()
     createChatMock.mockReset()
+    cancelGenerationJobMock.mockReset()
     deleteChatMock.mockReset()
     generatePostMock.mockReset()
     listChatsMock.mockReset()
     loadChatSessionMock.mockReset()
     renameChatMock.mockReset()
+    exportDocumentImageMock.mockReset()
     uploadPromptAttachmentMock.mockReset()
+    waitForGenerationJobMock.mockReset()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi
       .spyOn(HTMLCanvasElement.prototype, 'getContext')
@@ -97,6 +112,110 @@ describe('App minimal chat shell', () => {
           putImageData: () => {},
         })
       })
+  })
+
+  it('downloads the current canvas from the bottom hover panel as PNG and JPG', async () => {
+    listChatsMock.mockResolvedValue([
+      createChatSummary('chat-1', 'Campaign ideas'),
+    ])
+    loadChatSessionMock.mockResolvedValue(createChatSession('chat-1', 'Campaign ideas', {
+      latestGeneratedPost: {
+        id: 'post-1',
+        chat_id: 'chat-1',
+        bucket_name: 'generated-posts',
+        image_storage_path: 'user/renders/post-1.png',
+        previewUrl: 'https://example.com/generated-post.png',
+        width: 1080,
+        height: 1350,
+      },
+      timelineEntries: [],
+    }))
+    exportDocumentImageMock.mockResolvedValue(undefined)
+
+    const { container } = render(<App />)
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-generated-post-id="post-1"]')).toBeInTheDocument()
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: 'PNG' }))
+
+    await waitFor(() => {
+      expect(exportDocumentImageMock).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          width: 1080,
+          height: 1350,
+        }),
+        1080,
+        1350,
+        'png',
+        expect.any(String),
+      )
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'JPG' })).not.toBeDisabled()
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'JPG' }))
+
+    await waitFor(() => {
+      expect(exportDocumentImageMock).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          width: 1080,
+          height: 1350,
+        }),
+        1080,
+        1350,
+        'jpeg',
+        expect.any(String),
+      )
+    })
+  })
+
+  it('anchors prompt image attachments to the canvas instead of between the canvas and prompt input', async () => {
+    listChatsMock.mockResolvedValue([])
+    createChatMock.mockResolvedValue({
+      id: 'chat-1',
+    })
+    uploadPromptAttachmentMock.mockResolvedValue({
+      id: 'asset-1',
+      original_file_name: 'coffee.png',
+      previewUrl: 'https://example.com/coffee.png',
+    })
+
+    const { container } = render(<App />)
+    let fileInput = null
+
+    await waitFor(() => {
+      fileInput = container.querySelector('input[type="file"][accept="image/*"][multiple]')
+      expect(fileInput).not.toBeNull()
+    })
+
+    const file = new File(['image'], 'coffee.png', { type: 'image/png' })
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    })
+
+    await waitFor(() => {
+      expect(uploadPromptAttachmentMock).toHaveBeenCalledWith('chat-1', file)
+    })
+
+    let attachmentTabs = null
+
+    await waitFor(() => {
+      attachmentTabs = container.querySelector('.canvas-attachment-tabs')
+      expect(attachmentTabs).not.toBeNull()
+    })
+
+    expect(attachmentTabs.closest('.canvas-composer-shell')).not.toBeNull()
+    expect(attachmentTabs.closest('.canvas-prompt-stack')).toBeNull()
+    expect(screen.getByAltText('coffee.png')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove coffee.png' })).toBeInTheDocument()
   })
 
   afterEach(() => {
@@ -147,6 +266,12 @@ describe('App minimal chat shell', () => {
       .mockResolvedValueOnce(createChatSession('chat-1', 'Campaign ideas'))
       .mockResolvedValueOnce(createChatSession('chat-1', 'Campaign ideas'))
     generatePostMock.mockReturnValue(submitDeferred.promise)
+    waitForGenerationJobMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'completed',
+      },
+    })
 
     render(<App />)
 
@@ -167,20 +292,114 @@ describe('App minimal chat shell', () => {
       })
       expect(screen.getByPlaceholderText('Describe what you want to create...')).toBeDisabled()
       expect(screen.getByRole('button', { name: 'Add image' })).toBeDisabled()
-      expect(screen.getByRole('button', { name: 'Submit prompt' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Stop generating' })).not.toBeDisabled()
       expect(screen.getByRole('status', { name: 'Creating your post' })).toBeInTheDocument()
       expect(screen.queryByText('Creating your post...')).not.toBeInTheDocument()
     })
 
     submitDeferred.resolve({
       generation_mode: 'initial',
-      post: {
-        id: 'post-1',
+      job: {
+        id: 'job-1',
+        status: 'pending',
       },
     })
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Describe what you want to create...')).not.toBeDisabled()
+    })
+  })
+
+  it('stops an active prompt generation from the send button', async () => {
+    listChatsMock.mockResolvedValue([
+      createChatSummary('chat-1', 'Campaign ideas'),
+    ])
+    loadChatSessionMock.mockResolvedValue(createChatSession('chat-1', 'Campaign ideas'))
+    generatePostMock.mockResolvedValue({
+      generation_mode: 'initial',
+      job: {
+        id: 'job-1',
+        status: 'pending',
+      },
+    })
+    waitForGenerationJobMock.mockImplementation((_jobId, options = {}) => (
+      new Promise((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'))
+        }, { once: true })
+      })
+    ))
+    cancelGenerationJobMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'canceled',
+      },
+      canceled: true,
+    })
+
+    render(<App />)
+
+    const promptInput = await screen.findByPlaceholderText('Describe what you want to create...')
+    fireEvent.change(promptInput, {
+      target: { value: 'Create a launch post for our new coffee line' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit prompt' }))
+
+    const stopButton = await screen.findByRole('button', { name: 'Stop generating' })
+    await waitFor(() => {
+      expect(waitForGenerationJobMock).toHaveBeenCalledWith('job-1', {
+        signal: expect.any(AbortSignal),
+      })
+    })
+    fireEvent.click(stopButton)
+
+    await waitFor(() => {
+      expect(cancelGenerationJobMock).toHaveBeenCalledWith('job-1')
+      expect(screen.getByRole('button', { name: 'Submit prompt' })).not.toBeDisabled()
+      expect(screen.queryByRole('status', { name: 'Creating your post' })).not.toBeInTheDocument()
+    })
+  })
+
+  it('cancels a stopped generation after the backend returns a delayed job id', async () => {
+    const startDeferred = createDeferred()
+
+    listChatsMock.mockResolvedValue([
+      createChatSummary('chat-1', 'Campaign ideas'),
+    ])
+    loadChatSessionMock.mockResolvedValue(createChatSession('chat-1', 'Campaign ideas'))
+    generatePostMock.mockReturnValue(startDeferred.promise)
+    cancelGenerationJobMock.mockResolvedValue({
+      job: {
+        id: 'job-delayed',
+        status: 'canceled',
+      },
+      canceled: true,
+    })
+
+    render(<App />)
+
+    const promptInput = await screen.findByPlaceholderText('Describe what you want to create...')
+    fireEvent.change(promptInput, {
+      target: { value: 'Create a launch post for our new coffee line' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit prompt' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop generating' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Submit prompt' })).not.toBeDisabled()
+    })
+
+    startDeferred.resolve({
+      generation_mode: 'initial',
+      job: {
+        id: 'job-delayed',
+        status: 'pending',
+      },
+    })
+
+    await waitFor(() => {
+      expect(cancelGenerationJobMock).toHaveBeenCalledWith('job-delayed')
+      expect(waitForGenerationJobMock).not.toHaveBeenCalled()
     })
   })
 
@@ -212,8 +431,16 @@ describe('App minimal chat shell', () => {
       }))
     generatePostMock.mockResolvedValue({
       generation_mode: 'initial',
-      post: {
-        id: 'post-1',
+      job: {
+        id: 'job-1',
+        status: 'pending',
+      },
+    })
+    waitForGenerationJobMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'completed',
+        output_post_id: 'post-1',
       },
     })
 
@@ -224,6 +451,12 @@ describe('App minimal chat shell', () => {
       target: { value: 'Create a launch post for our new coffee line' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Submit prompt' }))
+
+    await waitFor(() => {
+      expect(waitForGenerationJobMock).toHaveBeenCalledWith('job-1', {
+        signal: expect.any(AbortSignal),
+      })
+    })
 
     await waitFor(() => {
       const generatedLayer = container.querySelector('[data-generated-post-id="post-1"]')

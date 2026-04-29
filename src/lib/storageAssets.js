@@ -63,18 +63,21 @@ async function extractFunctionErrorMessage(error, fallbackMessage) {
   return error?.message || fallbackMessage
 }
 
-export async function invokeEdgeFunction(functionName, body, fallbackMessage) {
+export async function invokeEdgeFunction(functionName, body, fallbackMessage, options = {}) {
   const supabase = getRequiredSupabaseClient()
   const { data, error } = await supabase.functions.invoke(functionName, {
     body,
+    signal: options.signal ?? undefined,
+    timeout: options.timeout ?? undefined,
   })
 
   if (error) {
-    throw new Error(await extractFunctionErrorMessage(error, fallbackMessage))
+    const errorMessage = await extractFunctionErrorMessage(error, fallbackMessage)
+    throw new Error(`${functionName}: ${errorMessage}`)
   }
 
   if (!data?.ok) {
-    throw new Error(data?.error?.message || fallbackMessage)
+    throw new Error(`${functionName}: ${data?.error?.message || fallbackMessage}`)
   }
 
   return data.data

@@ -500,11 +500,116 @@ describe('chatSessions', () => {
         attachment_asset_ids: ['asset-1', 'asset-2'],
       },
       'Unable to generate the post.',
+      { signal: null },
     )
     expect(result).toMatchObject({
       post: {
         id: 'post-1',
       },
     })
+  })
+
+  it('loads generation job status through the status edge function', async () => {
+    invokeEdgeFunctionMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'processing',
+      },
+    })
+
+    const { getGenerationJobStatus } = await import('./chatSessions')
+    const result = await getGenerationJobStatus(' job-1 ')
+
+    expect(invokeEdgeFunctionMock).toHaveBeenCalledWith(
+      'generation-job-status',
+      {
+        job_id: 'job-1',
+      },
+      'Unable to load generation status.',
+      { signal: null },
+    )
+    expect(result).toMatchObject({
+      job: {
+        status: 'processing',
+      },
+    })
+  })
+
+  it('returns when a generation job reaches completed state', async () => {
+    invokeEdgeFunctionMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'completed',
+      },
+    })
+
+    const { waitForGenerationJob } = await import('./chatSessions')
+    const result = await waitForGenerationJob('job-1')
+
+    expect(result).toMatchObject({
+      job: {
+        status: 'completed',
+      },
+    })
+  })
+
+  it('throws the safe assistant message when a generation job fails', async () => {
+    invokeEdgeFunctionMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'failed',
+        error_message: 'Raw provider failure',
+      },
+      assistant_message: {
+        content_text: 'Image generation timed out. Please try again.',
+      },
+    })
+
+    const { waitForGenerationJob } = await import('./chatSessions')
+
+    await expect(waitForGenerationJob('job-1')).rejects.toThrow(
+      'Image generation timed out. Please try again.',
+    )
+  })
+
+  it('invokes the cancel-generation-job edge function', async () => {
+    invokeEdgeFunctionMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'canceled',
+      },
+      canceled: true,
+    })
+
+    const { cancelGenerationJob } = await import('./chatSessions')
+    const result = await cancelGenerationJob(' job-1 ')
+
+    expect(invokeEdgeFunctionMock).toHaveBeenCalledWith(
+      'cancel-generation-job',
+      {
+        job_id: 'job-1',
+      },
+      'Unable to stop generation.',
+      { signal: null },
+    )
+    expect(result).toMatchObject({
+      canceled: true,
+      job: {
+        status: 'canceled',
+      },
+    })
+  })
+
+  it('throws when a generation job reaches canceled state while polling', async () => {
+    invokeEdgeFunctionMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'canceled',
+      },
+    })
+
+    const { waitForGenerationJob } = await import('./chatSessions')
+
+    await expect(waitForGenerationJob('job-1')).rejects.toThrow('Generation was stopped.')
   })
 })

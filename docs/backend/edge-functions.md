@@ -17,6 +17,8 @@ The first server-side function layer now exists in scaffold form:
 
 - shared auth, env, error, Supabase, Lemon, plan, and usage helpers in `supabase/functions/_shared/`
 - `generate-post`
+- `generation-job-status`
+- `cancel-generation-job`
 - `llm-generate-post`
 - `lemon-webhook`
 - `prepare-upload`
@@ -37,7 +39,10 @@ Current behavior:
 - treats the first prompt in a chat as initial generation and later prompts as edits
 - enforces generation or edit limits before calling OpenAI
 - builds hidden image and caption prompts through shared prompt-template helpers
-- calls OpenAI from the Edge Function only, with image and caption generation running in parallel
+- creates a `generation_jobs` row and returns `202 Accepted` so the browser can poll instead of
+  waiting on one long image-generation request
+- calls OpenAI from the Edge Function background task only, with image and caption generation
+  running in parallel
 - uses `gpt-image-2` as the default image generation model unless
   `OPENAI_IMAGE_MODEL` overrides it
 - sends GPT Image model requests through the direct Images API, using image edits when reference
@@ -46,14 +51,56 @@ Current behavior:
 - stores caption text and generated-post metadata in `generated_posts`
 - appends assistant result or error messages to `chat_messages`
 - records storage and generation/edit usage only after successful output persistence
-- updates `generation_jobs` through `pending`, `processing`, `completed`, or `failed`
+- updates `generation_jobs` through `pending`, `processing`, `completed`, `failed`, or `canceled`
+- checks for user cancellation before persisting generated output so stopped jobs do not write a
+  post back into the chat after the frontend has interrupted generation
+- cancels older pending/processing jobs in the same chat when a newer generation starts, and only
+  lets the latest job for that chat persist output
+- completes a job only if it is still `processing`; if the user canceled it before completion, the
+  function rolls back the generated post, assistant message, and stored image instead of reviving
+  the job as `completed`
 - keeps fallback reference images deferred for now; when a profile has no reference images, the
   function proceeds from written brand context and marks the fallback metadata as deferred
 
 Current limitation:
 
 - fallback reference asset sets by business type are intentionally not implemented yet
-- provider calls are synchronous for the MVP path instead of queued background jobs
+- background generation currently uses the Edge Runtime background-task lifecycle, not a durable
+  external queue
+
+### `generation-job-status`
+
+Current behavior:
+
+- verifies auth
+- validates the generation job ID
+- loads only the current user's matching `generation_jobs` row
+- returns the current job status and the matching assistant result/error message after completion
+  or failure
+- lets the frontend poll `pending`, `processing`, `completed`, and `failed` states without holding
+  the original request open
+- reports `canceled` jobs as terminal so the frontend can stop polling cleanly
+
+Current limitation:
+
+- it is a polling endpoint only; server push or realtime updates can be added later if needed
+
+### `cancel-generation-job`
+
+Current behavior:
+
+- verifies auth
+- validates the generation job ID
+- loads only the current user's matching `generation_jobs` row
+- updates `pending` or `processing` jobs to `canceled`
+- leaves already terminal jobs unchanged
+- returns the current terminal job state if the job finishes between lookup and the cancel update,
+  instead of treating that race as a server error
+
+Purpose:
+
+- lets the frontend stop polling and mark an active generation as interrupted without trusting a
+  client-side-only state change
 
 ### `llm-generate-post`
 
@@ -140,6 +187,12 @@ Current behavior:
 - verifies ownership and asset kind for the selected logo and reference images
 - creates or updates the default `business_profiles` row
 - links uploaded assets back to that business profile
+- deletes removed brand reference images and logos from private Storage and removes their
+  `uploaded_assets` metadata rows, instead of leaving stale unlinked profile assets behind
+- also cleans stale unlinked brand-reference and logo assets for the same user while preserving
+  assets included in the current save request
+- stale asset cleanup is best-effort and does not block saving/linking the current profile assets
+  if a stale Storage object, cleanup lookup, metadata delete, or usage rollback fails
 
 Current limitation:
 

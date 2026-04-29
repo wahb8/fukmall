@@ -9,7 +9,9 @@
 
 ## Generation Pipeline
 
-The current MVP implementation lives in `supabase/functions/generate-post`.
+The current MVP implementation starts in `supabase/functions/generate-post`, is tracked through
+`supabase/functions/generation-job-status`, and can be interrupted through
+`supabase/functions/cancel-generation-job`.
 
 Current model defaults:
 
@@ -19,13 +21,17 @@ Current model defaults:
   `OPENAI_CAPTION_MODEL`
 - GPT Image model defaults use the direct Images API; older/mainline overrides can still use the
   Responses image-generation tool path
-- image quality defaults to `high` for best output quality; it can be overridden with
+- image quality defaults to `high` in code for best output quality; it can be overridden with
   `OPENAI_IMAGE_QUALITY`
 - image requests are guarded by `OPENAI_IMAGE_TIMEOUT_MS` so provider delays fail cleanly before the
   platform kills the function; the code default is `135000` ms, while the current dev deployment is
-  configured at `145000` ms for high-quality testing
-- image and caption provider calls run in parallel so caption generation does not add extra wait
-  time after the image finishes
+  configured at `145000` ms
+- the current dev deployment sets `OPENAI_IMAGE_QUALITY=medium` to reduce timeout risk while still
+  keeping output quality acceptable for testing
+- image and caption provider calls run in a background generation job so the browser does not hold
+  one long request open while OpenAI creates the image
+- image and caption provider calls still run in parallel inside that job so caption generation does
+  not add extra wait time after the image finishes
 - GPT Image 2 reference-image requests omit `input_fidelity` because that model already processes
   image inputs at high fidelity
 
@@ -41,18 +47,39 @@ Current model defaults:
    - reference asset metadata if needed
 6. fetch bounded recent chat context
 7. fetch attachment metadata for the current request
-8. build structured prompts
-9. call OpenAI
-10. store generated outputs in Storage
-11. write message, post, version, and usage records
-12. return structured result to the frontend
+8. write a `generation_jobs` row with `status = 'pending'`
+9. return `202 Accepted` to the frontend with the job ID
+10. run the generation in the Edge Function background task
+11. move the job to `processing`
+12. build structured prompts
+13. call OpenAI
+14. store generated outputs in Storage
+15. write message, post, version, and usage records
+16. move the job to `completed`, `failed`, or `canceled`
+17. let the frontend poll `generation-job-status` until the generated post is ready
+
+If the user presses stop while a job is active, the frontend aborts its request/polling and calls
+`cancel-generation-job`. The background worker checks the job state before writing final artifacts,
+so a canceled job should not attach a late generated post to the chat.
+
+When a newer generation starts in the same chat, `generate-post` also cancels older pending or
+processing jobs and only allows the latest job in that chat to persist output. This prevents quick
+stop/start cycles from saving multiple late images.
 
 Current prompt behavior:
 
 - when profile reference images exist, the image prompt starts from the user's requested behavior:
-  `Using the attached images, create an Instagram post that matches their aesthetic and style. However, do not include anything from the attached images unless specified, only match the exact style of the images.`
+  `Create a polished Instagram post design that matches the visual style, mood, color palette, typography feel, spacing, and composition style of the attached reference images.`
+- attached reference images are treated as style references only; the prompt tells the model not to
+  copy exact layouts, logos, text, people, products, or specific objects unless the user explicitly
+  asks for them
+- saved brand logos are attached separately from style references and are sent to OpenAI with the
+  file name `logo`; when a logo exists, the prompt explicitly allows using it as the brand logo while
+  keeping it subtle and professionally integrated
+- when no saved logo exists, the prompt does not mention an uploaded logo
 - when no profile reference images exist, fallback reference images are deferred and the function
-  uses written brand context instead of pretending images are attached
+  uses the no-reference prompt: `Create a polished Instagram post design based on the written brand
+  context and user request.`
 - caption generation uses a separate caption-only prompt based on the user request and returns only
   the caption text
 
@@ -122,3 +149,6 @@ Recommended metadata to save:
 - use bounded retries only for safe failure classes
 - do not double-charge usage events for failed attempts
 - keep post version creation transactional where practical
+- the current async implementation uses Supabase Edge Function background tasks; a durable queue or
+  scheduled worker can be added later if generation needs to survive provider delays beyond the Edge
+  Runtime lifecycle

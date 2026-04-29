@@ -52,7 +52,7 @@ describe('OpenAI shared helper', () => {
     const result = await generatePostImage({
       instructions: 'Create a post.',
       userPrompt: 'Create a cafe launch post.',
-      referenceImageUrls: ['https://example.com/reference.png'],
+      referenceImageUrls: [{ url: 'https://example.com/reference.png', fileName: 'logo' }],
       requestedWidth: 1080,
       requestedHeight: 1080,
     })
@@ -72,6 +72,7 @@ describe('OpenAI shared helper', () => {
     expect(requestBody.get('format')).toBeNull()
     expect(requestBody.get('input_fidelity')).toBeNull()
     expect(requestBody.getAll('image[]')).toHaveLength(1)
+    expect((requestBody.getAll('image[]')[0] as File).name).toBe('logo.png')
   })
 
   it('uses the direct GPT Image 2 generation endpoint when no reference images are provided', async () => {

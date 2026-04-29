@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import addImageIcon from './assets/add image.svg'
 import penTabIcon from './assets/pen.svg'
-import shareTabIcon from './assets/share.svg'
 import { AddLayerPanel } from './components/editor/AddLayerPanel'
 import { AssetLibraryPanel } from './components/editor/AssetLibraryPanel'
+import { CanvasDownloadPanel } from './components/editor/CanvasDownloadPanel'
 import { EditorToolbar } from './components/editor/EditorToolbar'
 import { ExternalImageDropOverlay } from './components/editor/ExternalImageDropOverlay'
 import { FileMenu } from './components/editor/FileMenu'
@@ -13,7 +13,7 @@ import { ChatTimelinePanel } from './components/editor/ChatTimelinePanel'
 import { LayerFlipControls } from './components/editor/LayerFlipControls'
 import { LayerPanel } from './components/editor/LayerPanel'
 import { PostSidebar } from './components/editor/PostSidebar'
-import { PromptShell } from './components/editor/PromptShell'
+import { PromptAttachmentTabs, PromptShell } from './components/editor/PromptShell'
 import { NewFileModal } from './components/editor/modals/NewFileModal'
 import { SettingsModal } from './components/editor/modals/SettingsModal'
 import { UnsavedChangesModal } from './components/editor/modals/UnsavedChangesModal'
@@ -200,6 +200,7 @@ import {
   serializeProjectFile,
 } from './lib/documentFiles'
 import {
+  cancelGenerationJob,
   createChat,
   deleteChat,
   generatePost,
@@ -207,6 +208,7 @@ import {
   loadChatSession,
   renameChat,
   uploadPromptAttachment,
+  waitForGenerationJob,
 } from './lib/chatSessions'
 
 function isSupportedAssetFile(file) {
@@ -1051,6 +1053,19 @@ function isGeneratedPostCanvasLayer(layer) {
   return Boolean(layer?.generatedPostLayer)
 }
 
+function isPromptGenerationStopError(error) {
+  const name = String(error?.name ?? '').toLowerCase()
+  const message = String(error?.message ?? '').toLowerCase()
+
+  return (
+    name === 'aborterror' ||
+    message.includes('abort') ||
+    message.includes('cancelled') ||
+    message.includes('canceled') ||
+    message.includes('generation was stopped')
+  )
+}
+
 function getGeneratedPostCanvasDimensions(post, documentState) {
   const postWidth = Math.round(Number(post?.width))
   const postHeight = Math.round(Number(post?.height))
@@ -1233,6 +1248,9 @@ function App({
   const [promptComposerAttachments, setPromptComposerAttachments] = useState([])
   const [isPromptSubmitting, setIsPromptSubmitting] = useState(false)
   const [isPromptAttachmentUploading, setIsPromptAttachmentUploading] = useState(false)
+  const promptGenerationAbortRef = useRef(null)
+  const promptGenerationJobIdRef = useRef(null)
+  const promptGenerationRunRef = useRef(null)
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
   const [textEditorSelection, setTextEditorSelection] = useState({ start: 0, end: 0 })
@@ -1254,6 +1272,10 @@ function App({
   const [trimTransparentImports, setTrimTransparentImports] = useState(
     () => loadTrimTransparentImportsFromStorage(),
   )
+  useEffect(() => () => {
+    promptGenerationRunRef.current?.pollAbortController?.abort()
+    promptGenerationAbortRef.current?.abort()
+  }, [])
   const [globalColors, setGlobalColors] = useState(() => loadColorsFromStorage())
   const [penSize, setPenSize] = useState(DEFAULT_PEN_SIZE)
   const [eraserSize, setEraserSize] = useState(DEFAULT_ERASER_SIZE)
@@ -1310,6 +1332,7 @@ function App({
   const documentName = normalizeNewFileNameInput(documentState.name, DEFAULT_DOCUMENT_NAME)
   const defaultBusinessProfileId = defaultBusinessProfile?.id ?? null
   const isMinimalEditorMode = !editorChromeEnabled
+  const shouldShowFirstEntryCanvas = isMinimalEditorMode && isFirstEntryCanvasVisible
   const editorIcons = useMemo(() => getEditorIcons(theme), [theme])
   const currentDocumentSignature = useMemo(() => serializeProjectFile(documentState), [documentState])
   const hasUnsavedChanges = currentDocumentSignature !== savedDocumentSignature
@@ -2133,7 +2156,7 @@ function App({
       return
     }
 
-    if (isFirstEntryCanvasVisible) {
+    if (shouldShowFirstEntryCanvas) {
       return
     }
 
@@ -2148,7 +2171,7 @@ function App({
       hasShownAutosaveErrorRef.current = true
       showToolPanelError('Current document could not be autosaved locally.')
     }
-  }, [documentState, isFirstEntryCanvasVisible, showToolPanelError])
+  }, [documentState, shouldShowFirstEntryCanvas, showToolPanelError])
 
   useEffect(() => {
     function handlePointerDownOutside(event) {
@@ -4422,6 +4445,28 @@ function App({
     ))
   }, [])
 
+  const handleStopPromptGeneration = useCallback(() => {
+    const activeRun = promptGenerationRunRef.current
+    const activeJobId = activeRun?.jobId ?? promptGenerationJobIdRef.current
+
+    if (activeRun) {
+      activeRun.stopRequested = true
+      activeRun.pollAbortController?.abort()
+    } else {
+      promptGenerationAbortRef.current?.abort()
+    }
+
+    setIsPromptSubmitting(false)
+    setChatStatusMessage('')
+    setChatStatusTone('info')
+
+    if (activeJobId) {
+      cancelGenerationJob(activeJobId).catch((error) => {
+        console.error('Failed to cancel generation job', error)
+      })
+    }
+  }, [])
+
   const handleSubmitPromptComposer = useCallback(async () => {
     if (!isMinimalEditorMode || isPromptSubmitting || isPromptAttachmentUploading) {
       return
@@ -4439,11 +4484,20 @@ function App({
     setChatStatusTone('info')
     setChatStatusMessage('Creating your post...')
     let chatId = null
+    const generationRun = {
+      id: `${Date.now()}-${Math.random()}`,
+      jobId: null,
+      stopRequested: false,
+      pollAbortController: new AbortController(),
+    }
+    promptGenerationRunRef.current = generationRun
+    promptGenerationAbortRef.current = generationRun.pollAbortController
+    promptGenerationJobIdRef.current = null
 
     try {
       chatId = await ensureActiveChat(documentName)
 
-      await generatePost({
+      const generationStart = await generatePost({
         chatId,
         prompt: normalizedPrompt,
         width: documentWidth,
@@ -4451,9 +4505,48 @@ function App({
         businessProfileId: defaultBusinessProfileId,
         attachmentAssetIds: promptComposerAttachments.map((attachment) => attachment.id),
       })
+      const generationJobId = generationStart?.job?.id
+      generationRun.jobId = generationJobId ?? null
+
+      if (promptGenerationRunRef.current === generationRun) {
+        promptGenerationJobIdRef.current = generationRun.jobId
+      }
+
+      if (generationRun.stopRequested) {
+        if (generationJobId) {
+          await cancelGenerationJob(generationJobId)
+        }
+        return
+      }
+
+      if (generationStart?.job?.status !== 'completed' && !generationStart?.post) {
+        if (!generationJobId) {
+          throw new Error('Generation job could not be started.')
+        }
+
+        await waitForGenerationJob(generationJobId, {
+          signal: generationRun.pollAbortController.signal,
+        })
+      }
+
+      if (
+        generationRun.stopRequested ||
+        generationRun.pollAbortController.signal.aborted ||
+        promptGenerationRunRef.current !== generationRun
+      ) {
+        return
+      }
 
       await refreshChatSummaries(chatId)
       const session = await loadChatSession(chatId)
+
+      if (
+        generationRun.stopRequested ||
+        generationRun.pollAbortController.signal.aborted ||
+        promptGenerationRunRef.current !== generationRun
+      ) {
+        return
+      }
 
       setActiveChatId(chatId)
       setActiveChatSession(session?.chat ?? null)
@@ -4462,6 +4555,17 @@ function App({
       clearPromptComposer()
       setChatStatusMessage('')
     } catch (error) {
+      if (
+        generationRun.stopRequested ||
+        generationRun.pollAbortController.signal.aborted ||
+        isPromptGenerationStopError(error)
+      ) {
+        if (promptGenerationRunRef.current === generationRun) {
+          setChatStatusMessage('')
+        }
+        return
+      }
+
       if (chatId) {
         try {
           await refreshChatSummaries(chatId)
@@ -4479,7 +4583,12 @@ function App({
         'error',
       )
     } finally {
-      setIsPromptSubmitting(false)
+      if (promptGenerationRunRef.current === generationRun) {
+        promptGenerationRunRef.current = null
+        promptGenerationAbortRef.current = null
+        promptGenerationJobIdRef.current = null
+        setIsPromptSubmitting(false)
+      }
     }
   }, [
     clearPromptComposer,
@@ -4671,8 +4780,17 @@ function App({
         format,
         getDocumentFilenameBase(documentName, 'fukmall-export'),
       )
-    } catch {
-      // Ignore failed exports for the MVP.
+    } catch (error) {
+      console.error('Failed to export canvas image', error)
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Canvas export failed.'
+
+      if (isMinimalEditorMode) {
+        showChatStatusMessage(`Download failed: ${message}`, 'error')
+      } else {
+        showToolPanelError(`Download failed: ${message}`)
+      }
     } finally {
       setIsExporting(false)
     }
@@ -7668,7 +7786,7 @@ function App({
   }
 
   function renderFirstEntryCanvasOverlay() {
-    if (!isFirstEntryCanvasVisible) {
+    if (!shouldShowFirstEntryCanvas) {
       return null
     }
 
@@ -7811,17 +7929,10 @@ function App({
           <button type="button">FX</button>
         </div>
       </aside>
-      <aside className="canvas-slide-panel canvas-slide-panel-bottom" aria-label="Canvas lower side tools">
-        <span className="canvas-slide-tab" aria-label="More">
-          <img src={shareTabIcon} alt="" aria-hidden="true" />
-        </span>
-        <div className="canvas-slide-actions">
-          <button type="button">Draft</button>
-          <button type="button">Alt</button>
-          <button type="button">Notes</button>
-          <button type="button">Post</button>
-        </div>
-      </aside>
+      <CanvasDownloadPanel
+        isDownloading={isExporting}
+        onDownload={handleExport}
+      />
     </>
   )
 
@@ -7851,6 +7962,13 @@ function App({
               <section className="canvas-panel canvas-panel-minimal" aria-label="Canvas panel">
                 <div className="canvas-composer-shell">
                   {canvasUtilityPanels}
+                  <PromptAttachmentTabs
+                    attachments={promptComposerAttachments}
+                    disabled={isPromptAttachmentUploading || isPromptSubmitting}
+                    isSubmitting={isPromptSubmitting}
+                    onRemoveAttachment={handleRemovePromptAttachment}
+                    className="canvas-attachment-tabs"
+                  />
                   <div
                     ref={canvasRef}
                     className="canvas-stage canvas-stage-read-only"
@@ -7885,13 +8003,15 @@ function App({
               <PromptShell
                 value={promptComposerValue}
                 attachments={promptComposerAttachments}
-                disabled={isPromptAttachmentUploading || isPromptSubmitting}
+                showAttachments={false}
+                disabled={isPromptAttachmentUploading}
                 isSubmitting={isPromptSubmitting}
                 isUploadingAttachments={isPromptAttachmentUploading}
                 statusMessage={chatStatusTone === 'error' ? chatStatusMessage : ''}
                 statusTone={chatStatusTone}
                 onChange={setPromptComposerValue}
                 onSubmit={handleSubmitPromptComposer}
+                onStop={handleStopPromptGeneration}
                 onFilesSelected={handlePromptAttachmentsSelected}
                 onRemoveAttachment={handleRemovePromptAttachment}
               />
@@ -8045,8 +8165,6 @@ function App({
                 {canvasCaptionArea}
               </div>
             </section>
-
-            <PromptShell />
           </div>
 
           <aside className="sidebar">

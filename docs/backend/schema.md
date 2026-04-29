@@ -303,8 +303,9 @@ Columns:
 
 Notes:
 
-- statuses are constrained to `pending`, `processing`, `completed`, or `failed`
-- this supports the current synchronous MVP and gives a clean path to async job processing later
+- statuses are constrained to `pending`, `processing`, `completed`, `failed`, or `canceled`
+- `canceled` is used when the user interrupts an in-progress async generation from the frontend
+- this supports the current async MVP and gives a clean path to durable job processing later
 
 ### `usage_periods`
 
@@ -443,7 +444,7 @@ Status values added in this migration:
 - `subscriptions.status`: `trialing`, `active`, `canceled`, `expired`, `past_due`
 - `chats.status`: `active`, `archived`
 - `generated_posts.status`: `draft`, `edited`, `final`, `exported`, `failed`
-- `generation_jobs.status`: `pending`, `processing`, `completed`, `failed`
+- `generation_jobs.status`: `pending`, `processing`, `completed`, `failed`, `canceled`
 - `usage_events.event_type`: `generation`, `edit`, `storage_upload`, `storage_delete`,
   `manual_adjustment`
 - `billing_webhook_events.status`: `received`, `processed`, `ignored`, `failed`

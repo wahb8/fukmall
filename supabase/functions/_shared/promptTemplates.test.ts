@@ -23,14 +23,18 @@ describe('prompt template helpers', () => {
       requestedHeight: 1350,
       aspectRatioLabel: '4:5',
       hasBrandReferences: true,
+      hasBrandLogo: true,
       hasUserAttachments: false,
       generationMode: 'initial',
     })
 
-    expect(prompt).toContain('Using the attached images, create an Instagram post that matches their aesthetic and style. However, do not include anything from the attached images unless specified, only match the exact style of the images.')
-    expect(prompt).toContain('This is what I want:')
+    expect(prompt).toContain('Create a polished Instagram post design that matches the visual style, mood, color palette, typography feel, spacing, and composition style of the attached reference images.')
+    expect(prompt).toContain('The attached image named logo is the only logo that may be used as a brand asset.')
+    expect(prompt).toContain('User request:')
     expect(prompt).toContain('Announce a new iced latte.')
-    expect(prompt).toContain('Make the aspect ratio 4:5')
+    expect(prompt).toContain('- Use the uploaded logo as the brand logo.')
+    expect(prompt).toContain('- Prioritize the user request over the reference images when they conflict.')
+    expect(prompt).toContain('- Match the requested aspect ratio: 4:5.')
     expect(prompt).not.toContain('Requested canvas:')
   })
 
@@ -42,14 +46,35 @@ describe('prompt template helpers', () => {
       requestedHeight: 1080,
       aspectRatioLabel: '1:1',
       hasBrandReferences: false,
+      hasBrandLogo: false,
       hasUserAttachments: false,
       generationMode: 'initial',
     })
 
-    expect(prompt).toContain('Create an Instagram post that matches the written brand context and user request.')
-    expect(prompt).toContain('Make the aspect ratio 1:1')
+    expect(prompt).toContain('Create a polished Instagram post design based on the written brand context and user request.')
+    expect(prompt).toContain('- Use the brand colors and style preferences where appropriate.')
+    expect(prompt).toContain('- Match the requested aspect ratio: 1:1.')
     expect(prompt).not.toContain('Using the attached images')
+    expect(prompt).not.toContain('uploaded logo')
     expect(prompt).not.toContain('Requested canvas:')
+  })
+
+  it('does not treat user attachments as style reference images', () => {
+    const prompt = buildImageGenerationUserPrompt({
+      businessProfile,
+      userPrompt: 'Use the attached product photo in a launch post.',
+      requestedWidth: 1080,
+      requestedHeight: 1080,
+      aspectRatioLabel: '1:1',
+      hasBrandReferences: false,
+      hasBrandLogo: false,
+      hasUserAttachments: true,
+      generationMode: 'initial',
+    })
+
+    expect(prompt).toContain('Create a polished Instagram post design based on the written brand context and user request.')
+    expect(prompt).toContain('- Use the brand colors and style preferences where appropriate.')
+    expect(prompt).not.toContain('attached reference images')
   })
 
   it('builds the requested caption-only prompt for first generation', () => {

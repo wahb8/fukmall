@@ -1,7 +1,8 @@
 import { requireAuthenticatedUser } from '../_shared/auth.ts'
 import { AppError } from '../_shared/errors.ts'
-import { errorResponse, methodNotAllowed, ok, optionsResponse, parseJsonBody } from '../_shared/http.ts'
+import { accepted, errorResponse, methodNotAllowed, ok, optionsResponse, parseJsonBody } from '../_shared/http.ts'
 import { generateCaption, generatePostImage, resolveRequestedImageCanvas } from '../_shared/openai.ts'
+import type { ReferenceImageInput } from '../_shared/openai.ts'
 import {
   buildAssistantSummaryText,
   buildCaptionInstructions,
@@ -29,7 +30,10 @@ interface GeneratePostRequest {
   height: number
   aspect_ratio?: string | null
   attachment_asset_ids?: string[]
+  wait_for_completion?: boolean
 }
+
+type GenerationMode = 'initial' | 'edit'
 
 interface ChatRow {
   id: string
@@ -48,6 +52,7 @@ interface BusinessProfileRow {
   tone_preferences: string[]
   style_preferences: string[]
   brand_colors: string[]
+  logo_asset_id: string | null
   is_default: boolean
 }
 
@@ -262,6 +267,7 @@ async function loadBusinessProfile(
       tone_preferences,
       style_preferences,
       brand_colors,
+      logo_asset_id,
       is_default
     `)
     .eq('user_id', userId)
@@ -305,6 +311,7 @@ async function loadBusinessProfile(
     tone_preferences: normalizeStringArray(data.tone_preferences),
     style_preferences: normalizeStringArray(data.style_preferences),
     brand_colors: normalizeBrandColors(data.brand_colors),
+    logo_asset_id: typeof data.logo_asset_id === 'string' ? data.logo_asset_id : null,
     is_default: Boolean(data.is_default),
   } satisfies BusinessProfileRow
 }
@@ -395,6 +402,44 @@ async function loadBrandReferenceAssets(
   }
 
   return (data ?? []) as UploadedAssetRow[]
+}
+
+async function loadBrandLogoAsset(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  businessProfile: BusinessProfileRow,
+) {
+  if (!businessProfile.logo_asset_id) {
+    return null
+  }
+
+  const { data, error } = await adminClient
+    .from('uploaded_assets')
+    .select(`
+      id,
+      user_id,
+      business_profile_id,
+      chat_id,
+      asset_kind,
+      bucket_name,
+      storage_path,
+      original_file_name,
+      mime_type,
+      file_size_bytes,
+      width,
+      height
+    `)
+    .eq('user_id', userId)
+    .eq('business_profile_id', businessProfile.id)
+    .eq('asset_kind', 'logo')
+    .eq('id', businessProfile.logo_asset_id)
+    .maybeSingle()
+
+  if (error) {
+    throw new AppError('ASSET_LOOKUP_FAILED', 'Failed to load business logo.', 500)
+  }
+
+  return data as UploadedAssetRow | null
 }
 
 async function loadLatestGeneratedPost(
@@ -495,6 +540,142 @@ async function updateGenerationJob(
   }
 }
 
+function isGenerationCanceledError(error: unknown) {
+  return error instanceof AppError && error.code === 'GENERATION_CANCELED'
+}
+
+async function loadGenerationJobStatus(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  jobId: string,
+) {
+  const { data, error } = await adminClient
+    .from('generation_jobs')
+    .select('id, status')
+    .eq('id', jobId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) {
+    throw new AppError('JOB_LOOKUP_FAILED', 'Failed to load generation job.', 500)
+  }
+
+  return data?.status ?? null
+}
+
+async function assertGenerationJobCanContinue(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  chatId: string,
+  jobId: string,
+) {
+  const { data: latestJob, error } = await adminClient
+    .from('generation_jobs')
+    .select('id, status, created_at')
+    .eq('user_id', userId)
+    .eq('chat_id', chatId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    throw new AppError('JOB_LOOKUP_FAILED', 'Failed to load generation job.', 500)
+  }
+
+  if (!latestJob) {
+    throw new AppError('GENERATION_CANCELED', 'Generation stopped by user.', 409)
+  }
+
+  if (latestJob.id !== jobId || latestJob.status === 'canceled') {
+    throw new AppError('GENERATION_CANCELED', 'Generation stopped by user.', 409)
+  }
+}
+
+async function cancelActiveGenerationJobsForChat(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  chatId: string,
+) {
+  const { error } = await adminClient
+    .from('generation_jobs')
+    .update({
+      status: 'canceled',
+      completed_at: new Date().toISOString(),
+      error_message: 'Generation superseded by a newer request.',
+    })
+    .eq('user_id', userId)
+    .eq('chat_id', chatId)
+    .in('status', ['pending', 'processing'])
+
+  if (error) {
+    throw new AppError('JOB_CANCEL_FAILED', 'Failed to stop previous generation jobs.', 500)
+  }
+}
+
+async function markGenerationJobProcessing(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  jobId: string,
+) {
+  const { data, error } = await adminClient
+    .from('generation_jobs')
+    .update({
+      status: 'processing',
+      started_at: new Date().toISOString(),
+    })
+    .eq('id', jobId)
+    .eq('user_id', userId)
+    .eq('status', 'pending')
+    .select('id, status')
+    .maybeSingle()
+
+  if (error) {
+    throw new AppError('JOB_UPDATE_FAILED', 'Failed to update generation job.', 500)
+  }
+
+  if (!data) {
+    const status = await loadGenerationJobStatus(adminClient, userId, jobId)
+
+    if (status === 'canceled') {
+      throw new AppError('GENERATION_CANCELED', 'Generation stopped by user.', 409)
+    }
+  }
+}
+
+async function markGenerationJobCompleted(params: {
+  adminClient: ReturnType<typeof createAdminClient>
+  userId: string
+  jobId: string
+  model: string
+  outputPostId: string
+  responsePayload: Record<string, unknown>
+}) {
+  const { data, error } = await params.adminClient
+    .from('generation_jobs')
+    .update({
+      status: 'completed',
+      model: params.model,
+      output_post_id: params.outputPostId,
+      completed_at: new Date().toISOString(),
+      response_payload: params.responsePayload,
+    })
+    .eq('id', params.jobId)
+    .eq('user_id', params.userId)
+    .eq('status', 'processing')
+    .select('id, status, output_post_id')
+    .maybeSingle()
+
+  if (error) {
+    throw new AppError('JOB_UPDATE_FAILED', 'Failed to update generation job.', 500)
+  }
+
+  if (!data) {
+    throw new AppError('GENERATION_CANCELED', 'Generation stopped by user.', 409)
+  }
+
+  return data
+}
+
 async function insertAssistantErrorMessage(
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string,
@@ -546,6 +727,7 @@ async function createGenerationArtifacts(params: {
   revisedPrompt: string | null
   attachmentAssetIds: string[]
   brandReferenceAssetIds: string[]
+  brandLogoAssetId: string | null
 }) {
   const postId = crypto.randomUUID()
   const generationModeStatus = params.generationMode === 'edit' ? 'edited' : 'draft'
@@ -587,6 +769,7 @@ async function createGenerationArtifacts(params: {
         revised_prompt: params.revisedPrompt,
         attachment_asset_ids: params.attachmentAssetIds,
         brand_reference_asset_ids: params.brandReferenceAssetIds,
+        brand_logo_asset_id: params.brandLogoAssetId,
         used_fallback_reference_assets: false,
         fallback_reference_assets_deferred: params.brandReferenceAssetIds.length === 0,
       },
@@ -647,7 +830,7 @@ async function recordSuccessfulUsage(
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string,
   usagePeriodId: string,
-  generationMode: 'initial' | 'edit',
+  generationMode: GenerationMode,
   generatedPostId: string,
   jobId: string,
   imageBytesLength: number,
@@ -700,6 +883,361 @@ async function recordSuccessfulUsage(
   }
 }
 
+async function completeGenerationJob(params: {
+  adminClient: ReturnType<typeof createAdminClient>
+  userId: string
+  chat: ChatRow
+  businessProfile: BusinessProfileRow
+  prompt: string
+  requestedWidth: number
+  requestedHeight: number
+  requestedAspectRatioLabel: string
+  requestedCanvas: ReturnType<typeof resolveRequestedImageCanvas>
+  attachmentAssetIds: string[]
+  usableAttachmentAssets: UploadedAssetRow[]
+  usableBrandReferenceAssets: UploadedAssetRow[]
+  usableBrandLogoAsset: UploadedAssetRow | null
+  latestGeneratedPost: GeneratedPostRow | null
+  generationMode: GenerationMode
+  usagePeriod: {
+    id: string
+    period_start: string
+    period_end: string
+    generation_count: number
+    edit_count: number
+  }
+  subscription: {
+    plan: {
+      monthly_generation_limit: number | null
+      monthly_edit_limit: number | null
+    }
+  }
+  userMessage: {
+    id: string
+    role: string
+    message_type: string
+    content_text: string | null
+    metadata: Record<string, unknown> | null
+    created_at: string
+  }
+  job: {
+    id: string
+    status: string
+    queued_at: string | null
+    source_message_id: string
+  }
+}) {
+  await markGenerationJobProcessing(params.adminClient, params.userId, params.job.id)
+
+  const brandReferenceImageUrls = await Promise.all(
+    params.usableBrandReferenceAssets
+      .map((asset) => createSignedStorageUrl(params.adminClient, asset.bucket_name, asset.storage_path)),
+  )
+  const brandLogoImageUrl = params.usableBrandLogoAsset
+    ? await createSignedStorageUrl(
+      params.adminClient,
+      params.usableBrandLogoAsset.bucket_name,
+      params.usableBrandLogoAsset.storage_path,
+    )
+    : null
+  const attachmentImageUrls = await Promise.all(
+    params.usableAttachmentAssets
+      .map((asset) => createSignedStorageUrl(params.adminClient, asset.bucket_name, asset.storage_path)),
+  )
+  const logoImageInput: ReferenceImageInput[] = brandLogoImageUrl
+    ? [{ url: brandLogoImageUrl, fileName: 'logo' }]
+    : []
+  const brandReferenceImageInputs: ReferenceImageInput[] = brandReferenceImageUrls
+    .map((url, index) => ({ url, fileName: `reference-${index + 1}` }))
+  const attachmentImageInputs: ReferenceImageInput[] = attachmentImageUrls
+    .map((url, index) => ({ url, fileName: `attachment-${index + 1}` }))
+  const inputImageUrls = params.generationMode === 'edit' &&
+    params.latestGeneratedPost?.bucket_name &&
+    params.latestGeneratedPost?.image_storage_path
+    ? [
+      {
+        url: await createSignedStorageUrl(
+          params.adminClient,
+          params.latestGeneratedPost.bucket_name,
+          params.latestGeneratedPost.image_storage_path,
+        ),
+        fileName: 'current-post',
+      },
+      ...logoImageInput,
+      ...attachmentImageInputs,
+    ]
+    : [
+      ...logoImageInput,
+      ...brandReferenceImageInputs,
+      ...attachmentImageInputs,
+    ]
+
+  const imageInstructions = buildImageGenerationInstructions({
+    businessProfile: params.businessProfile,
+    userPrompt: params.prompt,
+    requestedWidth: params.requestedWidth,
+    requestedHeight: params.requestedHeight,
+    aspectRatioLabel: params.requestedAspectRatioLabel,
+    hasBrandReferences: brandReferenceImageUrls.length > 0,
+    hasBrandLogo: Boolean(brandLogoImageUrl),
+    hasUserAttachments: attachmentImageUrls.length > 0,
+    generationMode: params.generationMode,
+    previousCaption: params.latestGeneratedPost?.caption_text ?? null,
+  })
+  const imageUserPrompt = buildImageGenerationUserPrompt({
+    businessProfile: params.businessProfile,
+    userPrompt: params.prompt,
+    requestedWidth: params.requestedWidth,
+    requestedHeight: params.requestedHeight,
+    aspectRatioLabel: params.requestedAspectRatioLabel,
+    hasBrandReferences: brandReferenceImageUrls.length > 0,
+    hasBrandLogo: Boolean(brandLogoImageUrl),
+    hasUserAttachments: attachmentImageUrls.length > 0,
+    generationMode: params.generationMode,
+    previousCaption: params.latestGeneratedPost?.caption_text ?? null,
+  })
+  const captionInstructions = buildCaptionInstructions()
+  const captionUserPrompt = buildCaptionUserPrompt({
+    businessProfile: params.businessProfile,
+    userPrompt: params.prompt,
+    generationMode: params.generationMode,
+    previousCaption: params.latestGeneratedPost?.caption_text ?? null,
+  })
+
+  const [generatedImage, generatedCaption] = await Promise.all([
+    generatePostImage({
+      instructions: imageInstructions,
+      userPrompt: imageUserPrompt,
+      referenceImageUrls: inputImageUrls,
+      requestedWidth: params.requestedWidth,
+      requestedHeight: params.requestedHeight,
+    }),
+    generateCaption({
+      instructions: captionInstructions,
+      userPrompt: captionUserPrompt,
+    }),
+  ])
+
+  await assertGenerationJobCanContinue(
+    params.adminClient,
+    params.userId,
+    params.chat.id,
+    params.job.id,
+  )
+
+  const generationArtifacts = await createGenerationArtifacts({
+    adminClient: params.adminClient,
+    userId: params.userId,
+    chatId: params.chat.id,
+    businessProfileId: params.businessProfile.id,
+    jobId: params.job.id,
+    userMessageId: params.userMessage.id,
+    prompt: params.prompt,
+    caption: generatedCaption.caption,
+    generationMode: params.generationMode,
+    requestedWidth: params.requestedWidth,
+    requestedHeight: params.requestedHeight,
+    resolvedWidth: generatedImage.outputWidth,
+    resolvedHeight: generatedImage.outputHeight,
+    requestedAspectRatioLabel: params.requestedAspectRatioLabel,
+    latestGeneratedPost: params.latestGeneratedPost,
+    imageBase64: generatedImage.imageBase64,
+    imageModel: generatedImage.model,
+    imageResponseId: generatedImage.responseId,
+    captionResponseId: generatedCaption.responseId,
+    imageUsage: generatedImage.usage,
+    captionUsage: generatedCaption.usage,
+    revisedPrompt: generatedImage.revisedPrompt,
+    attachmentAssetIds: params.attachmentAssetIds,
+    brandReferenceAssetIds: params.usableBrandReferenceAssets.map((asset) => asset.id),
+    brandLogoAssetId: params.usableBrandLogoAsset?.id ?? null,
+  })
+
+  try {
+    await assertGenerationJobCanContinue(
+      params.adminClient,
+      params.userId,
+      params.chat.id,
+      params.job.id,
+    )
+  } catch (error) {
+    if (isGenerationCanceledError(error)) {
+      await params.adminClient
+        .from('chat_messages')
+        .delete()
+        .eq('id', generationArtifacts.assistantMessage.id)
+        .eq('user_id', params.userId)
+      await params.adminClient
+        .from('generated_posts')
+        .delete()
+        .eq('id', generationArtifacts.generatedPost.id)
+        .eq('user_id', params.userId)
+      await removeStoredGeneratedImage(
+        params.adminClient,
+        generationArtifacts.bucketName,
+        generationArtifacts.storagePath,
+      )
+    }
+
+    throw error
+  }
+
+  try {
+    await markGenerationJobCompleted({
+      adminClient: params.adminClient,
+      userId: params.userId,
+      jobId: params.job.id,
+      model: generatedImage.model,
+      outputPostId: generationArtifacts.generatedPost.id,
+      responsePayload: {
+        generation_mode: params.generationMode,
+        image_model: generatedImage.model,
+        image_response_id: generatedImage.responseId,
+        caption_response_id: generatedCaption.responseId,
+        revised_prompt: generatedImage.revisedPrompt,
+        requested_size: params.requestedCanvas.requestedSize,
+        delivered_size: `${generatedImage.outputWidth}x${generatedImage.outputHeight}`,
+        fallback_reference_assets_deferred: brandReferenceImageUrls.length === 0,
+        brand_logo_asset_id: params.usableBrandLogoAsset?.id ?? null,
+      },
+    })
+  } catch (error) {
+    await params.adminClient
+      .from('chat_messages')
+      .delete()
+      .eq('id', generationArtifacts.assistantMessage.id)
+      .eq('user_id', params.userId)
+    await params.adminClient
+      .from('generated_posts')
+      .delete()
+      .eq('id', generationArtifacts.generatedPost.id)
+      .eq('user_id', params.userId)
+    await removeStoredGeneratedImage(
+      params.adminClient,
+      generationArtifacts.bucketName,
+      generationArtifacts.storagePath,
+    )
+    throw error
+  }
+
+  try {
+    await recordSuccessfulUsage(
+      params.adminClient,
+      params.userId,
+      params.usagePeriod.id,
+      params.generationMode,
+      generationArtifacts.generatedPost.id,
+      params.job.id,
+      generationArtifacts.imageBytesLength,
+    )
+  } catch (error) {
+    await params.adminClient
+      .from('chat_messages')
+      .delete()
+      .eq('id', generationArtifacts.assistantMessage.id)
+      .eq('user_id', params.userId)
+    await params.adminClient
+      .from('generated_posts')
+      .delete()
+      .eq('id', generationArtifacts.generatedPost.id)
+      .eq('user_id', params.userId)
+    await removeStoredGeneratedImage(
+      params.adminClient,
+      generationArtifacts.bucketName,
+      generationArtifacts.storagePath,
+    )
+    await updateGenerationJob(params.adminClient, params.userId, params.job.id, {
+      status: 'failed',
+      output_post_id: null,
+      completed_at: new Date().toISOString(),
+      error_message: error instanceof Error ? error.message : 'Usage recording failed.',
+    })
+    throw error
+  }
+
+  return {
+    job: {
+      ...params.job,
+      status: 'completed',
+      output_post_id: generationArtifacts.generatedPost.id,
+    },
+    user_message: params.userMessage,
+    assistant_message: generationArtifacts.assistantMessage,
+    post: generationArtifacts.generatedPost,
+    generation_mode: params.generationMode,
+    usage: {
+      period_start: params.usagePeriod.period_start,
+      period_end: params.usagePeriod.period_end,
+      generation_count: params.generationMode === 'initial'
+        ? params.usagePeriod.generation_count + 1
+        : params.usagePeriod.generation_count,
+      edit_count: params.generationMode === 'edit'
+        ? params.usagePeriod.edit_count + 1
+        : params.usagePeriod.edit_count,
+      generation_limit: params.subscription.plan.monthly_generation_limit,
+      edit_limit: params.subscription.plan.monthly_edit_limit,
+    },
+  }
+}
+
+async function runGenerationJobAndPersistFailure(
+  params: Parameters<typeof completeGenerationJob>[0],
+) {
+  try {
+    return await completeGenerationJob(params)
+  } catch (error) {
+    if (isGenerationCanceledError(error)) {
+      return {
+        job: {
+          ...params.job,
+          status: 'canceled',
+        },
+        user_message: params.userMessage,
+        generation_mode: params.generationMode,
+      }
+    }
+
+    try {
+      await updateGenerationJob(params.adminClient, params.userId, params.job.id, {
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_message: error instanceof Error ? error.message : 'Generation failed.',
+      })
+      await insertAssistantErrorMessage(
+        params.adminClient,
+        params.userId,
+        params.chat.id,
+        params.job.id,
+        error instanceof AppError ? error.code : 'INTERNAL_ERROR',
+      )
+    } catch (jobFailureError) {
+      console.error('Failed to persist generation failure state', jobFailureError)
+    }
+
+    throw error
+  }
+}
+
+function scheduleBackgroundGeneration(task: Promise<unknown>) {
+  const guardedTask = task.catch((error) => {
+    console.error('Async generation job failed', error)
+  })
+  const edgeRuntime = (
+    globalThis as typeof globalThis & {
+      EdgeRuntime?: {
+        waitUntil?: (task: Promise<unknown>) => void
+      }
+    }
+  ).EdgeRuntime
+
+  if (typeof edgeRuntime?.waitUntil === 'function') {
+    edgeRuntime.waitUntil(guardedTask)
+    return
+  }
+
+  void guardedTask
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return optionsResponse()
@@ -713,6 +1251,7 @@ Deno.serve(async (request) => {
   let userIdForFailure: string | null = null
   let chatIdForFailure: string | null = null
   let jobIdForFailure: string | null = null
+  let generationTaskStarted = false
 
   try {
     const { user } = await requireAuthenticatedUser(request)
@@ -773,10 +1312,19 @@ Deno.serve(async (request) => {
     }
 
     const brandReferenceAssets = await loadBrandReferenceAssets(adminClient, user.id, businessProfile.id)
+    const brandLogoAsset = await loadBrandLogoAsset(adminClient, user.id, businessProfile)
     const usableBrandReferenceAssets = brandReferenceAssets
       .filter((asset) => SUPPORTED_REFERENCE_MIME_TYPES.has(asset.mime_type))
+    const usableBrandLogoAsset = brandLogoAsset && SUPPORTED_REFERENCE_MIME_TYPES.has(brandLogoAsset.mime_type)
+      ? brandLogoAsset
+      : null
     const usableAttachmentAssets = attachmentAssets
       .filter((asset) => SUPPORTED_REFERENCE_MIME_TYPES.has(asset.mime_type))
+    const requestedAspectRatioLabel = getRequestedAspectRatioLabel(
+      body.width,
+      body.height,
+      body.aspect_ratio,
+    )
 
     const userMessagePayload = {
       chat_id: chat.id,
@@ -787,10 +1335,11 @@ Deno.serve(async (request) => {
       metadata: {
         width: body.width,
         height: body.height,
-        requested_aspect_ratio: getRequestedAspectRatioLabel(body.width, body.height, body.aspect_ratio),
+        requested_aspect_ratio: requestedAspectRatioLabel,
         attachment_asset_ids: attachmentAssetIds,
         business_profile_id: businessProfile.id,
         brand_reference_asset_ids: usableBrandReferenceAssets.map((asset) => asset.id),
+        brand_logo_asset_id: usableBrandLogoAsset?.id ?? null,
         fallback_reference_assets_deferred: usableBrandReferenceAssets.length === 0,
       },
     }
@@ -815,6 +1364,8 @@ Deno.serve(async (request) => {
         .eq('user_id', user.id)
     }
 
+    await cancelActiveGenerationJobsForChat(adminClient, user.id, chat.id)
+
     const { data: job, error: jobError } = await adminClient
       .from('generation_jobs')
       .insert({
@@ -830,12 +1381,13 @@ Deno.serve(async (request) => {
         request_payload: {
           attachment_asset_ids: attachmentAssetIds,
           business_profile_id: businessProfile.id,
-          requested_aspect_ratio: getRequestedAspectRatioLabel(body.width, body.height, body.aspect_ratio),
+          brand_logo_asset_id: usableBrandLogoAsset?.id ?? null,
+          requested_aspect_ratio: requestedAspectRatioLabel,
           generation_mode: generationMode,
           fallback_reference_assets_deferred: usableBrandReferenceAssets.length === 0,
         },
       })
-      .select('id, status, queued_at, source_message_id')
+      .select('id, status, queued_at, source_message_id, created_at')
       .single()
 
     if (jobError || !job) {
@@ -849,175 +1401,55 @@ Deno.serve(async (request) => {
 
     jobIdForFailure = job.id
 
-    await updateGenerationJob(adminClient, user.id, job.id, {
-      status: 'processing',
-      started_at: new Date().toISOString(),
-    })
-
-    const brandReferenceImageUrls = await Promise.all(
-      usableBrandReferenceAssets
-        .map((asset) => createSignedStorageUrl(adminClient, asset.bucket_name, asset.storage_path)),
-    )
-    const attachmentImageUrls = await Promise.all(
-      usableAttachmentAssets
-        .map((asset) => createSignedStorageUrl(adminClient, asset.bucket_name, asset.storage_path)),
-    )
-    const inputImageUrls = generationMode === 'edit' && latestGeneratedPost?.bucket_name && latestGeneratedPost?.image_storage_path
-      ? [
-        await createSignedStorageUrl(
-          adminClient,
-          latestGeneratedPost.bucket_name,
-          latestGeneratedPost.image_storage_path,
-        ),
-        ...attachmentImageUrls,
-      ]
-      : [
-        ...brandReferenceImageUrls,
-        ...attachmentImageUrls,
-      ]
-
-    const imageInstructions = buildImageGenerationInstructions({
-      businessProfile,
-      userPrompt: prompt,
-      requestedWidth: body.width,
-      requestedHeight: body.height,
-      aspectRatioLabel: getRequestedAspectRatioLabel(body.width, body.height, body.aspect_ratio),
-      hasBrandReferences: brandReferenceImageUrls.length > 0,
-      hasUserAttachments: attachmentImageUrls.length > 0,
-      generationMode,
-      previousCaption: latestGeneratedPost?.caption_text ?? null,
-    })
-    const imageUserPrompt = buildImageGenerationUserPrompt({
-      businessProfile,
-      userPrompt: prompt,
-      requestedWidth: body.width,
-      requestedHeight: body.height,
-      aspectRatioLabel: getRequestedAspectRatioLabel(body.width, body.height, body.aspect_ratio),
-      hasBrandReferences: brandReferenceImageUrls.length > 0,
-      hasUserAttachments: attachmentImageUrls.length > 0,
-      generationMode,
-      previousCaption: latestGeneratedPost?.caption_text ?? null,
-    })
-    const captionInstructions = buildCaptionInstructions()
-    const captionUserPrompt = buildCaptionUserPrompt({
-      businessProfile,
-      userPrompt: prompt,
-      generationMode,
-      previousCaption: latestGeneratedPost?.caption_text ?? null,
-    })
-
-    const [generatedImage, generatedCaption] = await Promise.all([
-      generatePostImage({
-        instructions: imageInstructions,
-        userPrompt: imageUserPrompt,
-        referenceImageUrls: inputImageUrls,
-        requestedWidth: body.width,
-        requestedHeight: body.height,
-      }),
-      generateCaption({
-        instructions: captionInstructions,
-        userPrompt: captionUserPrompt,
-      }),
-    ])
-
-    const generationArtifacts = await createGenerationArtifacts({
+    const generationParams = {
       adminClient,
       userId: user.id,
-      chatId: chat.id,
-      businessProfileId: businessProfile.id,
-      jobId: job.id,
-      userMessageId: userMessage.id,
+      chat,
+      businessProfile,
       prompt,
-      caption: generatedCaption.caption,
-      generationMode,
       requestedWidth: body.width,
       requestedHeight: body.height,
-      resolvedWidth: generatedImage.outputWidth,
-      resolvedHeight: generatedImage.outputHeight,
-      requestedAspectRatioLabel: getRequestedAspectRatioLabel(body.width, body.height, body.aspect_ratio),
-      latestGeneratedPost,
-      imageBase64: generatedImage.imageBase64,
-      imageModel: generatedImage.model,
-      imageResponseId: generatedImage.responseId,
-      captionResponseId: generatedCaption.responseId,
-      imageUsage: generatedImage.usage,
-      captionUsage: generatedCaption.usage,
-      revisedPrompt: generatedImage.revisedPrompt,
+      requestedAspectRatioLabel,
+      requestedCanvas,
       attachmentAssetIds,
-      brandReferenceAssetIds: usableBrandReferenceAssets.map((asset) => asset.id),
-    })
+      usableAttachmentAssets,
+      usableBrandReferenceAssets,
+      usableBrandLogoAsset,
+      latestGeneratedPost,
+      generationMode,
+      usagePeriod,
+      subscription,
+      userMessage,
+      job,
+    }
+    const generationTask = runGenerationJobAndPersistFailure(generationParams)
+    generationTaskStarted = true
 
-    try {
-      await recordSuccessfulUsage(
-        adminClient,
-        user.id,
-        usagePeriod.id,
-        generationMode,
-        generationArtifacts.generatedPost.id,
-        job.id,
-        generationArtifacts.imageBytesLength,
-      )
-    } catch (error) {
-      await adminClient
-        .from('chat_messages')
-        .delete()
-        .eq('id', generationArtifacts.assistantMessage.id)
-        .eq('user_id', user.id)
-      await adminClient
-        .from('generated_posts')
-        .delete()
-        .eq('id', generationArtifacts.generatedPost.id)
-        .eq('user_id', user.id)
-      await removeStoredGeneratedImage(
-        adminClient,
-        generationArtifacts.bucketName,
-        generationArtifacts.storagePath,
-      )
-      throw error
+    if (body.wait_for_completion === true) {
+      return ok(await generationTask)
     }
 
-    await updateGenerationJob(adminClient, user.id, job.id, {
-      status: 'completed',
-      model: generatedImage.model,
-      output_post_id: generationArtifacts.generatedPost.id,
-      completed_at: new Date().toISOString(),
-      response_payload: {
-        generation_mode: generationMode,
-        image_model: generatedImage.model,
-        image_response_id: generatedImage.responseId,
-        caption_response_id: generatedCaption.responseId,
-        revised_prompt: generatedImage.revisedPrompt,
-        requested_size: requestedCanvas.requestedSize,
-        delivered_size: `${generatedImage.outputWidth}x${generatedImage.outputHeight}`,
-        fallback_reference_assets_deferred: brandReferenceImageUrls.length === 0,
-      },
-    })
+    scheduleBackgroundGeneration(generationTask)
 
-    return ok({
+    return accepted({
       job: {
         ...job,
-        status: 'completed',
-        output_post_id: generationArtifacts.generatedPost.id,
+        status: 'pending',
       },
       user_message: userMessage,
-      assistant_message: generationArtifacts.assistantMessage,
-      post: generationArtifacts.generatedPost,
       generation_mode: generationMode,
+      poll_after_ms: 2000,
       usage: {
         period_start: usagePeriod.period_start,
         period_end: usagePeriod.period_end,
-        generation_count: generationMode === 'initial'
-          ? usagePeriod.generation_count + 1
-          : usagePeriod.generation_count,
-        edit_count: generationMode === 'edit'
-          ? usagePeriod.edit_count + 1
-          : usagePeriod.edit_count,
+        generation_count: usagePeriod.generation_count,
+        edit_count: usagePeriod.edit_count,
         generation_limit: subscription.plan.monthly_generation_limit,
         edit_limit: subscription.plan.monthly_edit_limit,
       },
     })
   } catch (error) {
-    if (userIdForFailure && chatIdForFailure && jobIdForFailure) {
+    if (!generationTaskStarted && userIdForFailure && chatIdForFailure && jobIdForFailure) {
       try {
         await updateGenerationJob(adminClient, userIdForFailure, jobIdForFailure, {
           status: 'failed',

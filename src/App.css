@@ -2927,11 +2927,25 @@
     transform 160ms ease;
 }
 
+.canvas-slide-actions-download {
+  gap: 0.55rem;
+}
+
+.canvas-slide-actions-download button {
+  letter-spacing: 0.04em;
+}
+
 .canvas-slide-actions button:hover,
 .canvas-slide-actions button:focus-visible {
   border-color: var(--line-strong);
   background: var(--surface-hover);
   transform: translateY(-1px);
+}
+
+.canvas-slide-actions button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+  transform: none;
 }
 
 .canvas-prompt-stack {
@@ -2945,26 +2959,54 @@
 .canvas-prompt-attachment-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding-left: 2.85rem;
 }
 
 .canvas-prompt-attachment {
-  display: inline-grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  position: relative;
+  display: block;
+  width: min(100%, 20rem);
+  min-height: 3.6rem;
+  min-width: 11rem;
+  padding: 0.55rem 0.62rem 0.55rem 1rem;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 18px 18px 0;
+  background:
+    linear-gradient(90deg, rgba(255, 251, 245, 0.96), rgba(255, 247, 237, 0.88)),
+    var(--panel-strong);
+  box-shadow: 10px 10px 28px rgba(120, 92, 55, 0.12);
+}
+
+.canvas-prompt-attachment-track {
+  position: relative;
+  min-width: 0;
+}
+
+.canvas-prompt-attachment-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.55rem;
   min-width: 0;
-  padding: 0.44rem 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.82);
 }
 
 .canvas-prompt-attachment-image,
 .canvas-prompt-attachment-fallback {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 10px;
+  position: absolute;
+  top: 50%;
+  left: -2.75rem;
+  width: 3.05rem;
+  height: 3.05rem;
+  border: 1px solid var(--line-strong);
+  border-right: 0;
+  border-radius: 16px 0 0 16px;
+  transform: translateY(-50%);
+  box-shadow: 8px 8px 20px rgba(120, 92, 55, 0.14);
 }
 
 .canvas-prompt-attachment-image {
@@ -2975,7 +3017,9 @@
 .canvas-prompt-attachment-fallback {
   display: grid;
   place-items: center;
-  background: var(--surface);
+  background:
+    linear-gradient(135deg, rgba(255, 250, 242, 0.96), rgba(242, 198, 122, 0.18)),
+    var(--surface);
   color: var(--muted);
   font-size: 0.7rem;
   font-weight: 800;
@@ -2990,17 +3034,261 @@
   white-space: nowrap;
   color: var(--ink);
   font-size: 0.82rem;
+  font-weight: 750;
 }
 
 .canvas-prompt-attachment-remove {
-  border: 0;
-  padding: 0;
-  background: transparent;
+  border: 1px solid color-mix(in srgb, #9f1239 18%, transparent);
+  border-radius: 999px;
+  padding: 0.34rem 0.56rem;
+  background: color-mix(in srgb, #fff7ed 82%, transparent);
   color: #9f1239;
   font: inherit;
   font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.canvas-prompt-attachment-remove:hover,
+.canvas-prompt-attachment-remove:focus-visible {
+  border-color: color-mix(in srgb, #9f1239 32%, transparent);
+  background: color-mix(in srgb, #fff1f2 88%, transparent);
+  transform: translateY(-1px);
+}
+
+.canvas-prompt-attachment-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.canvas-attachment-tabs {
+  --attachment-tab-size: 6.1rem;
+  --attachment-tab-overhang: 1.45rem;
+  --attachment-drawer-width: clamp(12rem, 20vw, 14.5rem);
+  position: absolute;
+  top: 1.15rem;
+  left: 0;
+  z-index: 1;
+  width: calc(var(--attachment-drawer-width) + var(--attachment-tab-size) + var(--attachment-tab-overhang));
+  max-width: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.85rem;
+  padding-left: 0;
+  overflow: visible;
+  transform: translateX(calc(-1 * (var(--attachment-drawer-width) + var(--attachment-tab-size))));
+  pointer-events: auto;
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--attachment-tab-size);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  pointer-events: auto;
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment::before {
+  position: absolute;
+  top: 0;
+  left: var(--attachment-drawer-width);
+  width: calc(var(--attachment-tab-size) + var(--attachment-tab-overhang));
+  height: var(--attachment-tab-size);
+  background: transparent;
+  content: "";
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment-track {
+  position: absolute;
+  top: 0;
+  left: calc(var(--attachment-drawer-width) + var(--attachment-tab-size));
+  width: var(--attachment-drawer-width);
+  min-height: var(--attachment-tab-size);
+  transition:
+    transform 220ms ease,
+    filter 220ms ease;
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment:hover .canvas-prompt-attachment-track,
+.canvas-attachment-tabs .canvas-prompt-attachment:focus-within .canvas-prompt-attachment-track {
+  transform: translateX(calc(-1 * var(--attachment-drawer-width)));
+  filter: drop-shadow(-6px 8px 14px rgba(120, 92, 55, 0.08));
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment-details {
+  width: var(--attachment-drawer-width);
+  min-height: var(--attachment-tab-size);
+  padding: 1rem 1rem 1rem 1.1rem;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 247, 237, 0.9), rgba(255, 251, 245, 0.98)),
+    var(--panel-strong);
+  box-shadow: -18px 22px 46px rgba(120, 92, 55, 0.16);
+  opacity: 0.98;
+  transform: translateX(0);
+  transition:
+    box-shadow 220ms ease;
+  z-index: 1;
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment:hover .canvas-prompt-attachment-details,
+.canvas-attachment-tabs .canvas-prompt-attachment:focus-within .canvas-prompt-attachment-details {
+  box-shadow: -22px 24px 54px rgba(120, 92, 55, 0.2);
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment-image,
+.canvas-attachment-tabs .canvas-prompt-attachment-fallback {
+  left: calc(-1 * var(--attachment-tab-size));
+  width: var(--attachment-tab-size);
+  height: var(--attachment-tab-size);
+  box-sizing: border-box;
+  padding-right: 0;
+  border-color: var(--line-strong);
+  border-radius: 20px 0 0 20px;
+  box-shadow: -12px 16px 34px rgba(120, 92, 55, 0.16);
+  z-index: 2;
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment-name {
+  font-size: 1rem;
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment-remove {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+}
+
+.canvas-attachment-tabs .canvas-prompt-attachment:hover .canvas-prompt-attachment-remove,
+.canvas-attachment-tabs .canvas-prompt-attachment:focus-within .canvas-prompt-attachment-remove {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+@media (max-width: 520px) {
+  .canvas-prompt-attachment-list {
+    padding-left: 2.35rem;
+  }
+
+  .canvas-prompt-attachment {
+    width: 100%;
+    min-width: 0;
+    padding-right: 0.5rem;
+  }
+
+  .canvas-prompt-attachment-image,
+  .canvas-prompt-attachment-fallback {
+    left: -2.25rem;
+    width: 2.55rem;
+    height: 2.55rem;
+  }
+}
+
+@media (max-width: 980px) {
+  .canvas-attachment-tabs {
+    --attachment-tab-size: 4.85rem;
+    --attachment-tab-overhang: 1.1rem;
+    --attachment-drawer-width: min(12rem, calc(100vw - 7rem));
+    top: 1rem;
+    left: 0;
+    max-width: none;
+    width: calc(var(--attachment-drawer-width) + var(--attachment-tab-size) + var(--attachment-tab-overhang));
+    padding-left: 0;
+    transform: translateX(calc(-1 * (var(--attachment-drawer-width) + var(--attachment-tab-size))));
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment {
+    width: 100%;
+    min-height: var(--attachment-tab-size);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment-track {
+    left: calc(var(--attachment-drawer-width) + var(--attachment-tab-size));
+    width: var(--attachment-drawer-width);
+    min-height: var(--attachment-tab-size);
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment:hover .canvas-prompt-attachment-track,
+  .canvas-attachment-tabs .canvas-prompt-attachment:focus-within .canvas-prompt-attachment-track {
+    transform: translateX(calc(-1 * var(--attachment-drawer-width)));
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment-details {
+    width: var(--attachment-drawer-width);
+    min-height: var(--attachment-tab-size);
+    padding: 0.82rem 0.9rem 0.82rem 1rem;
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment-image,
+  .canvas-attachment-tabs .canvas-prompt-attachment-fallback {
+    left: calc(-1 * var(--attachment-tab-size));
+    width: var(--attachment-tab-size);
+    height: var(--attachment-tab-size);
+  }
+}
+
+@media (max-width: 520px) {
+  .canvas-attachment-tabs {
+    --attachment-tab-size: 3.55rem;
+    --attachment-tab-overhang: 0.8rem;
+    --attachment-drawer-width: min(10.5rem, calc(100vw - 5rem));
+    top: 0.8rem;
+    left: 0;
+    max-width: none;
+    width: calc(var(--attachment-drawer-width) + var(--attachment-tab-size) + var(--attachment-tab-overhang));
+    padding-left: 0;
+    transform: translateX(calc(-1 * (var(--attachment-drawer-width) + var(--attachment-tab-size))));
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment {
+    width: 100%;
+    min-height: var(--attachment-tab-size);
+    padding: 0;
+    transform: none;
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment-track {
+    left: calc(var(--attachment-drawer-width) + var(--attachment-tab-size));
+    width: var(--attachment-drawer-width);
+    min-height: var(--attachment-tab-size);
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment:hover .canvas-prompt-attachment-track,
+  .canvas-attachment-tabs .canvas-prompt-attachment:focus-within .canvas-prompt-attachment-track {
+    transform: translateX(calc(-1 * var(--attachment-drawer-width)));
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment-details {
+    width: var(--attachment-drawer-width);
+    min-height: var(--attachment-tab-size);
+    padding: 0.7rem 0.75rem 0.7rem 0.85rem;
+  }
+
+  .canvas-attachment-tabs .canvas-prompt-attachment-image,
+  .canvas-attachment-tabs .canvas-prompt-attachment-fallback {
+    left: calc(-1 * var(--attachment-tab-size));
+    width: var(--attachment-tab-size);
+    height: var(--attachment-tab-size);
+  }
 }
 
 .canvas-prompt-shell {

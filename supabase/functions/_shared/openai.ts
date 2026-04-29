@@ -334,10 +334,23 @@ function extractCaptionOutput(response: OpenAiResponsesPayload) {
   throw new AppError('OPENAI_RESPONSE_INVALID', 'OpenAI did not return caption text.', 502)
 }
 
-function toInputImageContent(imageUrl: string) {
+export interface ReferenceImageInput {
+  url: string
+  fileName?: string
+}
+
+function normalizeReferenceImageInput(input: ReferenceImageInput | string): ReferenceImageInput {
+  return typeof input === 'string'
+    ? { url: input }
+    : input
+}
+
+function toInputImageContent(input: ReferenceImageInput | string) {
+  const image = normalizeReferenceImageInput(input)
+
   return {
     type: 'input_image',
-    image_url: imageUrl,
+    image_url: image.url,
   }
 }
 
@@ -359,19 +372,32 @@ function buildImageApiPrompt(instructions: string, userPrompt: string) {
     .join('\n\n')
 }
 
-function getReferenceImageFileName(index: number, contentType: string) {
+function getSafeReferenceFileNameBase(fileName: string | undefined, fallback: string) {
+  const normalized = String(fileName ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return normalized || fallback
+}
+
+function getReferenceImageFileName(index: number, contentType: string, fileName?: string) {
   const normalizedContentType = contentType.toLowerCase()
   const extension = normalizedContentType.includes('webp')
     ? 'webp'
     : normalizedContentType.includes('jpeg') || normalizedContentType.includes('jpg')
       ? 'jpg'
       : 'png'
+  const fileNameBase = getSafeReferenceFileNameBase(fileName, `reference-${index + 1}`)
 
-  return `reference-${index + 1}.${extension}`
+  return `${fileNameBase}.${extension}`
 }
 
-async function fetchReferenceImageBlob(imageUrl: string, index: number, signal: AbortSignal) {
-  const response = await fetch(imageUrl, { signal })
+async function fetchReferenceImageBlob(input: ReferenceImageInput | string, index: number, signal: AbortSignal) {
+  const image = normalizeReferenceImageInput(input)
+  const response = await fetch(image.url, { signal })
 
   if (!response.ok) {
     throw new AppError(
@@ -386,7 +412,7 @@ async function fetchReferenceImageBlob(imageUrl: string, index: number, signal: 
 
   return {
     blob,
-    fileName: getReferenceImageFileName(index, contentType),
+    fileName: getReferenceImageFileName(index, contentType, image.fileName),
   }
 }
 
@@ -394,7 +420,7 @@ async function generatePostImageWithImagesApi(params: {
   model: string
   instructions: string
   userPrompt: string
-  referenceImageUrls: string[]
+  referenceImageUrls: Array<ReferenceImageInput | string>
   sizeCandidate: string
   quality: string
   signal: AbortSignal
@@ -444,7 +470,7 @@ async function buildImageEditFormData(
   prompt: string,
   sizeCandidate: string,
   quality: string,
-  referenceImageUrls: string[],
+  referenceImageUrls: Array<ReferenceImageInput | string>,
   signal: AbortSignal,
 ) {
   const formData = new FormData()
@@ -469,7 +495,7 @@ async function generatePostImageWithResponsesApi(params: {
   model: string
   instructions: string
   userPrompt: string
-  referenceImageUrls: string[]
+  referenceImageUrls: Array<ReferenceImageInput | string>
   sizeCandidate: string
   quality: string
   signal: AbortSignal
@@ -526,7 +552,7 @@ async function generatePostImageWithResponsesApi(params: {
 export async function generatePostImage(params: {
   instructions: string
   userPrompt: string
-  referenceImageUrls: string[]
+  referenceImageUrls: Array<ReferenceImageInput | string>
   requestedWidth: number
   requestedHeight: number
 }) : Promise<OpenAiGeneratedImage> {

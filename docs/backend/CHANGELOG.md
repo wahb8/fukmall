@@ -2,6 +2,13 @@
 
 ## 2026-04-29
 
+- added generation interruption support with `cancel-generation-job`, a `canceled`
+  `generation_jobs` status, frontend abort handling, and composer stop-button behavior
+- hardened generation interruption by canceling older pending/processing jobs when a newer
+  generation starts in the same chat and preventing non-latest jobs from persisting output
+- hardened cancellation races so a canceled job cannot be overwritten to `completed`, generated
+  artifacts are rolled back before usage is recorded, and cancel requests return the current job
+  state if the job already reached a terminal status
 - updated the `generate-post` OpenAI image-generation default to `gpt-image-2`
 - routed GPT Image model requests through the direct Images API while preserving the existing
   Responses image-tool path for older/mainline overrides
@@ -59,3 +66,23 @@
   adding a database default of `auth.uid()` for chat/message ownership columns
 - fixed the OpenAI image-generation request payload by removing the unsupported
   `tools[0].format` field from the Responses API image tool configuration
+- changed `generate-post` to the async MVP flow: it now creates a `generation_jobs` row, returns
+  `202 Accepted`, and performs OpenAI image/caption generation in a background task
+- added the authenticated `generation-job-status` Edge Function so the frontend can poll generation
+  progress until jobs complete or fail
+- updated the `/app` prompt flow to keep the loading state active while polling, then refresh the
+  chat and place the completed generated post onto the canvas
+- changed the dev `OPENAI_IMAGE_QUALITY` secret to `auto` because forced `high` quality can exceed
+  the hosted Edge Function wall-clock limit for slow GPT Image 2 generations
+- changed the dev `OPENAI_IMAGE_QUALITY` secret from `auto` to `medium` for the current testing
+  path
+- fixed profile reference-image and logo removal so deleted assets and prior stale unlinked profile
+  assets are removed from private Storage and `uploaded_assets` metadata
+- made stale profile-asset cleanup best-effort so adding new logo/reference assets is not blocked by
+  an old missing Storage object or usage cleanup failure
+- made profile cleanup lookups best-effort and added client-side Edge Function names to upload/save
+  errors so future failures identify the exact failing function
+- updated the initial image-generation prompt to use the polished social-post design wording, with
+  clearer style-reference rules and no-reference behavior
+- updated generation prompt/input handling so saved brand logos are attached as a separate image
+  named `logo`, with logo-specific prompt guidance that is omitted when no logo exists

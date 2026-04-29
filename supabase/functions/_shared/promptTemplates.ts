@@ -14,6 +14,7 @@ interface ImagePromptParams {
   requestedHeight: number
   aspectRatioLabel: string
   hasBrandReferences: boolean
+  hasBrandLogo: boolean
   hasUserAttachments: boolean
   generationMode: 'initial' | 'edit'
   previousCaption?: string | null
@@ -72,6 +73,9 @@ export function buildImageGenerationInstructions(params: ImagePromptParams) {
   const attachmentGuidance = params.hasUserAttachments
     ? 'User-supplied content images are attached. Incorporate their important subjects or products naturally when relevant.'
     : 'No user-supplied content images are attached for this request.'
+  const logoGuidance = params.hasBrandLogo
+    ? 'A brand logo image is attached and named logo. Treat it as the official brand mark, not as a general style reference.'
+    : 'No brand logo image is attached for this request.'
   const modeGuidance = params.generationMode === 'edit'
     ? 'You are revising an existing social post. Preserve the core brand language unless the user explicitly asks for a change.'
     : 'You are creating a fresh social post from scratch.'
@@ -80,6 +84,7 @@ export function buildImageGenerationInstructions(params: ImagePromptParams) {
     'You create polished, production-ready social media post images for businesses.',
     modeGuidance,
     referenceGuidance,
+    logoGuidance,
     attachmentGuidance,
     'Keep the image appropriate for Instagram and readable as a finished marketing visual.',
     'Do not clone the reference images directly. Use them only as style and layout guidance.',
@@ -90,12 +95,19 @@ export function buildImageGenerationInstructions(params: ImagePromptParams) {
 }
 
 export function buildImageGenerationUserPrompt(params: ImagePromptParams) {
-  const hasAnyVisualReferences = params.hasBrandReferences || params.hasUserAttachments
+  const hasStyleReferences = params.hasBrandReferences
+  const styleReferenceRestriction = params.hasBrandLogo
+    ? 'Use the attached reference images only as style references. Do not copy or reuse exact layouts, text, people, products, specific objects, or logos from the style reference images. The attached image named logo is the only logo that may be used as a brand asset.'
+    : 'Use the attached images only as style references. Do not copy or reuse exact layouts, logos, text, people, products, or specific objects from the reference images unless the user explicitly asks for them.'
   const firstInstruction = params.generationMode === 'edit'
     ? 'Update the current post based on the latest instruction.'
-    : hasAnyVisualReferences
-      ? 'Using the attached images, create an Instagram post that matches their aesthetic and style. However, do not include anything from the attached images unless specified, only match the exact style of the images.'
-      : 'Create an Instagram post that matches the written brand context and user request.'
+    : hasStyleReferences
+      ? [
+        'Create a polished Instagram post design that matches the visual style, mood, color palette, typography feel, spacing, and composition style of the attached reference images.',
+        '',
+        styleReferenceRestriction,
+      ].join('\n')
+      : 'Create a polished Instagram post design based on the written brand context and user request.'
 
   return [
     firstInstruction,
@@ -107,10 +119,20 @@ export function buildImageGenerationUserPrompt(params: ImagePromptParams) {
       ? `Current caption: ${params.previousCaption}`
       : null,
     '',
-    'This is what I want:',
+    'User request:',
     params.userPrompt,
     '',
-    `Make the aspect ratio ${params.aspectRatioLabel}`,
+    'Design requirements:',
+    '- Make it look like a finished social media post, not a generic illustration.',
+    '- Keep the layout clean, balanced, and commercially usable.',
+    '- If the post needs text, make the text short, readable, and visually integrated.',
+    params.hasBrandLogo
+      ? '- Use the uploaded logo as the brand logo. You may include it when it fits the design, but keep it subtle and professionally integrated.'
+      : null,
+    hasStyleReferences && params.generationMode !== 'edit'
+      ? '- Prioritize the user request over the reference images when they conflict.'
+      : '- Use the brand colors and style preferences where appropriate.',
+    `- Match the requested aspect ratio: ${params.aspectRatioLabel}.`,
   ]
     .filter(Boolean)
     .join('\n')

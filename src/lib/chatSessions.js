@@ -462,6 +462,7 @@ export async function generatePost({
   height,
   businessProfileId = null,
   attachmentAssetIds = [],
+  signal = null,
 }) {
   const normalizedPrompt = String(prompt ?? '').trim()
 
@@ -488,7 +489,107 @@ export async function generatePost({
       attachment_asset_ids: normalizeAssetIds(attachmentAssetIds),
     },
     'Unable to generate the post.',
+    { signal },
   )
+}
+
+export async function getGenerationJobStatus(jobId, { signal = null } = {}) {
+  const normalizedJobId = String(jobId ?? '').trim()
+
+  if (!normalizedJobId) {
+    throw new Error('Generation job id is required.')
+  }
+
+  return invokeEdgeFunction(
+    'generation-job-status',
+    {
+      job_id: normalizedJobId,
+    },
+    'Unable to load generation status.',
+    { signal },
+  )
+}
+
+export async function cancelGenerationJob(jobId, { signal = null } = {}) {
+  const normalizedJobId = String(jobId ?? '').trim()
+
+  if (!normalizedJobId) {
+    throw new Error('Generation job id is required.')
+  }
+
+  return invokeEdgeFunction(
+    'cancel-generation-job',
+    {
+      job_id: normalizedJobId,
+    },
+    'Unable to stop generation.',
+    { signal },
+  )
+}
+
+function waitForDelay(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('Generation status polling was cancelled.'))
+      return
+    }
+
+    function handleAbort() {
+      globalThis.clearTimeout(timeoutId)
+      reject(new Error('Generation status polling was cancelled.'))
+    }
+
+    const timeoutId = globalThis.setTimeout(() => {
+      signal?.removeEventListener('abort', handleAbort)
+      resolve()
+    }, milliseconds)
+
+    signal?.addEventListener('abort', handleAbort, { once: true })
+  })
+}
+
+export async function waitForGenerationJob(jobId, {
+  intervalMs = 2500,
+  timeoutMs = 6 * 60 * 1000,
+  signal = null,
+  onStatus = null,
+} = {}) {
+  const startedAt = Date.now()
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new Error('Generation status polling was cancelled.')
+    }
+
+    const statusResult = await getGenerationJobStatus(jobId, { signal })
+    const jobStatus = statusResult?.job?.status
+
+    onStatus?.(statusResult)
+
+    if (jobStatus === 'completed') {
+      return statusResult
+    }
+
+    if (jobStatus === 'failed') {
+      throw new Error(
+        statusResult?.assistant_message?.content_text ||
+        'Unable to generate the post.',
+      )
+    }
+
+    if (jobStatus === 'canceled') {
+      throw new Error('Generation was stopped.')
+    }
+
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error('Generation is still running. Check this chat again in a moment.')
+    }
+
+    await waitForDelay(
+      Number.isFinite(statusResult?.poll_after_ms) ? statusResult.poll_after_ms : intervalMs,
+      signal,
+    )
+  }
 }
 
 export async function renameChat(chatId, title) {

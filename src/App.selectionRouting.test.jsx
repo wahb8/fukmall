@@ -185,11 +185,11 @@ describe('App selection routing', () => {
 
     await createSelectedTextLayer(container)
 
-    const promptShell = container.querySelector('.canvas-prompt-shell')
+    const nonPreservingUi = container.querySelector('.editor-topbar')
 
-    expect(promptShell).not.toBeNull()
+    expect(nonPreservingUi).not.toBeNull()
 
-    fireEvent.pointerDown(promptShell, { clientX: 10, clientY: 10, buttons: 1 })
+    fireEvent.pointerDown(nonPreservingUi, { clientX: 10, clientY: 10, buttons: 1 })
 
     await waitFor(() => {
       expect(getInspector(container).textContent).toContain(

@@ -1,10 +1,63 @@
 import { useEffect, useId, useRef } from 'react'
 import addImageIcon from '../../assets/add image.svg'
+import closeIcon from '../../assets/Close (X).svg'
 import upIcon from '../../assets/up.svg'
+
+export function PromptAttachmentTabs({
+  attachments = [],
+  disabled = false,
+  isSubmitting = false,
+  onRemoveAttachment,
+  className = '',
+}) {
+  if (attachments.length === 0) {
+    return null
+  }
+
+  return (
+    <div
+      className={['canvas-prompt-attachment-list', className].filter(Boolean).join(' ')}
+      aria-label="Selected prompt attachments"
+    >
+      {attachments.map((attachment) => (
+        <div key={attachment.id} className="canvas-prompt-attachment">
+          <div className="canvas-prompt-attachment-track">
+            {attachment.previewUrl ? (
+              <img
+                className="canvas-prompt-attachment-image"
+                src={attachment.previewUrl}
+                alt={attachment.original_file_name || 'Prompt attachment'}
+              />
+            ) : (
+              <span className="canvas-prompt-attachment-fallback" aria-hidden="true">
+                IMG
+              </span>
+            )}
+            <div className="canvas-prompt-attachment-details">
+              <span className="canvas-prompt-attachment-name">
+                {attachment.original_file_name || 'Attachment'}
+              </span>
+              <button
+                className="canvas-prompt-attachment-remove"
+                type="button"
+                disabled={disabled || isSubmitting}
+                onClick={() => onRemoveAttachment?.(attachment.id)}
+                aria-label={`Remove ${attachment.original_file_name || 'attachment'}`}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function PromptShell({
   value = '',
   attachments = [],
+  showAttachments = true,
   disabled = false,
   isSubmitting = false,
   isUploadingAttachments = false,
@@ -12,6 +65,7 @@ export function PromptShell({
   statusTone = 'info',
   onChange,
   onSubmit,
+  onStop,
   onFilesSelected,
   onRemoveAttachment,
 }) {
@@ -31,45 +85,29 @@ export function PromptShell({
   }, [value])
 
   function handleSubmit() {
-    if (disabled || isSubmitting) {
+    if (isSubmitting) {
+      onStop?.()
+      return
+    }
+
+    if (disabled) {
       return
     }
 
     onSubmit?.()
   }
 
+  const submitButtonLabel = isSubmitting ? 'Stop generating' : 'Submit prompt'
+
   return (
     <div className="canvas-prompt-stack">
-      {attachments.length > 0 ? (
-        <div className="canvas-prompt-attachment-list" aria-label="Selected prompt attachments">
-          {attachments.map((attachment) => (
-            <div key={attachment.id} className="canvas-prompt-attachment">
-              {attachment.previewUrl ? (
-                <img
-                  className="canvas-prompt-attachment-image"
-                  src={attachment.previewUrl}
-                  alt={attachment.original_file_name || 'Prompt attachment'}
-                />
-              ) : (
-                <span className="canvas-prompt-attachment-fallback" aria-hidden="true">
-                  IMG
-                </span>
-              )}
-              <span className="canvas-prompt-attachment-name">
-                {attachment.original_file_name || 'Attachment'}
-              </span>
-              <button
-                className="canvas-prompt-attachment-remove"
-                type="button"
-                disabled={disabled || isSubmitting}
-                onClick={() => onRemoveAttachment?.(attachment.id)}
-                aria-label={`Remove ${attachment.original_file_name || 'attachment'}`}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
+      {showAttachments ? (
+        <PromptAttachmentTabs
+          attachments={attachments}
+          disabled={disabled}
+          isSubmitting={isSubmitting}
+          onRemoveAttachment={onRemoveAttachment}
+        />
       ) : null}
 
       <div className="canvas-prompt-shell">
@@ -94,7 +132,7 @@ export function PromptShell({
           className="canvas-prompt-button canvas-prompt-button-left"
           type="button"
           aria-label="Add image"
-          disabled={disabled || isUploadingAttachments}
+          disabled={disabled || isSubmitting || isUploadingAttachments}
           onClick={() => fileInputRef.current?.click()}
         >
           <img src={addImageIcon} alt="" aria-hidden="true" />
@@ -103,7 +141,7 @@ export function PromptShell({
           ref={promptInputRef}
           className="canvas-prompt-input"
           value={value}
-          disabled={disabled}
+          disabled={disabled || isSubmitting}
           placeholder="Describe what you want to create..."
           rows={1}
           onChange={(event) => onChange?.(event.target.value)}
@@ -117,11 +155,12 @@ export function PromptShell({
         <button
           className="canvas-prompt-button canvas-prompt-button-right"
           type="button"
-          aria-label="Submit prompt"
-          disabled={disabled || isSubmitting}
+          aria-label={submitButtonLabel}
+          title={submitButtonLabel}
+          disabled={disabled && !isSubmitting}
           onClick={handleSubmit}
         >
-          <img src={upIcon} alt="" aria-hidden="true" />
+          <img src={isSubmitting ? closeIcon : upIcon} alt="" aria-hidden="true" />
         </button>
       </div>
 

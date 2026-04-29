@@ -168,5 +168,7 @@ export async function exportDocumentImage(
   document.body.append(downloadLink)
   downloadLink.click()
   downloadLink.remove()
-  URL.revokeObjectURL(objectUrl)
+  window.setTimeout(() => {
+    URL.revokeObjectURL(objectUrl)
+  }, 1000)
 }
