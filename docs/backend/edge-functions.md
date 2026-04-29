@@ -41,6 +41,9 @@ Current behavior:
 - builds hidden image and caption prompts through shared prompt-template helpers
 - creates a `generation_jobs` row and returns `202 Accepted` so the browser can poll instead of
   waiting on one long image-generation request
+- schedules best-effort automatic chat title generation with a small text model on the first prompt
+  when the chat still has a default title such as `Untitled`, without blocking or failing post
+  generation
 - calls OpenAI from the Edge Function background task only, with image and caption generation
   running in parallel
 - uses `gpt-image-2` as the default image generation model unless

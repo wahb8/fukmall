@@ -1,7 +1,7 @@
 import { requireAuthenticatedUser } from '../_shared/auth.ts'
 import { AppError } from '../_shared/errors.ts'
 import { accepted, errorResponse, methodNotAllowed, ok, optionsResponse, parseJsonBody } from '../_shared/http.ts'
-import { generateCaption, generatePostImage, resolveRequestedImageCanvas } from '../_shared/openai.ts'
+import { generateCaption, generateChatTitle, generatePostImage, resolveRequestedImageCanvas } from '../_shared/openai.ts'
 import type { ReferenceImageInput } from '../_shared/openai.ts'
 import {
   buildAssistantSummaryText,
@@ -170,19 +170,10 @@ function getRequestedAspectRatioLabel(width: number, height: number, explicitAsp
 
 function isAutoTitle(title: string) {
   const normalizedTitle = title.trim().toLowerCase()
-  return normalizedTitle === 'untitled chat' || normalizedTitle === 'new file'
-}
-
-function buildChatTitleFromPrompt(prompt: string, fallbackTitle = 'Untitled chat') {
-  const normalizedPrompt = prompt.replace(/\s+/g, ' ').trim()
-
-  if (!normalizedPrompt) {
-    return fallbackTitle
-  }
-
-  return normalizedPrompt.length > 56
-    ? `${normalizedPrompt.slice(0, 53).trimEnd()}...`
-    : normalizedPrompt
+  return normalizedTitle === 'untitled' ||
+    normalizedTitle === 'untitled chat' ||
+    normalizedTitle === 'new file' ||
+    normalizedTitle === 'new post'
 }
 
 function buildImageUploadBytes(imageBase64: string) {
@@ -609,6 +600,44 @@ async function cancelActiveGenerationJobsForChat(
 
   if (error) {
     throw new AppError('JOB_CANCEL_FAILED', 'Failed to stop previous generation jobs.', 500)
+  }
+}
+
+async function generateAndPersistChatTitle(params: {
+  adminClient: ReturnType<typeof createAdminClient>
+  userId: string
+  chat: ChatRow
+  prompt: string
+}) {
+  if (!isAutoTitle(params.chat.title)) {
+    return
+  }
+
+  try {
+    const generatedTitle = await generateChatTitle({
+      prompt: params.prompt,
+    })
+
+    const title = generatedTitle.title.trim()
+
+    if (!title) {
+      return
+    }
+
+    const { error } = await params.adminClient
+      .from('chats')
+      .update({
+        title,
+      })
+      .eq('id', params.chat.id)
+      .eq('user_id', params.userId)
+      .eq('title', params.chat.title)
+
+    if (error) {
+      console.error('Failed to persist generated chat title', error)
+    }
+  } catch (error) {
+    console.error('Failed to generate chat title', error)
   }
 }
 
@@ -1218,9 +1247,9 @@ async function runGenerationJobAndPersistFailure(
   }
 }
 
-function scheduleBackgroundGeneration(task: Promise<unknown>) {
+function scheduleBackgroundTask(task: Promise<unknown>, failureMessage: string) {
   const guardedTask = task.catch((error) => {
-    console.error('Async generation job failed', error)
+    console.error(failureMessage, error)
   })
   const edgeRuntime = (
     globalThis as typeof globalThis & {
@@ -1236,6 +1265,10 @@ function scheduleBackgroundGeneration(task: Promise<unknown>) {
   }
 
   void guardedTask
+}
+
+function scheduleBackgroundGeneration(task: Promise<unknown>) {
+  scheduleBackgroundTask(task, 'Async generation job failed')
 }
 
 Deno.serve(async (request) => {
@@ -1353,17 +1386,6 @@ Deno.serve(async (request) => {
       throw new AppError('MESSAGE_CREATE_FAILED', 'Failed to store generation request.', 500)
     }
 
-    if (isAutoTitle(chat.title)) {
-      const suggestedTitle = buildChatTitleFromPrompt(prompt)
-      await adminClient
-        .from('chats')
-        .update({
-          title: suggestedTitle,
-        })
-        .eq('id', chat.id)
-        .eq('user_id', user.id)
-    }
-
     await cancelActiveGenerationJobsForChat(adminClient, user.id, chat.id)
 
     const { data: job, error: jobError } = await adminClient
@@ -1400,6 +1422,18 @@ Deno.serve(async (request) => {
     }
 
     jobIdForFailure = job.id
+
+    if (generationMode === 'initial' && isAutoTitle(chat.title)) {
+      scheduleBackgroundTask(
+        generateAndPersistChatTitle({
+          adminClient,
+          userId: user.id,
+          chat,
+          prompt,
+        }),
+        'Async chat title generation failed',
+      )
+    }
 
     const generationParams = {
       adminClient,

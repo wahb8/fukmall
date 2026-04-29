@@ -682,6 +682,76 @@
   backdrop-filter: blur(10px);
 }
 
+.asset-load-frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255, 250, 242, 0.92), rgba(242, 198, 122, 0.16)),
+    var(--surface);
+}
+
+.asset-load-placeholder-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.asset-load-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: var(--asset-load-fit, cover);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.asset-load-frame.is-loaded .asset-load-native {
+  opacity: 1;
+}
+
+.asset-load-placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.38) 44%, transparent 78%),
+    color-mix(in srgb, var(--surface-strong) 76%, transparent);
+  background-size: 220% 100%;
+  animation: assetLoadSweep 1.25s ease-in-out infinite;
+}
+
+.asset-load-spinner {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 2px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-top-color: color-mix(in srgb, var(--accent) 70%, var(--ink) 8%);
+  border-radius: 999px;
+  animation: assetLoadSpin 780ms linear infinite;
+}
+
+@keyframes assetLoadSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes assetLoadSweep {
+  0% {
+    background-position: 160% 0;
+  }
+
+  100% {
+    background-position: -80% 0;
+  }
+}
+
 .modal-card {
   width: min(100%, 26rem);
   padding: 1.1rem;
@@ -2541,10 +2611,8 @@
   place-items: center;
   padding: clamp(1.5rem, 4vw, 3rem);
   background:
-    radial-gradient(circle at center, rgba(254, 228, 206, 0.8), transparent 38%),
-    radial-gradient(circle at center, rgba(255, 247, 237, 0.86), transparent 58%),
-    rgba(255, 251, 245, 0.36);
-  backdrop-filter: blur(3px);
+    radial-gradient(circle at 50% 42%, rgba(254, 228, 206, 0.56), transparent 34%),
+    linear-gradient(135deg, rgba(255, 252, 247, 0.98), rgba(255, 244, 232, 0.98) 52%, rgba(250, 235, 217, 0.98));
   pointer-events: none;
 }
 
@@ -2552,15 +2620,11 @@
   display: grid;
   justify-items: center;
   align-items: center;
-  padding: clamp(1.15rem, 3vw, 1.65rem);
-  border: 1px solid rgba(120, 92, 55, 0.16);
+  padding: 0;
+  border: 0;
   border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 247, 237, 0.94)),
-    var(--surface);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    0 28px 62px rgba(120, 92, 55, 0.19);
+  background: transparent;
+  box-shadow: none;
 }
 
 .canvas-generation-loading-spinner {
@@ -2766,6 +2830,8 @@
 
 .chat-timeline-generated-image,
 .chat-timeline-generated-fallback {
+  width: 5.2rem;
+  height: 5.2rem;
   border-radius: 16px;
   background:
     linear-gradient(135deg, rgba(217, 119, 6, 0.18), rgba(15, 118, 110, 0.16)),
@@ -3012,6 +3078,17 @@
 .canvas-prompt-attachment-image {
   display: block;
   object-fit: cover;
+}
+
+.canvas-prompt-attachment-loading {
+  background:
+    linear-gradient(135deg, rgba(255, 250, 242, 0.98), rgba(242, 198, 122, 0.2)),
+    var(--surface);
+}
+
+.canvas-prompt-attachment-loading .asset-load-spinner {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .canvas-prompt-attachment-fallback {

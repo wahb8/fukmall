@@ -1,4 +1,5 @@
 import logoConceptTransparent from '../../assets/logo concept-transparent.png'
+import { AssetImage } from '../ui/AssetImage'
 import { navigateTo } from '../../navigation'
 
 export function AuthRouteShell({
@@ -15,7 +16,13 @@ export function AuthRouteShell({
           type="button"
           onClick={() => navigateTo('/')}
         >
-          <img className="landing-brand-mark" src={logoConceptTransparent} alt="" />
+          <AssetImage
+            className="landing-brand-mark"
+            src={logoConceptTransparent}
+            alt=""
+            aria-hidden="true"
+            fit="contain"
+          />
           <span className="landing-brand-name">Kryopic</span>
         </button>
 

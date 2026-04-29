@@ -4,6 +4,7 @@ import { getRequiredEnv } from './env.ts'
 const OPENAI_API_BASE_URL = 'https://api.openai.com/v1'
 const DEFAULT_IMAGE_MODEL = 'gpt-image-2'
 const DEFAULT_CAPTION_MODEL = 'gpt-4.1-mini'
+const DEFAULT_TITLE_MODEL = 'gpt-4.1-mini'
 const DEFAULT_IMAGE_QUALITY = 'high'
 const DEFAULT_IMAGE_TIMEOUT_MS = 135000
 const MIN_IMAGE_TIMEOUT_MS = 10000
@@ -68,6 +69,12 @@ export interface OpenAiGeneratedCaption {
   usage: JsonRecord | null
 }
 
+export interface OpenAiGeneratedTitle {
+  responseId: string | null
+  title: string
+  usage: JsonRecord | null
+}
+
 function getOpenAiApiKey() {
   return getRequiredEnv('OPENAI_API_KEY')
 }
@@ -78,6 +85,10 @@ function getOpenAiImageModel() {
 
 function getOpenAiCaptionModel() {
   return Deno.env.get('OPENAI_CAPTION_MODEL')?.trim() || DEFAULT_CAPTION_MODEL
+}
+
+function getOpenAiTitleModel() {
+  return Deno.env.get('OPENAI_TITLE_MODEL')?.trim() || DEFAULT_TITLE_MODEL
 }
 
 function getOpenAiImageQuality() {
@@ -332,6 +343,21 @@ function extractCaptionOutput(response: OpenAiResponsesPayload) {
   }
 
   throw new AppError('OPENAI_RESPONSE_INVALID', 'OpenAI did not return caption text.', 502)
+}
+
+function normalizeGeneratedTitle(value: string) {
+  const normalized = value
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!normalized) {
+    throw new AppError('OPENAI_RESPONSE_INVALID', 'OpenAI did not return title text.', 502)
+  }
+
+  return normalized.length > 64
+    ? normalized.slice(0, 61).trimEnd().replace(/[.,;:!?-]+$/g, '').trimEnd() + '...'
+    : normalized
 }
 
 export interface ReferenceImageInput {
@@ -623,6 +649,39 @@ export async function generateCaption(params: {
   return {
     responseId: typeof response.id === 'string' ? response.id : null,
     caption: extractCaptionOutput(response),
+    usage: typeof response.usage === 'object' && response.usage !== null
+      ? response.usage
+    : null,
+  }
+}
+
+export async function generateChatTitle(params: {
+  prompt: string
+}) : Promise<OpenAiGeneratedTitle> {
+  const response = await callOpenAiResponsesApi({
+    model: getOpenAiTitleModel(),
+    instructions: [
+      'Create a short project title for a social media design chat.',
+      'Return only the title.',
+      'Use 2 to 5 words.',
+      'Do not use quotes, punctuation-heavy styling, emojis, or extra explanation.',
+    ].join(' '),
+    input: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: `Prompt:\n${params.prompt}`,
+          },
+        ],
+      },
+    ],
+  })
+
+  return {
+    responseId: typeof response.id === 'string' ? response.id : null,
+    title: normalizeGeneratedTitle(extractCaptionOutput(response)),
     usage: typeof response.usage === 'object' && response.usage !== null
       ? response.usage
       : null,

@@ -2,12 +2,14 @@ import { useEffect, useId, useRef } from 'react'
 import addImageIcon from '../../assets/add image.svg'
 import closeIcon from '../../assets/Close (X).svg'
 import upIcon from '../../assets/up.svg'
+import { AssetImage, AssetLoadingFrame } from '../ui/AssetImage'
 
 export function PromptAttachmentTabs({
   attachments = [],
   disabled = false,
   isSubmitting = false,
   onRemoveAttachment,
+  onAttachmentPreviewLoad,
   className = '',
 }) {
   if (attachments.length === 0) {
@@ -22,11 +24,19 @@ export function PromptAttachmentTabs({
       {attachments.map((attachment) => (
         <div key={attachment.id} className="canvas-prompt-attachment">
           <div className="canvas-prompt-attachment-track">
-            {attachment.previewUrl ? (
-              <img
+            {attachment.isLoading ? (
+              <AssetLoadingFrame
+                className="canvas-prompt-attachment-image canvas-prompt-attachment-loading"
+                loadingLabel={`Loading ${attachment.original_file_name || 'attachment'}`}
+              />
+            ) : attachment.previewUrl ? (
+              <AssetImage
                 className="canvas-prompt-attachment-image"
                 src={attachment.previewUrl}
                 alt={attachment.original_file_name || 'Prompt attachment'}
+                loadingLabel={`Loading ${attachment.original_file_name || 'attachment'}`}
+                onLoad={() => onAttachmentPreviewLoad?.(attachment.id)}
+                onError={() => onAttachmentPreviewLoad?.(attachment.id)}
               />
             ) : (
               <span className="canvas-prompt-attachment-fallback" aria-hidden="true">
@@ -40,7 +50,7 @@ export function PromptAttachmentTabs({
               <button
                 className="canvas-prompt-attachment-remove"
                 type="button"
-                disabled={disabled || isSubmitting}
+                disabled={disabled || isSubmitting || attachment.isLoading || attachment.isPreviewLoading}
                 onClick={() => onRemoveAttachment?.(attachment.id)}
                 aria-label={`Remove ${attachment.original_file_name || 'attachment'}`}
               >
@@ -68,6 +78,7 @@ export function PromptShell({
   onStop,
   onFilesSelected,
   onRemoveAttachment,
+  onAttachmentPreviewLoad,
 }) {
   const inputId = useId()
   const fileInputRef = useRef(null)
@@ -107,6 +118,7 @@ export function PromptShell({
           disabled={disabled}
           isSubmitting={isSubmitting}
           onRemoveAttachment={onRemoveAttachment}
+          onAttachmentPreviewLoad={onAttachmentPreviewLoad}
         />
       ) : null}
 

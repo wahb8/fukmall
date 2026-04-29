@@ -1,6 +1,7 @@
 import portraitPresetImage from '../../../assets/Portrait.png'
 import squarePresetImage from '../../../assets/square.png'
 import storiesPresetImage from '../../../assets/Stories.png'
+import { AssetImage } from '../../ui/AssetImage'
 
 const NEW_FILE_PRESETS = [
   {
@@ -82,12 +83,13 @@ export function NewFileModal({
               onClick={() => onPresetSelect?.(preset)}
             >
               <span className="new-file-preset-icon-shell" aria-hidden="true">
-                <img
+                <AssetImage
                   className={preset.key === 'portrait'
                     ? 'new-file-preset-icon new-file-preset-icon-portrait'
                     : 'new-file-preset-icon'}
                   src={preset.imageSrc}
                   alt=""
+                  fit="contain"
                 />
               </span>
               <span className="new-file-preset-copy">

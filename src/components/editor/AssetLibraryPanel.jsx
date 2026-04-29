@@ -1,4 +1,5 @@
 import { getEditorIcons } from '../../editor/iconAssets'
+import { AssetImage } from '../ui/AssetImage'
 
 export function AssetLibraryPanel({
   icons = getEditorIcons('light'),
@@ -55,7 +56,13 @@ export function AssetLibraryPanel({
                     onDragEnd={onAssetDragEnd}
                     aria-label={asset.name}
                   >
-                    <img className="asset-thumbnail" src={asset.src} alt="" aria-hidden="true" />
+                    <AssetImage
+                      className="asset-thumbnail"
+                      src={asset.src}
+                      alt=""
+                      aria-hidden="true"
+                      fit="contain"
+                    />
                     <div className="asset-card-footer">
                       <span className="asset-name">{asset.name}</span>
                     </div>

@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import logoConceptTransparent from '../../assets/logo concept-transparent.png'
+import { AssetImage } from '../ui/AssetImage'
 
 function renderThumbnail(post) {
   if (typeof post.thumbnailSrc === 'string' && post.thumbnailSrc.length > 0) {
     return (
-      <img
+      <AssetImage
         className="post-sidebar-post-thumbnail-image"
         src={post.thumbnailSrc}
         alt=""
@@ -65,7 +66,13 @@ export function PostSidebar({
           }}
           aria-label="Kryopic home"
         >
-          <img className="post-sidebar-brand-mark" src={logoConceptTransparent} alt="" aria-hidden="true" />
+          <AssetImage
+            className="post-sidebar-brand-mark"
+            src={logoConceptTransparent}
+            alt=""
+            aria-hidden="true"
+            fit="contain"
+          />
         </a>
 
         <button

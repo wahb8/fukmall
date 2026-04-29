@@ -19,6 +19,8 @@ Current model defaults:
   `OPENAI_IMAGE_MODEL` Supabase secret
 - caption generation uses `gpt-4.1-mini` by default and can be overridden with
   `OPENAI_CAPTION_MODEL`
+- chat title generation uses `gpt-4.1-mini` by default and can be overridden with
+  `OPENAI_TITLE_MODEL`
 - GPT Image model defaults use the direct Images API; older/mainline overrides can still use the
   Responses image-generation tool path
 - image quality defaults to `high` in code for best output quality; it can be overridden with
@@ -32,6 +34,10 @@ Current model defaults:
   one long request open while OpenAI creates the image
 - image and caption provider calls still run in parallel inside that job so caption generation does
   not add extra wait time after the image finishes
+- automatic chat titles are generated as a separate best-effort background task only on the first
+  prompt when the chat still has a default title like `Untitled`, `Untitled chat`, `New file`, or `New post`
+- generated titles update the chat only if the title is still unchanged, so manual renames or later
+  prompts do not get overwritten
 - GPT Image 2 reference-image requests omit `input_fidelity` because that model already processes
   image inputs at high fidelity
 
@@ -48,15 +54,16 @@ Current model defaults:
 6. fetch bounded recent chat context
 7. fetch attachment metadata for the current request
 8. write a `generation_jobs` row with `status = 'pending'`
-9. return `202 Accepted` to the frontend with the job ID
-10. run the generation in the Edge Function background task
-11. move the job to `processing`
-12. build structured prompts
-13. call OpenAI
-14. store generated outputs in Storage
-15. write message, post, version, and usage records
-16. move the job to `completed`, `failed`, or `canceled`
-17. let the frontend poll `generation-job-status` until the generated post is ready
+9. schedule best-effort chat title generation if the chat still has an automatic/default title
+10. return `202 Accepted` to the frontend with the job ID
+11. run the generation in the Edge Function background task
+12. move the job to `processing`
+13. build structured prompts
+14. call OpenAI
+15. store generated outputs in Storage
+16. write message, post, version, and usage records
+17. move the job to `completed`, `failed`, or `canceled`
+18. let the frontend poll `generation-job-status` until the generated post is ready
 
 If the user presses stop while a job is active, the frontend aborts its request/polling and calls
 `cancel-generation-job`. The background worker checks the job state before writing final artifacts,

@@ -1,8 +1,10 @@
+import { AssetImage } from '../ui/AssetImage'
+
 function renderAttachmentPreview(attachment) {
   return (
     <li key={attachment.id} className="chat-timeline-attachment">
       {attachment.previewUrl ? (
-        <img
+        <AssetImage
           className="chat-timeline-attachment-image"
           src={attachment.previewUrl}
           alt={attachment.original_file_name || 'Prompt attachment'}
@@ -49,7 +51,7 @@ function renderGeneratedPostEntry(entry) {
       <span className="chat-timeline-role">Generated result</span>
       <div className="chat-timeline-generated-card">
         {entry.previewUrl ? (
-          <img
+          <AssetImage
             className="chat-timeline-generated-image"
             src={entry.previewUrl}
             alt="Generated post preview"

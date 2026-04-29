@@ -11,6 +11,7 @@ import {
   CAPTION_TONE_OPTIONS,
   REFERENCE_SLOT_COUNT,
 } from '../../lib/businessProfileOptions'
+import { AssetImage } from '../ui/AssetImage'
 import './OnboardingModal.css'
 
 const BUSINESS_TYPE_IMAGES = {
@@ -305,7 +306,7 @@ export function OnboardingModal({
                       aria-pressed={isSelected}
                       onClick={() => setSelectedBusinessType(option.name)}
                     >
-                      <img
+                      <AssetImage
                         className="onboarding-business-card-image"
                         src={option.imageSrc}
                         alt=""
@@ -360,7 +361,7 @@ export function OnboardingModal({
                     aria-label={logoFileEntry ? 'Replace logo' : 'Upload logo'}
                   >
                     {logoFileEntry ? (
-                      <img
+                      <AssetImage
                         className="onboarding-logo-preview"
                         src={logoFileEntry.previewUrl}
                         alt="Uploaded logo preview"
@@ -404,7 +405,7 @@ export function OnboardingModal({
                         <span className="onboarding-upload-slot-index">{`0${index + 1}`}</span>
 
                         {slot ? (
-                          <img
+                          <AssetImage
                             className="onboarding-upload-preview"
                             src={slot.previewUrl}
                             alt={`Uploaded reference image ${index + 1} preview`}

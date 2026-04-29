@@ -10,6 +10,7 @@ const assertStorageAllowedMock = vi.fn()
 const recordUsageEventMock = vi.fn()
 const generatePostImageMock = vi.fn()
 const generateCaptionMock = vi.fn()
+const generateChatTitleMock = vi.fn()
 const buildImageGenerationInstructionsMock = vi.fn(() => 'image instructions')
 const buildImageGenerationUserPromptMock = vi.fn(() => 'image prompt')
 const buildCaptionInstructionsMock = vi.fn(() => 'caption instructions')
@@ -56,6 +57,7 @@ vi.mock('../_shared/usage.ts', () => ({
 vi.mock('../_shared/openai.ts', () => ({
   generatePostImage: generatePostImageMock,
   generateCaption: generateCaptionMock,
+  generateChatTitle: generateChatTitleMock,
   resolveRequestedImageCanvas: vi.fn((width: number, height: number) => ({
     requestedSize: `${width}x${height}`,
     outputWidth: width,
@@ -190,6 +192,17 @@ function createCancelAtCompletionMutationTable(payloadRecorder: unknown[]) {
   }
 }
 
+function createDeferred<T = unknown>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+
+  return { promise, resolve, reject }
+}
+
 async function loadHandler() {
   vi.resetModules()
 
@@ -262,6 +275,7 @@ describe('generate-post edge function', () => {
     recordUsageEventMock.mockReset()
     generatePostImageMock.mockReset()
     generateCaptionMock.mockReset()
+    generateChatTitleMock.mockReset()
     buildImageGenerationInstructionsMock.mockClear()
     buildImageGenerationUserPromptMock.mockClear()
     buildCaptionInstructionsMock.mockClear()
@@ -277,14 +291,19 @@ describe('generate-post edge function', () => {
 
   it('creates an initial generated post, assistant response, and usage records', async () => {
     vi.spyOn(crypto, 'randomUUID').mockReturnValue(GENERATED_POST_ID)
-    let backgroundTask: Promise<unknown> | null = null
+    const titleDeferred = createDeferred<{
+      responseId: string
+      title: string
+      usage: Record<string, unknown>
+    }>()
+    const backgroundTasks: Promise<unknown>[] = []
     ;(globalThis as typeof globalThis & {
       EdgeRuntime?: {
         waitUntil: (task: Promise<unknown>) => void
       }
     }).EdgeRuntime = {
       waitUntil: vi.fn((task) => {
-        backgroundTask = task
+        backgroundTasks.push(task)
       }),
     }
     const chatsUpdatePayloads: unknown[] = []
@@ -296,7 +315,7 @@ describe('generate-post edge function', () => {
         id: CHAT_ID,
         user_id: USER_ID,
         business_profile_id: null,
-        title: 'Untitled chat',
+        title: 'Untitled',
         status: 'active',
       },
       error: null,
@@ -564,6 +583,7 @@ describe('generate-post edge function', () => {
         output_tokens: 12,
       },
     })
+    generateChatTitleMock.mockReturnValue(titleDeferred.promise)
 
     const handler = await loadHandler()
     const response = await handler(new Request('https://example.com', {
@@ -586,8 +606,8 @@ describe('generate-post edge function', () => {
       EdgeRuntime?: {
         waitUntil: ReturnType<typeof vi.fn>
       }
-    }).EdgeRuntime?.waitUntil).toHaveBeenCalledOnce()
-    await backgroundTask
+    }).EdgeRuntime?.waitUntil).toHaveBeenCalledTimes(2)
+    await backgroundTasks[1]
     expect(assertGenerationAllowedMock).toHaveBeenCalled()
     expect(assertEditAllowedMock).not.toHaveBeenCalled()
     expect(generatePostImageMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -636,8 +656,10 @@ describe('generate-post edge function', () => {
     })
     expect(chatsUpdatePayloads).toEqual([
       { business_profile_id: BUSINESS_PROFILE_ID },
-      { title: 'Create a launch post' },
     ])
+    expect(generateChatTitleMock).toHaveBeenCalledWith({
+      prompt: 'Create a launch post',
+    })
     expect(generationJobUpdatePayloads).toEqual(expect.arrayContaining([
       expect.objectContaining({
         status: 'canceled',
@@ -673,6 +695,258 @@ describe('generate-post edge function', () => {
         job: {
           id: GENERATION_JOB_ID,
           status: 'pending',
+        },
+      },
+    })
+
+    titleDeferred.resolve({
+      responseId: 'resp-title-1',
+      title: 'Coffee Launch',
+      usage: {
+        output_tokens: 4,
+      },
+    })
+    await backgroundTasks[0]
+    expect(chatsUpdatePayloads).toEqual([
+      { business_profile_id: BUSINESS_PROFILE_ID },
+      { title: 'Coffee Launch' },
+    ])
+  })
+
+  it('keeps image generation working when automatic title generation fails', async () => {
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(GENERATED_POST_ID)
+    const generationJobUpdatePayloads: unknown[] = []
+    const chatMessagePayloads: unknown[] = []
+    const generatedPostPayloads: unknown[] = []
+    const chatsUpdatePayloads: unknown[] = []
+    const chatsQuery = createMaybeSingleQuery({
+      data: {
+        id: CHAT_ID,
+        user_id: USER_ID,
+        business_profile_id: BUSINESS_PROFILE_ID,
+        title: 'Untitled chat',
+        status: 'active',
+      },
+      error: null,
+    })
+    const businessProfileQuery = createMaybeSingleQuery({
+      data: {
+        id: BUSINESS_PROFILE_ID,
+        user_id: USER_ID,
+        name: 'Moonline Cafe',
+        business_type: 'Cafe',
+        brand_description: null,
+        tone_preferences: [],
+        style_preferences: [],
+        brand_colors: [],
+        logo_asset_id: null,
+        is_default: true,
+      },
+      error: null,
+    })
+    const latestPostQuery = createMaybeSingleQuery({
+      data: null,
+      error: null,
+    })
+    const brandReferenceAssetsQuery = createListQuery({
+      data: [],
+      error: null,
+    })
+    const chatMessagesTable = createSequentialInsertTable([
+      {
+        data: {
+          id: USER_MESSAGE_ID,
+          role: 'user',
+          message_type: 'generation_request',
+          content_text: 'Create a coffee promo',
+          metadata: {},
+          created_at: '2026-04-28T12:00:00.000Z',
+        },
+        error: null,
+      },
+      {
+        data: {
+          id: ASSISTANT_MESSAGE_ID,
+          role: 'assistant',
+          message_type: 'generation_result',
+          content_text: 'Generated a new post draft.',
+          metadata: {},
+          created_at: '2026-04-28T12:01:00.000Z',
+        },
+        error: null,
+      },
+    ], chatMessagePayloads)
+    const generationJobsTable = createSequentialInsertTable([
+      {
+        data: {
+          id: GENERATION_JOB_ID,
+          status: 'pending',
+          queued_at: '2026-04-28T12:00:00.000Z',
+          source_message_id: USER_MESSAGE_ID,
+        },
+        error: null,
+      },
+    ], [])
+    const generatedPostsTable = createSequentialInsertTable([
+      {
+        data: {
+          id: GENERATED_POST_ID,
+          user_id: USER_ID,
+          chat_id: CHAT_ID,
+          version_group_id: GENERATED_POST_ID,
+          version_number: 1,
+          previous_post_id: null,
+          caption_text: 'Fresh coffee, now pouring.',
+          bucket_name: 'generated-posts',
+          image_storage_path: `${USER_ID}/renders/${GENERATED_POST_ID}.png`,
+          width: 1080,
+          height: 1350,
+          metadata: {},
+          created_at: '2026-04-28T12:01:00.000Z',
+        },
+        error: null,
+      },
+    ], generatedPostPayloads)
+    const generationJobUpdates = createDoubleEqMutationTable(generationJobUpdatePayloads)
+    const chatsTable = {
+      select: vi.fn(() => chatsQuery),
+      ...createDoubleEqMutationTable(chatsUpdatePayloads),
+    }
+    const storageMock = createStorageMock()
+
+    createAdminClientMock.mockReturnValue({
+      from: vi.fn((table) => {
+        if (table === 'chats') {
+          return chatsTable
+        }
+
+        if (table === 'business_profiles') {
+          return {
+            select: vi.fn(() => businessProfileQuery),
+          }
+        }
+
+        if (table === 'uploaded_assets') {
+          const uploadedAssetsQuery = {
+            eq: vi.fn(() => uploadedAssetsQuery),
+            order: vi.fn(() => ({
+              limit: vi.fn(async () => brandReferenceAssetsQuery.limit(4)),
+            })),
+          }
+
+          return {
+            select: vi.fn(() => uploadedAssetsQuery),
+          }
+        }
+
+        if (table === 'generated_posts') {
+          return {
+            select: vi.fn(() => latestPostQuery),
+            insert: generatedPostsTable.insert,
+            delete: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  error: null,
+                })),
+              })),
+            })),
+          }
+        }
+
+        if (table === 'chat_messages') {
+          return {
+            insert: chatMessagesTable.insert,
+            delete: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(async () => ({
+                  error: null,
+                })),
+              })),
+            })),
+          }
+        }
+
+        if (table === 'generation_jobs') {
+          return {
+            insert: generationJobsTable.insert,
+            select: vi.fn(() => createMaybeSingleQuery({
+              data: {
+                id: GENERATION_JOB_ID,
+                status: 'processing',
+              },
+              error: null,
+            })),
+            update: generationJobUpdates.update,
+          }
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+      storage: storageMock.storage,
+    })
+    requireAuthenticatedUserMock.mockResolvedValue({
+      user: {
+        id: USER_ID,
+      },
+    })
+    getActiveSubscriptionWithPlanMock.mockResolvedValue({
+      plan: {
+        monthly_generation_limit: 30,
+        monthly_edit_limit: 30,
+      },
+    })
+    getOrCreateUsagePeriodMock.mockResolvedValue({
+      id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      period_start: '2026-04-01T00:00:00.000Z',
+      period_end: '2026-05-01T00:00:00.000Z',
+      generation_count: 4,
+      edit_count: 1,
+    })
+    generateChatTitleMock.mockRejectedValue(new Error('Title generation failed'))
+    generatePostImageMock.mockResolvedValue({
+      model: 'gpt-image-2',
+      responseId: 'resp-image-1',
+      imageBase64: btoa('generated-image'),
+      revisedPrompt: null,
+      outputWidth: 1080,
+      outputHeight: 1350,
+      requestedSize: '1080x1350',
+      usage: {},
+    })
+    generateCaptionMock.mockResolvedValue({
+      responseId: 'resp-caption-1',
+      caption: 'Fresh coffee, now pouring.',
+      usage: {},
+    })
+
+    const handler = await loadHandler()
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        prompt: 'Create a coffee promo',
+        width: 1080,
+        height: 1350,
+        wait_for_completion: true,
+      }),
+    }))
+
+    expect(response.status).toBe(200)
+    expect(generateChatTitleMock).toHaveBeenCalledWith({
+      prompt: 'Create a coffee promo',
+    })
+    expect(generatePostImageMock).toHaveBeenCalled()
+    expect(generatedPostPayloads).toHaveLength(1)
+    expect(chatsUpdatePayloads).toEqual([])
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      data: {
+        post: {
+          id: GENERATED_POST_ID,
         },
       },
     })
@@ -954,6 +1228,7 @@ describe('generate-post edge function', () => {
     expect(response.status).toBe(200)
     expect(assertEditAllowedMock).toHaveBeenCalled()
     expect(assertGenerationAllowedMock).not.toHaveBeenCalled()
+    expect(generateChatTitleMock).not.toHaveBeenCalled()
     expect(chatMessagePayloads[0]).toMatchObject({
       message_type: 'edit_request',
     })

@@ -6,6 +6,7 @@ import {
   REFERENCE_SLOT_COUNT,
 } from '../../../lib/businessProfileOptions'
 import { fetchDefaultBusinessProfile, saveBusinessProfile } from '../../../lib/onboarding'
+import { AssetImage } from '../../ui/AssetImage'
 
 function createEmptyBrandColorValues() {
   return Array.from({ length: BRAND_COLOR_SLOT_COUNT }, () => '')
@@ -519,7 +520,7 @@ export function SettingsModal({
 
                     <div className={logoEntry ? 'settings-logo-card has-image' : 'settings-logo-card'}>
                       {logoEntry?.previewUrl ? (
-                        <img
+                        <AssetImage
                           className="settings-logo-preview"
                           src={logoEntry.previewUrl}
                           alt="Business logo preview"
@@ -567,7 +568,7 @@ export function SettingsModal({
                       {referenceEntries.map((entry, index) => (
                         <article className="settings-reference-card" key={entry.id ?? `${entry.fileName}-${index}`}>
                           {entry.previewUrl ? (
-                            <img
+                            <AssetImage
                               className="settings-reference-preview"
                               src={entry.previewUrl}
                               alt={`Reference image ${index + 1} preview`}

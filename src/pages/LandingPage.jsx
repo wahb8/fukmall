@@ -2,6 +2,7 @@ import { useState } from 'react'
 import logoConceptTransparent from '../assets/logo concept-transparent.png'
 import { useAuth } from '../auth/authContext'
 import { AuthModal } from '../components/site/AuthModal'
+import { AssetImage } from '../components/ui/AssetImage'
 import { navigateTo } from '../navigation'
 
 export function LandingPage({
@@ -43,7 +44,13 @@ export function LandingPage({
       <div className="landing-frame">
         <header className="landing-nav" aria-label="Primary navigation">
           <a className="landing-brand" href="#top" aria-label="Kryopic home">
-            <img className="landing-brand-mark" src={logoConceptTransparent} alt="" />
+            <AssetImage
+              className="landing-brand-mark"
+              src={logoConceptTransparent}
+              alt=""
+              aria-hidden="true"
+              fit="contain"
+            />
             <span className="landing-brand-name">Kryopic</span>
           </a>
 

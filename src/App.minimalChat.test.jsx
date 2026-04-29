@@ -218,6 +218,80 @@ describe('App minimal chat shell', () => {
     expect(screen.getByRole('button', { name: 'Remove coffee.png' })).toBeInTheDocument()
   })
 
+  it('shows pending attachment placeholders and blocks sending until attachments are ready', async () => {
+    const uploadDeferred = createDeferred()
+
+    listChatsMock.mockResolvedValue([])
+    createChatMock.mockResolvedValue({
+      id: 'chat-1',
+    })
+    loadChatSessionMock.mockResolvedValue(createChatSession('chat-1', 'Campaign ideas'))
+    uploadPromptAttachmentMock.mockReturnValue(uploadDeferred.promise)
+    generatePostMock.mockResolvedValue({
+      generation_mode: 'initial',
+      job: {
+        id: 'job-1',
+        status: 'completed',
+      },
+    })
+
+    const { container } = render(<App />)
+    const promptInput = await screen.findByPlaceholderText('Describe what you want to create...')
+
+    fireEvent.change(promptInput, {
+      target: { value: 'Create a coffee launch post' },
+    })
+
+    const fileInput = container.querySelector('input[type="file"][accept="image/*"][multiple]')
+    const file = new File(['image'], 'coffee.png', { type: 'image/png' })
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [file],
+      },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: 'Loading coffee.png' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Submit prompt' })).toBeDisabled()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit prompt' }))
+    expect(generatePostMock).not.toHaveBeenCalled()
+
+    uploadDeferred.resolve({
+      id: 'asset-1',
+      original_file_name: 'coffee.png',
+      previewUrl: 'https://example.com/coffee.png',
+    })
+
+    let attachedImage = null
+
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: 'Loading coffee.png' })).toBeInTheDocument()
+      attachedImage = screen.getByAltText('coffee.png')
+      expect(attachedImage).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Submit prompt' })).toBeDisabled()
+    })
+
+    fireEvent.load(attachedImage)
+
+    await waitFor(() => {
+      expect(screen.queryByRole('status', { name: 'Loading coffee.png' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Submit prompt' })).not.toBeDisabled()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit prompt' }))
+
+    await waitFor(() => {
+      expect(generatePostMock).toHaveBeenCalledWith(expect.objectContaining({
+        chatId: 'chat-1',
+        prompt: 'Create a coffee launch post',
+        attachmentAssetIds: ['asset-1'],
+      }))
+    })
+  })
+
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()

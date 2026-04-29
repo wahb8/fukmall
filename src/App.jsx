@@ -17,6 +17,7 @@ import { PromptAttachmentTabs, PromptShell } from './components/editor/PromptShe
 import { NewFileModal } from './components/editor/modals/NewFileModal'
 import { SettingsModal } from './components/editor/modals/SettingsModal'
 import { UnsavedChangesModal } from './components/editor/modals/UnsavedChangesModal'
+import { AssetImage } from './components/ui/AssetImage'
 import {
   ASSET_DRAG_MIME_TYPE,
   DEFAULT_BUCKET_TOLERANCE,
@@ -1242,6 +1243,7 @@ function App({
   const [activeChatSession, setActiveChatSession] = useState(null)
   const [isChatListLoading, setIsChatListLoading] = useState(false)
   const [isActiveChatLoading, setIsActiveChatLoading] = useState(false)
+  const [pendingGeneratedPostCanvasLoadId, setPendingGeneratedPostCanvasLoadId] = useState(null)
   const [chatStatusMessage, setChatStatusMessage] = useState('')
   const [chatStatusTone, setChatStatusTone] = useState('info')
   const [promptComposerValue, setPromptComposerValue] = useState('')
@@ -1333,6 +1335,11 @@ function App({
   const defaultBusinessProfileId = defaultBusinessProfile?.id ?? null
   const isMinimalEditorMode = !editorChromeEnabled
   const shouldShowFirstEntryCanvas = isMinimalEditorMode && isFirstEntryCanvasVisible
+  const hasPendingPromptAttachments = promptComposerAttachments.some((attachment) => (
+    attachment?.isLoading ||
+    attachment?.isPreviewLoading ||
+    String(attachment?.id ?? '').startsWith('pending-attachment-')
+  ))
   const editorIcons = useMemo(() => getEditorIcons(theme), [theme])
   const currentDocumentSignature = useMemo(() => serializeProjectFile(documentState), [documentState])
   const hasUnsavedChanges = currentDocumentSignature !== savedDocumentSignature
@@ -1423,6 +1430,7 @@ function App({
   }, [activeChatId, defaultBusinessProfileId, documentName, refreshChatSummaries])
 
   const syncLatestGeneratedPostToCanvas = useCallback((post) => {
+    setPendingGeneratedPostCanvasLoadId(post?.previewUrl ? (post.id ?? post.previewUrl) : null)
     setTransientRef.current((currentDocument) => syncGeneratedPostCanvasLayer(currentDocument, post))
 
     if (post?.previewUrl) {
@@ -1951,6 +1959,12 @@ function App({
 
     if (entry.offscreenCanvas && entry.bitmapKey === surfaceKey) {
       drawRasterLayer(layer.id)
+      if (layer.generatedPostLayer) {
+        const generatedPostLoadKey = layer.generatedPostId ?? layer.generatedPostPreviewUrl
+        setPendingGeneratedPostCanvasLoadId((currentPostId) => (
+          currentPostId === generatedPostLoadKey ? null : currentPostId
+        ))
+      }
       return entry.offscreenCanvas
     }
 
@@ -2022,6 +2036,13 @@ function App({
     entry.paintOverlayCanvas = paintOverlayCanvas
     entry.bitmapKey = surfaceKey
     drawRasterLayer(layer.id)
+
+    if (layer.generatedPostLayer) {
+      const generatedPostLoadKey = layer.generatedPostId ?? layer.generatedPostPreviewUrl
+      setPendingGeneratedPostCanvasLoadId((currentPostId) => (
+        currentPostId === generatedPostLoadKey ? null : currentPostId
+      ))
+    }
 
     return entry.offscreenCanvas
   }, [drawRasterLayer, getLayerSurfaceKey, getRasterSurfaceEntry])
@@ -4409,12 +4430,24 @@ function App({
     if (
       !isMinimalEditorMode ||
       isPromptSubmitting ||
+      isPromptAttachmentUploading ||
       !Array.isArray(files) ||
       files.length === 0
     ) {
       return
     }
 
+    const pendingAttachments = files.map((file, index) => ({
+      id: `pending-attachment-${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+      original_file_name: file.name,
+      isLoading: true,
+    }))
+    const pendingAttachmentIds = new Set(pendingAttachments.map((attachment) => attachment.id))
+
+    setPromptComposerAttachments((currentAttachments) => [
+      ...currentAttachments,
+      ...pendingAttachments,
+    ])
     setIsPromptAttachmentUploading(true)
 
     try {
@@ -4423,13 +4456,28 @@ function App({
         files.map((file) => uploadPromptAttachment(chatId, file)),
       )
 
-      setPromptComposerAttachments((currentAttachments) => [
-        ...currentAttachments,
-        ...uploadedAttachments,
-      ])
+      setPromptComposerAttachments((currentAttachments) => {
+        let nextUploadedIndex = 0
+
+        return currentAttachments.flatMap((attachment) => {
+          if (!pendingAttachmentIds.has(attachment.id)) {
+            return [attachment]
+          }
+
+          const uploadedAttachment = uploadedAttachments[nextUploadedIndex]
+          nextUploadedIndex += 1
+
+          return uploadedAttachment
+            ? [{ ...uploadedAttachment, isLoading: false, isPreviewLoading: true }]
+            : []
+        })
+      })
       setActiveChatId(chatId)
       setChatStatusMessage('')
     } catch (error) {
+      setPromptComposerAttachments((currentAttachments) => (
+        currentAttachments.filter((attachment) => !pendingAttachmentIds.has(attachment.id))
+      ))
       showChatStatusMessage(
         error instanceof Error ? error.message : 'Unable to upload the selected images.',
         'error',
@@ -4437,11 +4485,28 @@ function App({
     } finally {
       setIsPromptAttachmentUploading(false)
     }
-  }, [documentName, ensureActiveChat, isMinimalEditorMode, isPromptSubmitting, showChatStatusMessage])
+  }, [
+    documentName,
+    ensureActiveChat,
+    isMinimalEditorMode,
+    isPromptAttachmentUploading,
+    isPromptSubmitting,
+    showChatStatusMessage,
+  ])
 
   const handleRemovePromptAttachment = useCallback((assetId) => {
     setPromptComposerAttachments((currentAttachments) => (
       currentAttachments.filter((attachment) => attachment.id !== assetId)
+    ))
+  }, [])
+
+  const handlePromptAttachmentPreviewLoad = useCallback((assetId) => {
+    setPromptComposerAttachments((currentAttachments) => (
+      currentAttachments.map((attachment) => (
+        attachment.id === assetId
+          ? { ...attachment, isPreviewLoading: false }
+          : attachment
+      ))
     ))
   }, [])
 
@@ -4468,7 +4533,12 @@ function App({
   }, [])
 
   const handleSubmitPromptComposer = useCallback(async () => {
-    if (!isMinimalEditorMode || isPromptSubmitting || isPromptAttachmentUploading) {
+    if (!isMinimalEditorMode || isPromptSubmitting) {
+      return
+    }
+
+    if (isPromptAttachmentUploading || hasPendingPromptAttachments) {
+      showChatStatusMessage('Wait for attached images to finish loading before sending.', 'error')
       return
     }
 
@@ -4600,6 +4670,7 @@ function App({
     isMinimalEditorMode,
     isPromptAttachmentUploading,
     isPromptSubmitting,
+    hasPendingPromptAttachments,
     promptComposerAttachments,
     promptComposerValue,
     refreshChatSummaries,
@@ -7624,12 +7695,14 @@ function App({
                 )}px`,
               }}
             >
-              <img
+              <AssetImage
                 className="layer-image"
+                nativeClassName="layer-image"
                 src={layer.src}
                 alt=""
                 aria-hidden="true"
                 draggable={false}
+                fit="fill"
               />
             </div>
           ) : isRasterLayer(layer) && (
@@ -7806,15 +7879,21 @@ function App({
   }
 
   function renderGenerationLoadingOverlay() {
-    if (!isPromptSubmitting) {
+    const isCanvasLoading = isPromptSubmitting || isActiveChatLoading || Boolean(pendingGeneratedPostCanvasLoadId)
+
+    if (!isCanvasLoading) {
       return null
     }
+
+    const loadingLabel = isPromptSubmitting
+      ? 'Creating your post'
+      : 'Loading canvas'
 
     return (
       <div
         className="canvas-generation-loading-overlay"
         role="status"
-        aria-label="Creating your post"
+        aria-label={loadingLabel}
         aria-live="polite"
       >
         <div className="canvas-generation-loading-card">
@@ -7964,9 +8043,10 @@ function App({
                   {canvasUtilityPanels}
                   <PromptAttachmentTabs
                     attachments={promptComposerAttachments}
-                    disabled={isPromptAttachmentUploading || isPromptSubmitting}
+                    disabled={isPromptAttachmentUploading || isPromptSubmitting || hasPendingPromptAttachments}
                     isSubmitting={isPromptSubmitting}
                     onRemoveAttachment={handleRemovePromptAttachment}
+                    onAttachmentPreviewLoad={handlePromptAttachmentPreviewLoad}
                     className="canvas-attachment-tabs"
                   />
                   <div
@@ -8004,9 +8084,9 @@ function App({
                 value={promptComposerValue}
                 attachments={promptComposerAttachments}
                 showAttachments={false}
-                disabled={isPromptAttachmentUploading}
+                disabled={isPromptAttachmentUploading || hasPendingPromptAttachments}
                 isSubmitting={isPromptSubmitting}
-                isUploadingAttachments={isPromptAttachmentUploading}
+                isUploadingAttachments={isPromptAttachmentUploading || hasPendingPromptAttachments}
                 statusMessage={chatStatusTone === 'error' ? chatStatusMessage : ''}
                 statusTone={chatStatusTone}
                 onChange={setPromptComposerValue}
@@ -8014,6 +8094,7 @@ function App({
                 onStop={handleStopPromptGeneration}
                 onFilesSelected={handlePromptAttachmentsSelected}
                 onRemoveAttachment={handleRemovePromptAttachment}
+                onAttachmentPreviewLoad={handlePromptAttachmentPreviewLoad}
               />
             </div>
           </section>

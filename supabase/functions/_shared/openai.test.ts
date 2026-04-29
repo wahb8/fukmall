@@ -156,4 +156,40 @@ describe('OpenAI shared helper', () => {
       input_fidelity: 'high',
     })
   })
+
+  it('generates a short chat title with the small title model', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      id: 'title-response-1',
+      output_text: '"New Iced Latte"',
+      usage: {
+        output_tokens: 4,
+      },
+    }), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+      },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { generateChatTitle } = await import('./openai.ts')
+    const result = await generateChatTitle({
+      prompt: 'Create a post for my cafe announcing a new iced latte.',
+    })
+
+    expect(result).toMatchObject({
+      responseId: 'title-response-1',
+      title: 'New Iced Latte',
+      usage: {
+        output_tokens: 4,
+      },
+    })
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body)
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/responses')
+    expect(requestBody.model).toBe('gpt-4.1-mini')
+    expect(requestBody.instructions).toContain('Return only the title')
+    expect(requestBody.input[0].content[0].text).toContain('new iced latte')
+  })
 })

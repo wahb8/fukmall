@@ -2,6 +2,8 @@
 
 ## 2026-04-29
 
+- fixed automatic chat title generation to recognize the frontend's plain `Untitled` default chat
+  title, not only `Untitled chat`
 - added generation interruption support with `cancel-generation-job`, a `canceled`
   `generation_jobs` status, frontend abort handling, and composer stop-button behavior
 - hardened generation interruption by canceling older pending/processing jobs when a newer
@@ -9,6 +11,9 @@
 - hardened cancellation races so a canceled job cannot be overwritten to `completed`, generated
   artifacts are rolled back before usage is recorded, and cancel requests return the current job
   state if the job already reached a terminal status
+- added best-effort automatic chat title generation through a small OpenAI text model, scoped to
+  first prompts on chats that still have a default title and safe against overwriting manually
+  renamed chats
 - updated the `generate-post` OpenAI image-generation default to `gpt-image-2`
 - routed GPT Image model requests through the direct Images API while preserving the existing
   Responses image-tool path for older/mainline overrides

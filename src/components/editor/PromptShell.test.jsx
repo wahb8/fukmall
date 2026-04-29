@@ -121,6 +121,24 @@ describe('PromptShell', () => {
     expect(handleRemoveAttachment).toHaveBeenCalledWith('asset-1')
   })
 
+  it('shows a loading placeholder for pending attachments', () => {
+    render(
+      <PromptAttachmentTabs
+        attachments={[
+          {
+            id: 'pending-attachment-1',
+            original_file_name: 'logo.png',
+            isLoading: true,
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByRole('status', { name: 'Loading logo.png' })).toBeInTheDocument()
+    expect(screen.queryByAltText('logo.png')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Remove logo.png' })).toBeDisabled()
+  })
+
   it('disables attachment removal while the composer is locked', () => {
     const handleRemoveAttachment = vi.fn()
 
