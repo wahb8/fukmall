@@ -17,6 +17,27 @@ const IMAGE_MIME_TYPES = new Set([
   'image/svg+xml',
 ])
 
+const IMAGE_MIME_TYPE_BY_EXTENSION = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.gif', 'image/gif'],
+  ['.svg', 'image/svg+xml'],
+])
+
+const IMAGE_MIME_TYPE_ALIASES = new Map([
+  ['image/x-png', 'image/png'],
+  ['image/jpg', 'image/jpeg'],
+  ['image/pjpeg', 'image/jpeg'],
+])
+
+const GENERIC_BROWSER_MIME_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'binary/octet-stream',
+])
+
 const BUCKET_BY_ASSET_KIND: Record<SupportedUploadAssetKind, string> = {
   logo: 'brand-assets',
   brand_reference: 'brand-assets',
@@ -49,6 +70,26 @@ function sanitizeFileExtension(fileName: string) {
   return match ? `.${match[1]}` : ''
 }
 
+export function normalizeUploadMimeType(mimeType: string | null | undefined, fileName = '') {
+  const normalizedMimeType = String(mimeType ?? '').trim().toLowerCase()
+  const aliasedMimeType = IMAGE_MIME_TYPE_ALIASES.get(normalizedMimeType)
+
+  if (aliasedMimeType) {
+    return aliasedMimeType
+  }
+
+  if (IMAGE_MIME_TYPES.has(normalizedMimeType)) {
+    return normalizedMimeType
+  }
+
+  if (GENERIC_BROWSER_MIME_TYPES.has(normalizedMimeType)) {
+    const extension = sanitizeFileExtension(fileName)
+    return IMAGE_MIME_TYPE_BY_EXTENSION.get(extension) ?? normalizedMimeType
+  }
+
+  return normalizedMimeType
+}
+
 export function assertSupportedUploadAssetKind(assetKind: string): asserts assetKind is SupportedUploadAssetKind {
   if (!SUPPORTED_UPLOAD_ASSET_KINDS.includes(assetKind as SupportedUploadAssetKind)) {
     throw new AppError('VALIDATION_ERROR', 'Unsupported upload asset kind.', 400)
@@ -56,7 +97,7 @@ export function assertSupportedUploadAssetKind(assetKind: string): asserts asset
 }
 
 export function assertAllowedUploadMimeType(mimeType: string) {
-  if (!IMAGE_MIME_TYPES.has(mimeType)) {
+  if (!IMAGE_MIME_TYPES.has(normalizeUploadMimeType(mimeType))) {
     throw new AppError(
       'VALIDATION_ERROR',
       'Only PNG, JPEG, WEBP, GIF, and SVG image uploads are allowed.',
@@ -114,4 +155,9 @@ export function buildStoragePath(
   const fileStem = sanitizeFileStem(fileName.replace(/\.[^.]+$/, ''))
 
   return `${userId}/${folder}/${resourceId}-${fileStem}${extension}`
+}
+
+export function buildGeneratedPostStoragePath(userId: string, postId: string, extension = '.png') {
+  const normalizedExtension = extension.startsWith('.') ? extension : `.${extension}`
+  return `${userId}/renders/${postId}${normalizedExtension}`
 }

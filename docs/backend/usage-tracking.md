@@ -42,9 +42,9 @@ Recommended flow:
 
 Current implementation detail:
 
-- the first `llm-generate-post` function only checks quota and creates a pending job
-- usage should be recorded when the expensive generation actually succeeds, not when the request is
-  merely queued
+- the current `generate-post` function enforces generation/edit quotas before provider work starts
+  and records usage only after the generated image, caption, post row, and assistant message are
+  successfully stored
 - onboarding and future attachment uploads now check both `monthly_asset_upload_limit` and
   `monthly_storage_limit_bytes` before signed uploads are issued and again before metadata is
   finalized

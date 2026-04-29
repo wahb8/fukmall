@@ -2,6 +2,7 @@ import {
   createSignedAssetPreview,
   createSignedStorageUrl,
   getRequiredSupabaseClient,
+  invokeEdgeFunction,
   uploadAssetFile,
 } from './storageAssets'
 
@@ -431,9 +432,16 @@ export async function createChat({
 }) {
   const supabase = getRequiredSupabaseClient('Supabase is not configured for chats.')
   const normalizedTitle = String(title ?? '').trim() || 'Untitled chat'
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+
+  if (userError || !userData?.user?.id) {
+    throw new Error(userError?.message || 'You must be signed in to create a chat.')
+  }
+
   const { data, error } = await supabase
     .from('chats')
     .insert({
+      user_id: userData.user.id,
       title: normalizedTitle,
       business_profile_id: businessProfileId,
     })
@@ -445,6 +453,42 @@ export async function createChat({
   }
 
   return data
+}
+
+export async function generatePost({
+  chatId,
+  prompt,
+  width,
+  height,
+  businessProfileId = null,
+  attachmentAssetIds = [],
+}) {
+  const normalizedPrompt = String(prompt ?? '').trim()
+
+  if (!normalizedPrompt) {
+    throw new Error('Prompt cannot be empty.')
+  }
+
+  if (!Number.isInteger(width) || width <= 0) {
+    throw new Error('Width must be a positive integer.')
+  }
+
+  if (!Number.isInteger(height) || height <= 0) {
+    throw new Error('Height must be a positive integer.')
+  }
+
+  return invokeEdgeFunction(
+    'generate-post',
+    {
+      chat_id: chatId,
+      prompt: normalizedPrompt,
+      width,
+      height,
+      business_profile_id: businessProfileId,
+      attachment_asset_ids: normalizeAssetIds(attachmentAssetIds),
+    },
+    'Unable to generate the post.',
+  )
 }
 
 export async function renameChat(chatId, title) {

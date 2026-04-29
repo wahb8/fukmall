@@ -112,6 +112,8 @@ especially Lemon Squeezy webhook handling.
 ### `chats`
 
 - users can `select`, `insert`, `update`, and `delete` their own chats
+- `chats.user_id` defaults to `auth.uid()` for authenticated database inserts, and the frontend
+  also sends the authenticated user ID explicitly for clear RLS checks
 
 Policy rule:
 

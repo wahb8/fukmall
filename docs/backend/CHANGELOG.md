@@ -1,5 +1,20 @@
 # Backend Docs Changelog
 
+## 2026-04-29
+
+- updated the `generate-post` OpenAI image-generation default to `gpt-image-2`
+- routed GPT Image model requests through the direct Images API while preserving the existing
+  Responses image-tool path for older/mainline overrides
+- changed the synchronous MVP image quality default to `medium` and added an internal image timeout
+  guard so slow provider calls fail cleanly instead of leaving generation jobs stuck in `processing`
+- recorded the image model used in generated-post metadata and generation-job completion payloads
+- increased the internal image timeout default to `135000` ms and parallelized image/caption
+  provider calls to reduce avoidable `generate-post` timeouts
+- changed the default OpenAI image quality from `medium` to `high` for higher-quality generated
+  post outputs
+- increased the dev `OPENAI_IMAGE_TIMEOUT_MS` deployment secret to `145000` ms and made
+  timeout-specific chat errors visible as `Image generation timed out. Please try again.`
+
 ## 2026-04-28
 
 - added `docs/backend/` foundation documentation
@@ -30,3 +45,17 @@
 - documented the new minimal `/app` chat/file integration layer that now loads persisted chats,
   prompt attachments, and generated-post history through the existing Supabase schema and signed
   upload flow
+- added the real `generate-post` Edge Function for synchronous MVP image and caption generation,
+  follow-up edit-mode generation, generated-post version persistence, usage recording, and chat
+  result messages
+- documented that fallback reference images for users without personalized reference images are
+  intentionally deferred while the function continues from written brand context
+- fixed upload MIME normalization so PNG/JPEG files reported by browsers as aliases or generic
+  binary uploads are still accepted when their file extension is a supported image type
+- fixed upload finalization to read Supabase Storage object size and content type from the current
+  top-level `info()` response fields, preventing normal uploads from being treated as zero-byte
+  files
+- fixed client-created chats under RLS by sending the authenticated `user_id` from the frontend and
+  adding a database default of `auth.uid()` for chat/message ownership columns
+- fixed the OpenAI image-generation request payload by removing the unsupported
+  `tools[0].format` field from the Responses API image tool configuration

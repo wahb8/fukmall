@@ -8,6 +8,7 @@ import {
   assertOwnedStoragePath,
   assertSupportedUploadAssetKind,
   getBucketForAssetKind,
+  normalizeUploadMimeType,
   type SupportedUploadAssetKind,
 } from '../_shared/storage.ts'
 import { createAdminClient } from '../_shared/supabase.ts'
@@ -47,6 +48,32 @@ function normalizeDimension(value: number | null | undefined, fieldName: string)
   }
 
   return value
+}
+
+function firstStringValue(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  return ''
+}
+
+function firstPositiveIntegerValue(...values: unknown[]) {
+  for (const value of values) {
+    const parsedValue = typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(value)
+        : NaN
+
+    if (Number.isInteger(parsedValue) && parsedValue > 0) {
+      return parsedValue
+    }
+  }
+
+  return 0
 }
 
 async function assertOwnedActiveChat(
@@ -167,11 +194,27 @@ Deno.serve(async (request) => {
       throw new AppError('UPLOAD_NOT_FOUND', 'Uploaded file not found. Try uploading again.', 404)
     }
 
-    const objectMetadata = objectInfo.data.metadata ?? {}
-    const mimeType = typeof objectMetadata.mimetype === 'string'
-      ? objectMetadata.mimetype.toLowerCase()
-      : ''
-    const fileSizeBytes = Number(objectMetadata.size ?? 0)
+    const objectData = objectInfo.data as Record<string, unknown>
+    const objectMetadata = typeof objectData.metadata === 'object' && objectData.metadata !== null
+      ? objectData.metadata as Record<string, unknown>
+      : {}
+    const rawMimeType = firstStringValue(
+      objectData.contentType,
+      objectData.content_type,
+      objectMetadata.mimetype,
+      objectMetadata.mimeType,
+      objectMetadata.contentType,
+      objectMetadata.content_type,
+    ).toLowerCase()
+    const mimeType = normalizeUploadMimeType(rawMimeType, originalFileName ?? storagePath)
+    const fileSizeBytes = firstPositiveIntegerValue(
+      objectData.size,
+      objectData.contentLength,
+      objectData.content_length,
+      objectMetadata.size,
+      objectMetadata.contentLength,
+      objectMetadata.content_length,
+    )
 
     assertAllowedUploadMimeType(mimeType)
     assertAllowedUploadSize(assetKind, fileSizeBytes)

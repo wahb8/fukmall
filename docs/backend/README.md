@@ -62,12 +62,15 @@ Current implemented pieces:
 - `/app` onboarding gating that requires a default business profile before normal editor use
 - the minimal `/app` shell now loads persisted chats, prompt attachments, and saved generated-post
   history through the existing schema and upload pipeline
+- `generate-post` now performs the first synchronous MVP OpenAI pipeline: auth, plan/usage checks,
+  business profile loading, prompt construction, image and caption generation, Storage persistence,
+  generated-post version creation, chat result messages, and usage recording
 
 Still not implemented:
 
 - checkout creation
-- real OpenAI generation execution
-- full chat-to-generation persistence for assistant responses and generated results
+- fallback reference image sets for users without personalized reference images
+- asynchronous generation queues/background processing
 
 ## Current Test Coverage
 
@@ -82,6 +85,8 @@ Covered today:
 - `lemon-webhook` handler orchestration with mocked Supabase/Deno boundaries
 - `prepare-upload`, `finalize-upload`, and `upsert-business-profile` handler orchestration with
   mocked Supabase/Deno boundaries
+- `generate-post` handler orchestration, including initial generation, edit-mode generation, failed
+  OpenAI calls, and prompt-template behavior for attached versus deferred reference images
 - frontend onboarding coverage for the modal flow, `/app` onboarding gate, and pricing CTA routing
 - frontend minimal-chat coverage for chat summaries, chat history rendering, prompt composer
   behavior, and the browser chat-session data layer

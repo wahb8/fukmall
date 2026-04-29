@@ -200,13 +200,12 @@ import {
   serializeProjectFile,
 } from './lib/documentFiles'
 import {
-  buildChatTitleFromPrompt,
   createChat,
   deleteChat,
+  generatePost,
   listChats,
   loadChatSession,
   renameChat,
-  submitUserPrompt,
   uploadPromptAttachment,
 } from './lib/chatSessions'
 
@@ -220,6 +219,8 @@ const THEME_STORAGE_KEY = 'fukmall.theme'
 const TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY = 'fukmall.trim-transparent-imports'
 const INSPECTOR_ADJUSTMENT_IDLE_MS = 450
 const DEFAULT_EDITOR_CHROME_ENABLED = false
+const DEFAULT_NEW_FILE_PRESET_WIDTH = 1080
+const DEFAULT_NEW_FILE_PRESET_HEIGHT = 1350
 function createStartupState() {
   const savedDocument = loadCurrentDocumentFromStorage()
 
@@ -1046,6 +1047,104 @@ function getFallbackSelectedLayerId(documentState, preferredLayerId = null) {
   return documentState.layers.at(-1)?.id ?? null
 }
 
+function isGeneratedPostCanvasLayer(layer) {
+  return Boolean(layer?.generatedPostLayer)
+}
+
+function getGeneratedPostCanvasDimensions(post, documentState) {
+  const postWidth = Math.round(Number(post?.width))
+  const postHeight = Math.round(Number(post?.height))
+
+  if (Number.isFinite(postWidth) && postWidth > 0 && Number.isFinite(postHeight) && postHeight > 0) {
+    return {
+      width: postWidth,
+      height: postHeight,
+    }
+  }
+
+  return {
+    width: Math.max(1, Math.round(Number(documentState?.width) || DEFAULT_DOCUMENT_WIDTH)),
+    height: Math.max(1, Math.round(Number(documentState?.height) || DEFAULT_DOCUMENT_HEIGHT)),
+  }
+}
+
+function createGeneratedPostCanvasLayer(post, canvasDimensions, existingLayerId = null) {
+  if (!post?.previewUrl) {
+    return null
+  }
+
+  const layer = createValidatedImportedImageLayer({
+    name: 'Generated Post',
+    src: post.previewUrl,
+    width: canvasDimensions.width,
+    height: canvasDimensions.height,
+    documentWidth: canvasDimensions.width,
+    documentHeight: canvasDimensions.height,
+    topLeftX: 0,
+    topLeftY: 0,
+    sourceKind: 'bitmap',
+  })
+
+  return {
+    ...layer,
+    id: existingLayerId ?? layer.id,
+    generatedPostLayer: true,
+    generatedPostId: post.id,
+    generatedPostStoragePath: post.image_storage_path ?? null,
+    generatedPostBucketName: post.bucket_name ?? null,
+    generatedPostPreviewUrl: post.previewUrl,
+    sourceChatId: post.chat_id ?? null,
+  }
+}
+
+function syncGeneratedPostCanvasLayer(documentState, post) {
+  const generatedLayers = documentState.layers.filter(isGeneratedPostCanvasLayer)
+
+  if (!post?.previewUrl) {
+    if (generatedLayers.length === 0) {
+      return documentState
+    }
+
+    const nextLayers = documentState.layers.filter((layer) => !isGeneratedPostCanvasLayer(layer))
+    const nextSelectedLayerIds = (documentState.selectedLayerIds ?? [])
+      .filter((layerId) => nextLayers.some((layer) => layer.id === layerId))
+    const nextSelectedLayerId = nextSelectedLayerIds.at(-1) ??
+      getFallbackSelectedLayerId({ layers: nextLayers }, documentState.selectedLayerId)
+
+    return {
+      ...documentState,
+      layers: nextLayers,
+      selectedLayerId: nextSelectedLayerId,
+      selectedLayerIds: nextSelectedLayerId
+        ? (nextSelectedLayerIds.length > 0 ? nextSelectedLayerIds : [nextSelectedLayerId])
+        : [],
+    }
+  }
+
+  const existingGeneratedLayer = generatedLayers.at(-1) ?? null
+  const canvasDimensions = getGeneratedPostCanvasDimensions(post, documentState)
+  const nextGeneratedLayer = createGeneratedPostCanvasLayer(
+    post,
+    canvasDimensions,
+    existingGeneratedLayer?.generatedPostId === post.id ? existingGeneratedLayer.id : null,
+  )
+
+  if (!nextGeneratedLayer) {
+    return documentState
+  }
+
+  const preservedLayers = documentState.layers.filter((layer) => !isGeneratedPostCanvasLayer(layer))
+
+  return {
+    ...documentState,
+    width: canvasDimensions.width,
+    height: canvasDimensions.height,
+    layers: [...preservedLayers, nextGeneratedLayer],
+    selectedLayerId: nextGeneratedLayer.id,
+    selectedLayerIds: [nextGeneratedLayer.id],
+  }
+}
+
 function App({
   editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED,
   defaultBusinessProfile = null,
@@ -1085,6 +1184,8 @@ function App({
     canUndo,
     canRedo,
   } = useHistory(startupState.document)
+  const setTransientRef = useRef(setTransient)
+  setTransientRef.current = setTransient
   const documentStateRef = useRef(documentState)
   documentStateRef.current = documentState
   const {
@@ -1209,10 +1310,6 @@ function App({
   const documentName = normalizeNewFileNameInput(documentState.name, DEFAULT_DOCUMENT_NAME)
   const defaultBusinessProfileId = defaultBusinessProfile?.id ?? null
   const isMinimalEditorMode = !editorChromeEnabled
-  const activeChatSummary = useMemo(
-    () => chatSummaries.find((chat) => chat.id === activeChatId) ?? null,
-    [activeChatId, chatSummaries],
-  )
   const editorIcons = useMemo(() => getEditorIcons(theme), [theme])
   const currentDocumentSignature = useMemo(() => serializeProjectFile(documentState), [documentState])
   const hasUnsavedChanges = currentDocumentSignature !== savedDocumentSignature
@@ -1302,6 +1399,14 @@ function App({
     return createdChat.id
   }, [activeChatId, defaultBusinessProfileId, documentName, refreshChatSummaries])
 
+  const syncLatestGeneratedPostToCanvas = useCallback((post) => {
+    setTransientRef.current((currentDocument) => syncGeneratedPostCanvasLayer(currentDocument, post))
+
+    if (post?.previewUrl) {
+      setIsFirstEntryCanvasVisible(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!isMinimalEditorMode) {
       return undefined
@@ -1336,6 +1441,7 @@ function App({
     if (!activeChatId) {
       setActiveChatSession(null)
       setActiveChatTimeline([])
+      syncLatestGeneratedPostToCanvas(null)
       clearPromptComposer()
       return undefined
     }
@@ -1354,6 +1460,7 @@ function App({
 
         setActiveChatSession(session?.chat ?? null)
         setActiveChatTimeline(session?.timelineEntries ?? [])
+        syncLatestGeneratedPostToCanvas(session?.latestGeneratedPost ?? null)
         setChatStatusMessage('')
       } catch (error) {
         if (!isMounted) {
@@ -1379,7 +1486,13 @@ function App({
     return () => {
       isMounted = false
     }
-  }, [activeChatId, clearPromptComposer, isMinimalEditorMode, showChatStatusMessage])
+  }, [
+    activeChatId,
+    clearPromptComposer,
+    isMinimalEditorMode,
+    showChatStatusMessage,
+    syncLatestGeneratedPostToCanvas,
+  ])
   const activeBrushTool = currentTool === 'eraser' ? 'eraser' : 'pen'
   const hasActiveLassoSelection = Boolean(lassoSelection?.isClosed)
   const hasActiveRectSelection = Boolean(rectSelection?.rect && !rectSelection?.isDragging)
@@ -4210,8 +4323,8 @@ function App({
 
   function openNewFileModal() {
     setNewFileNameInput(DEFAULT_DOCUMENT_NAME)
-    setNewFileWidthInput(String(DEFAULT_DOCUMENT_WIDTH))
-    setNewFileHeightInput(String(DEFAULT_DOCUMENT_HEIGHT))
+    setNewFileWidthInput(String(DEFAULT_NEW_FILE_PRESET_WIDTH))
+    setNewFileHeightInput(String(DEFAULT_NEW_FILE_PRESET_HEIGHT))
     setIsNewFileModalOpen(true)
   }
 
@@ -4322,25 +4435,22 @@ function App({
     }
 
     setIsPromptSubmitting(true)
+    setIsFirstEntryCanvasVisible(false)
+    setChatStatusTone('info')
+    setChatStatusMessage('Creating your post...')
+    let chatId = null
 
     try {
-      const chatId = await ensureActiveChat(documentName)
+      chatId = await ensureActiveChat(documentName)
 
-      await submitUserPrompt({
+      await generatePost({
         chatId,
         prompt: normalizedPrompt,
+        width: documentWidth,
+        height: documentHeight,
+        businessProfileId: defaultBusinessProfileId,
         attachmentAssetIds: promptComposerAttachments.map((attachment) => attachment.id),
       })
-
-      const currentChatTitle = activeChatSession?.title ?? activeChatSummary?.title ?? ''
-      const shouldAutoTitle = !currentChatTitle ||
-        currentChatTitle === 'Untitled chat' ||
-        currentChatTitle === DEFAULT_DOCUMENT_NAME
-
-      if (shouldAutoTitle) {
-        const suggestedTitle = buildChatTitleFromPrompt(normalizedPrompt)
-        await renameChat(chatId, suggestedTitle)
-      }
 
       await refreshChatSummaries(chatId)
       const session = await loadChatSession(chatId)
@@ -4348,21 +4458,35 @@ function App({
       setActiveChatId(chatId)
       setActiveChatSession(session?.chat ?? null)
       setActiveChatTimeline(session?.timelineEntries ?? [])
+      syncLatestGeneratedPostToCanvas(session?.latestGeneratedPost ?? null)
       clearPromptComposer()
       setChatStatusMessage('')
     } catch (error) {
+      if (chatId) {
+        try {
+          await refreshChatSummaries(chatId)
+          const session = await loadChatSession(chatId)
+          setActiveChatId(chatId)
+          setActiveChatSession(session?.chat ?? null)
+          setActiveChatTimeline(session?.timelineEntries ?? [])
+        } catch (refreshError) {
+          console.error('Failed to refresh chat after generation error', refreshError)
+        }
+      }
+
       showChatStatusMessage(
-        error instanceof Error ? error.message : 'Unable to save the prompt.',
+        error instanceof Error ? error.message : 'Unable to generate the post.',
         'error',
       )
     } finally {
       setIsPromptSubmitting(false)
     }
   }, [
-    activeChatSession?.title,
-    activeChatSummary?.title,
     clearPromptComposer,
+    defaultBusinessProfileId,
+    documentHeight,
     documentName,
+    documentWidth,
     ensureActiveChat,
     isMinimalEditorMode,
     isPromptAttachmentUploading,
@@ -4371,16 +4495,11 @@ function App({
     promptComposerValue,
     refreshChatSummaries,
     showChatStatusMessage,
+    syncLatestGeneratedPostToCanvas,
   ])
 
   function handleNewFile() {
     setIsFileMenuOpen(false)
-
-    if (hasUnsavedChanges) {
-      setIsUnsavedChangesModalOpen(true)
-      return
-    }
-
     openNewFileModal()
   }
 
@@ -7236,6 +7355,7 @@ function App({
       <div
         key={layer.id}
         ref={(node) => registerLayerElement(layer.id, node)}
+        data-generated-post-id={layer.generatedPostId ?? undefined}
         className={!editorChromeEnabled
           ? 'canvas-layer canvas-layer-read-only'
           : showPenCursor
@@ -7567,6 +7687,25 @@ function App({
     )
   }
 
+  function renderGenerationLoadingOverlay() {
+    if (!isPromptSubmitting) {
+      return null
+    }
+
+    return (
+      <div
+        className="canvas-generation-loading-overlay"
+        role="status"
+        aria-label="Creating your post"
+        aria-live="polite"
+      >
+        <div className="canvas-generation-loading-card">
+          <span className="canvas-generation-loading-spinner" aria-hidden="true" />
+        </div>
+      </div>
+    )
+  }
+
   const fileAndSettingsSupport = (
     <>
       <input
@@ -7588,12 +7727,9 @@ function App({
         name={newFileNameInput}
         width={newFileWidthInput}
         height={newFileHeightInput}
-        minDimension={MIN_DOCUMENT_DIMENSION}
         onPresetSelect={handleSelectNewFilePreset}
         onClose={handleCancelNewFile}
         onNameChange={(event) => setNewFileNameInput(event.target.value)}
-        onWidthChange={(event) => setNewFileWidthInput(event.target.value)}
-        onHeightChange={(event) => setNewFileHeightInput(event.target.value)}
         onCreate={handleCreateNewFile}
       />
       <SettingsModal
@@ -7738,6 +7874,7 @@ function App({
                       >
                         {renderFirstEntryCanvasOverlay()}
                         {documentState.layers.map(renderLayer)}
+                        {renderGenerationLoadingOverlay()}
                       </div>
                     </div>
                   </div>

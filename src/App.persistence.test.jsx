@@ -94,20 +94,15 @@ describe('App current document persistence', () => {
     fireEvent.change(within(dialog).getByLabelText('Name'), {
       target: { value: 'Reload Me' },
     })
-    fireEvent.change(within(dialog).getByLabelText('Width'), {
-      target: { value: '777' },
-    })
-    fireEvent.change(within(dialog).getByLabelText('Height'), {
-      target: { value: '999' },
-    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Stories 9:16 1080 x 1920' }))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
 
     await waitFor(() => {
       const persisted = window.localStorage.getItem(CURRENT_DOCUMENT_STORAGE_KEY)
 
       expect(persisted).toContain('Reload Me')
-      expect(persisted).toContain('"width":777')
-      expect(persisted).toContain('"height":999')
+      expect(persisted).toContain('"width":1080')
+      expect(persisted).toContain('"height":1920')
     })
   })
 

@@ -1,11 +1,13 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 
 const {
+  invokeEdgeFunctionMock,
   getRequiredSupabaseClientMock,
   createSignedAssetPreviewMock,
   createSignedStorageUrlMock,
   uploadAssetFileMock,
 } = vi.hoisted(() => ({
+  invokeEdgeFunctionMock: vi.fn(),
   getRequiredSupabaseClientMock: vi.fn(),
   createSignedAssetPreviewMock: vi.fn(),
   createSignedStorageUrlMock: vi.fn(),
@@ -13,6 +15,7 @@ const {
 }))
 
 vi.mock('./storageAssets', () => ({
+  invokeEdgeFunction: invokeEdgeFunctionMock,
   getRequiredSupabaseClient: getRequiredSupabaseClientMock,
   createSignedAssetPreview: createSignedAssetPreviewMock,
   createSignedStorageUrl: createSignedStorageUrlMock,
@@ -41,6 +44,7 @@ function createMaybeSingleQuery(result) {
 describe('chatSessions', () => {
   beforeEach(() => {
     vi.resetModules()
+    invokeEdgeFunctionMock.mockReset()
     getRequiredSupabaseClientMock.mockReset()
     createSignedAssetPreviewMock.mockReset()
     createSignedStorageUrlMock.mockReset()
@@ -408,6 +412,99 @@ describe('chatSessions', () => {
     expect(attachment).toMatchObject({
       id: 'asset-2',
       previewUrl: 'https://example.com/asset-2.png',
+    })
+  })
+
+  it('creates chats with the authenticated user id for RLS inserts', async () => {
+    const insertResult = {
+      data: {
+        id: 'chat-1',
+        user_id: 'user-1',
+        title: 'Campaign ideas',
+        status: 'active',
+      },
+      error: null,
+    }
+    const supabase = {
+      auth: {
+        getUser: vi.fn(async () => ({
+          data: {
+            user: {
+              id: 'user-1',
+            },
+          },
+          error: null,
+        })),
+      },
+      from: vi.fn((table) => {
+        if (table === 'chats') {
+          return {
+            insert: vi.fn((payload) => ({
+              select: vi.fn(() => ({
+                single: vi.fn(async () => {
+                  expect(payload).toMatchObject({
+                    user_id: 'user-1',
+                    title: 'Campaign ideas',
+                    business_profile_id: null,
+                  })
+
+                  return insertResult
+                }),
+              })),
+            })),
+          }
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+    }
+
+    getRequiredSupabaseClientMock.mockReturnValue(supabase)
+
+    const { createChat } = await import('./chatSessions')
+    const chat = await createChat({
+      title: 'Campaign ideas',
+    })
+
+    expect(chat).toMatchObject({
+      id: 'chat-1',
+      user_id: 'user-1',
+    })
+  })
+
+  it('invokes the generate-post edge function with normalized data', async () => {
+    invokeEdgeFunctionMock.mockResolvedValue({
+      post: {
+        id: 'post-1',
+      },
+    })
+
+    const { generatePost } = await import('./chatSessions')
+    const result = await generatePost({
+      chatId: 'chat-1',
+      prompt: '  Create a launch post  ',
+      width: 1080,
+      height: 1350,
+      businessProfileId: 'profile-1',
+      attachmentAssetIds: ['asset-1', 'asset-1', 'asset-2'],
+    })
+
+    expect(invokeEdgeFunctionMock).toHaveBeenCalledWith(
+      'generate-post',
+      {
+        chat_id: 'chat-1',
+        prompt: 'Create a launch post',
+        width: 1080,
+        height: 1350,
+        business_profile_id: 'profile-1',
+        attachment_asset_ids: ['asset-1', 'asset-2'],
+      },
+      'Unable to generate the post.',
+    )
+    expect(result).toMatchObject({
+      post: {
+        id: 'post-1',
+      },
     })
   })
 })

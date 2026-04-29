@@ -151,9 +151,10 @@ describe('finalize-upload edge function', () => {
         from: vi.fn(() => ({
           info: vi.fn(async () => ({
             data: {
+              size: 2048,
+              contentType: 'image/png',
               metadata: {
-                mimetype: 'image/png',
-                size: 2048,
+                mimetype: 'application/octet-stream',
               },
             },
             error: null,
@@ -205,6 +206,206 @@ describe('finalize-upload edge function', () => {
           id: 'asset-1',
         },
       },
+    })
+  })
+
+  it('finalizes png uploads whose metadata MIME is generic when the filename is supported', async () => {
+    const uploadedAssetPayloads = []
+    const uploadedAssetsTable = {
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: null,
+                error: null,
+              })),
+            })),
+          })),
+        })),
+      })),
+      insert: vi.fn((payload) => {
+        uploadedAssetPayloads.push(payload)
+        return {
+          select: vi.fn(() => ({
+            single: vi.fn(async () => ({
+              data: {
+                id: 'asset-1',
+                ...payload,
+              },
+              error: null,
+            })),
+          })),
+        }
+      }),
+      delete: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            error: null,
+          })),
+        })),
+      })),
+    }
+
+    requireAuthenticatedUserMock.mockResolvedValue({
+      user: {
+        id: 'user-1',
+      },
+    })
+    getActiveSubscriptionWithPlanMock.mockResolvedValue(createSubscription())
+    getOrCreateUsagePeriodMock.mockResolvedValue({
+      id: 'usage-1',
+      period_start: '2026-04-01T00:00:00.000Z',
+      period_end: '2026-05-01T00:00:00.000Z',
+      asset_upload_count: 1,
+      storage_bytes_used: 1024,
+    })
+    recordUsageEventMock.mockResolvedValue({
+      id: 'usage-event-1',
+    })
+    createAdminClientMock.mockReturnValue({
+      from: vi.fn((table) => {
+        if (table === 'uploaded_assets') {
+          return uploadedAssetsTable
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+      storage: {
+        from: vi.fn(() => ({
+          info: vi.fn(async () => ({
+            data: {
+              metadata: {
+                mimetype: 'application/octet-stream',
+                size: 2048,
+              },
+            },
+            error: null,
+          })),
+          remove: vi.fn(async () => ({
+            data: [],
+            error: null,
+          })),
+        })),
+      },
+    })
+
+    const handler = await loadHandler()
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      body: JSON.stringify({
+        asset_kind: 'logo',
+        bucket_name: 'brand-assets',
+        storage_path: 'user-1/logos/asset-1-brand-kit.png',
+        original_file_name: 'Brand Kit.PNG',
+        width: 1080,
+        height: 1080,
+      }),
+    }))
+
+    expect(response.status).toBe(200)
+    expect(uploadedAssetPayloads[0]).toMatchObject({
+      mime_type: 'image/png',
+    })
+  })
+
+  it('reads Supabase Storage info size and content type from top-level fields', async () => {
+    const uploadedAssetPayloads = []
+    const uploadedAssetsTable = {
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: null,
+                error: null,
+              })),
+            })),
+          })),
+        })),
+      })),
+      insert: vi.fn((payload) => {
+        uploadedAssetPayloads.push(payload)
+        return {
+          select: vi.fn(() => ({
+            single: vi.fn(async () => ({
+              data: {
+                id: 'asset-1',
+                ...payload,
+              },
+              error: null,
+            })),
+          })),
+        }
+      }),
+      delete: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(async () => ({
+            error: null,
+          })),
+        })),
+      })),
+    }
+
+    requireAuthenticatedUserMock.mockResolvedValue({
+      user: {
+        id: 'user-1',
+      },
+    })
+    getActiveSubscriptionWithPlanMock.mockResolvedValue(createSubscription())
+    getOrCreateUsagePeriodMock.mockResolvedValue({
+      id: 'usage-1',
+      period_start: '2026-04-01T00:00:00.000Z',
+      period_end: '2026-05-01T00:00:00.000Z',
+      asset_upload_count: 1,
+      storage_bytes_used: 1024,
+    })
+    recordUsageEventMock.mockResolvedValue({
+      id: 'usage-event-1',
+    })
+    createAdminClientMock.mockReturnValue({
+      from: vi.fn((table) => {
+        if (table === 'uploaded_assets') {
+          return uploadedAssetsTable
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+      storage: {
+        from: vi.fn(() => ({
+          info: vi.fn(async () => ({
+            data: {
+              size: 2048,
+              contentType: 'image/png',
+              metadata: {},
+            },
+            error: null,
+          })),
+          remove: vi.fn(async () => ({
+            data: [],
+            error: null,
+          })),
+        })),
+      },
+    })
+
+    const handler = await loadHandler()
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      body: JSON.stringify({
+        asset_kind: 'brand_reference',
+        bucket_name: 'brand-assets',
+        storage_path: 'user-1/references/asset-1-reference.png',
+        original_file_name: 'Reference.PNG',
+        width: 1080,
+        height: 1080,
+      }),
+    }))
+
+    expect(response.status).toBe(200)
+    expect(uploadedAssetPayloads[0]).toMatchObject({
+      mime_type: 'image/png',
+      file_size_bytes: 2048,
     })
   })
 })

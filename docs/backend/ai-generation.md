@@ -9,6 +9,26 @@
 
 ## Generation Pipeline
 
+The current MVP implementation lives in `supabase/functions/generate-post`.
+
+Current model defaults:
+
+- image generation uses `gpt-image-2` by default and can be overridden with the
+  `OPENAI_IMAGE_MODEL` Supabase secret
+- caption generation uses `gpt-4.1-mini` by default and can be overridden with
+  `OPENAI_CAPTION_MODEL`
+- GPT Image model defaults use the direct Images API; older/mainline overrides can still use the
+  Responses image-generation tool path
+- image quality defaults to `high` for best output quality; it can be overridden with
+  `OPENAI_IMAGE_QUALITY`
+- image requests are guarded by `OPENAI_IMAGE_TIMEOUT_MS` so provider delays fail cleanly before the
+  platform kills the function; the code default is `135000` ms, while the current dev deployment is
+  configured at `145000` ms for high-quality testing
+- image and caption provider calls run in parallel so caption generation does not add extra wait
+  time after the image finishes
+- GPT Image 2 reference-image requests omit `input_fidelity` because that model already processes
+  image inputs at high fidelity
+
 ### Initial Post Generation
 
 1. authenticate the user
@@ -27,6 +47,15 @@
 11. write message, post, version, and usage records
 12. return structured result to the frontend
 
+Current prompt behavior:
+
+- when profile reference images exist, the image prompt starts from the user's requested behavior:
+  `Using the attached images, create an Instagram post that matches their aesthetic and style. However, do not include anything from the attached images unless specified, only match the exact style of the images.`
+- when no profile reference images exist, fallback reference images are deferred and the function
+  uses written brand context instead of pretending images are attached
+- caption generation uses a separate caption-only prompt based on the user request and returns only
+  the caption text
+
 ### Follow-Up Edit Generation
 
 1. authenticate the user
@@ -38,6 +67,13 @@
 7. store output
 8. append a new version row
 9. record usage event
+
+Current MVP behavior:
+
+- `generate-post` treats any chat with an existing generated post as an edit request
+- each edit writes a new `generated_posts` row with `previous_post_id`, `version_group_id`, and an
+  incremented `version_number`
+- a dedicated `edit-post` function can still be added later if the edit flow needs a separate API
 
 ## Context Strategy
 

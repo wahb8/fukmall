@@ -20,6 +20,8 @@ describe('PromptShell', () => {
       />,
     )
 
+    expect(screen.getByRole('textbox')).toHaveAttribute('rows', '1')
+
     fireEvent.change(screen.getByDisplayValue('Create a launch post'), {
       target: { value: 'Create a launch story' },
     })
@@ -35,6 +37,24 @@ describe('PromptShell', () => {
     expect(handleChange).toHaveBeenCalledWith('Create a launch story')
     expect(handleSubmit).toHaveBeenCalledTimes(1)
     expect(handleFilesSelected).toHaveBeenCalledWith([file])
+  })
+
+  it('keeps shift-enter available for multiline prompt entry', () => {
+    const handleSubmit = vi.fn()
+
+    render(
+      <PromptShell
+        value="Create a launch post"
+        onSubmit={handleSubmit}
+      />,
+    )
+
+    fireEvent.keyDown(screen.getByRole('textbox'), {
+      key: 'Enter',
+      shiftKey: true,
+    })
+
+    expect(handleSubmit).not.toHaveBeenCalled()
   })
 
   it('renders selected attachments and lets the user remove them', () => {

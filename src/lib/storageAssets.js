@@ -10,6 +10,46 @@ export function getRequiredSupabaseClient(configErrorMessage = 'Supabase is not 
   return supabase
 }
 
+const UPLOAD_MIME_TYPE_BY_EXTENSION = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.gif', 'image/gif'],
+  ['.svg', 'image/svg+xml'],
+])
+
+const UPLOAD_MIME_TYPE_ALIASES = new Map([
+  ['image/x-png', 'image/png'],
+  ['image/jpg', 'image/jpeg'],
+  ['image/pjpeg', 'image/jpeg'],
+])
+
+const GENERIC_UPLOAD_MIME_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'binary/octet-stream',
+])
+
+export function resolveUploadMimeType(file) {
+  const normalizedMimeType = String(file?.type ?? '').trim().toLowerCase()
+  const aliasedMimeType = UPLOAD_MIME_TYPE_ALIASES.get(normalizedMimeType)
+
+  if (aliasedMimeType) {
+    return aliasedMimeType
+  }
+
+  if (!GENERIC_UPLOAD_MIME_TYPES.has(normalizedMimeType)) {
+    return normalizedMimeType
+  }
+
+  const fileName = String(file?.name ?? '').trim().toLowerCase()
+  const extensionMatch = fileName.match(/\.([a-z0-9]{1,10})$/)
+  const extension = extensionMatch ? `.${extensionMatch[1]}` : ''
+
+  return UPLOAD_MIME_TYPE_BY_EXTENSION.get(extension) ?? normalizedMimeType
+}
+
 async function extractFunctionErrorMessage(error, fallbackMessage) {
   if (error?.context instanceof Response) {
     try {
@@ -117,12 +157,13 @@ export async function uploadAssetFile({
   chatId = null,
 }) {
   const supabase = getRequiredSupabaseClient()
+  const mimeType = resolveUploadMimeType(file)
   const prepareResult = await invokeEdgeFunction(
     'prepare-upload',
     {
       asset_kind: assetKind,
       file_name: file.name,
-      mime_type: file.type,
+      mime_type: mimeType,
       file_size_bytes: file.size,
       chat_id: chatId,
     },
@@ -133,7 +174,7 @@ export async function uploadAssetFile({
   const uploadResult = await supabase.storage
     .from(bucketName)
     .uploadToSignedUrl(storagePath, token, file, {
-      contentType: file.type,
+      contentType: mimeType,
       upsert: false,
     })
 

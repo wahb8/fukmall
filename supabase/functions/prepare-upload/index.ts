@@ -8,6 +8,7 @@ import {
   assertSupportedUploadAssetKind,
   buildStoragePath,
   getBucketForAssetKind,
+  normalizeUploadMimeType,
   type SupportedUploadAssetKind,
 } from '../_shared/storage.ts'
 import { createAdminClient } from '../_shared/supabase.ts'
@@ -79,7 +80,7 @@ Deno.serve(async (request) => {
     const body = await parseJsonBody<PrepareUploadRequest>(request)
     const assetKind = body.asset_kind?.trim()
     const fileName = body.file_name?.trim()
-    const mimeType = body.mime_type?.trim().toLowerCase()
+    const rawMimeType = body.mime_type?.trim().toLowerCase()
 
     if (!assetKind) {
       throw new AppError('VALIDATION_ERROR', 'asset_kind is required.', 400)
@@ -88,6 +89,8 @@ Deno.serve(async (request) => {
     if (!fileName) {
       throw new AppError('VALIDATION_ERROR', 'file_name is required.', 400)
     }
+
+    const mimeType = normalizeUploadMimeType(rawMimeType, fileName)
 
     if (!mimeType) {
       throw new AppError('VALIDATION_ERROR', 'mime_type is required.', 400)

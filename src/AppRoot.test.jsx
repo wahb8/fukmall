@@ -356,8 +356,7 @@ describe('AppRoot routing', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'File' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'New File' }))
-    fireEvent.change(screen.getByLabelText('Width'), { target: { value: '1000' } })
-    fireEvent.change(screen.getByLabelText('Height'), { target: { value: '1000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Square 1:1 1080 x 1080' }))
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     await waitFor(() => {

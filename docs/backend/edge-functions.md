@@ -16,6 +16,7 @@ Every function should:
 The first server-side function layer now exists in scaffold form:
 
 - shared auth, env, error, Supabase, Lemon, plan, and usage helpers in `supabase/functions/_shared/`
+- `generate-post`
 - `llm-generate-post`
 - `lemon-webhook`
 - `prepare-upload`
@@ -23,6 +24,36 @@ The first server-side function layer now exists in scaffold form:
 - `upsert-business-profile`
 
 This is not the full backend yet. It is the first secure server boundary on top of the schema.
+
+### `generate-post`
+
+Current behavior:
+
+- verifies auth
+- validates prompt, dimensions, chat ID, optional business profile ID, and attachment IDs
+- verifies chat ownership and active chat status
+- loads the user's default or chat-linked business profile from the database
+- loads user-owned prompt attachments and brand reference images
+- treats the first prompt in a chat as initial generation and later prompts as edits
+- enforces generation or edit limits before calling OpenAI
+- builds hidden image and caption prompts through shared prompt-template helpers
+- calls OpenAI from the Edge Function only, with image and caption generation running in parallel
+- uses `gpt-image-2` as the default image generation model unless
+  `OPENAI_IMAGE_MODEL` overrides it
+- sends GPT Image model requests through the direct Images API, using image edits when reference
+  images are attached
+- stores generated image output in the private `generated-posts` bucket
+- stores caption text and generated-post metadata in `generated_posts`
+- appends assistant result or error messages to `chat_messages`
+- records storage and generation/edit usage only after successful output persistence
+- updates `generation_jobs` through `pending`, `processing`, `completed`, or `failed`
+- keeps fallback reference images deferred for now; when a profile has no reference images, the
+  function proceeds from written brand context and marks the fallback metadata as deferred
+
+Current limitation:
+
+- fallback reference asset sets by business type are intentionally not implemented yet
+- provider calls are synchronous for the MVP path instead of queued background jobs
 
 ### `llm-generate-post`
 
@@ -43,6 +74,7 @@ Current limitation:
 
 - it does not call OpenAI yet
 - it is an intake/job-creation boundary, not the final generation pipeline
+- the frontend now calls `generate-post` for the real MVP generation path
 
 ### `lemon-webhook`
 
@@ -72,7 +104,9 @@ Current limitation:
 Current behavior:
 
 - verifies auth
-- validates upload asset kind, MIME type, file size, and optional chat ownership context
+- validates upload asset kind, normalized MIME type, file size, and optional chat ownership context
+- accepts supported image files even when the browser reports a known image alias or generic
+  `application/octet-stream` MIME type for a valid image extension
 - resolves the effective plan and current usage period
 - enforces asset-upload and storage limits before any object upload starts
 - issues a signed upload token for a user-owned private Storage path
@@ -88,6 +122,7 @@ Current behavior:
 - verifies auth
 - validates the signed-upload destination against the current user and asset kind
 - loads Storage object metadata from the private bucket
+- normalizes the stored object MIME type against the original file name before validating it
 - writes a trusted `uploaded_assets` row only after the object exists
 - records the storage upload usage event
 - removes the uploaded object again if metadata persistence or usage recording fails

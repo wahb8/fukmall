@@ -104,7 +104,8 @@ When implementation starts, keep the Supabase backend modular:
 - `supabase/migrations/`: schema, indexes, constraints, triggers, RLS policies
 - `supabase/functions/_shared/`: shared validation, auth helpers, AI helpers, billing helpers
 - `supabase/functions/create-checkout/`: checkout session creation if needed
-- `supabase/functions/llm-generate-post/`: initial generation pipeline
+- `supabase/functions/generate-post/`: current MVP generation and edit pipeline
+- `supabase/functions/llm-generate-post/`: older intake scaffold retained for now
 - `supabase/functions/llm-edit-post/`: follow-up edit pipeline
 - `supabase/functions/lemon-webhook/`: webhook verification and subscription sync
 - `supabase/functions/upload-prepare/`: optional upload validation/signing helpers if needed

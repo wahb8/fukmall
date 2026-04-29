@@ -43,12 +43,9 @@ export function NewFileModal({
   name,
   width,
   height,
-  minDimension,
   onPresetSelect,
   onClose,
   onNameChange,
-  onWidthChange,
-  onHeightChange,
   onCreate,
 }) {
   if (!isOpen) {
@@ -104,14 +101,6 @@ export function NewFileModal({
           <label className="property-field full-width">
             <span>Name</span>
             <input type="text" value={name} onChange={onNameChange} />
-          </label>
-          <label className="property-field">
-            <span>Width</span>
-            <input type="number" min={minDimension} step="1" value={width} onChange={onWidthChange} />
-          </label>
-          <label className="property-field">
-            <span>Height</span>
-            <input type="number" min={minDimension} step="1" value={height} onChange={onHeightChange} />
           </label>
         </div>
         <div className="modal-actions">

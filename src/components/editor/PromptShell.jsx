@@ -1,4 +1,4 @@
-import { useId, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import addImageIcon from '../../assets/add image.svg'
 import upIcon from '../../assets/up.svg'
 
@@ -17,6 +17,18 @@ export function PromptShell({
 }) {
   const inputId = useId()
   const fileInputRef = useRef(null)
+  const promptInputRef = useRef(null)
+
+  useEffect(() => {
+    const promptInput = promptInputRef.current
+
+    if (!promptInput) {
+      return
+    }
+
+    promptInput.style.height = 'auto'
+    promptInput.style.height = `${promptInput.scrollHeight}px`
+  }, [value])
 
   function handleSubmit() {
     if (disabled || isSubmitting) {
@@ -87,12 +99,13 @@ export function PromptShell({
         >
           <img src={addImageIcon} alt="" aria-hidden="true" />
         </button>
-        <input
+        <textarea
+          ref={promptInputRef}
           className="canvas-prompt-input"
-          type="text"
           value={value}
           disabled={disabled}
           placeholder="Describe what you want to create..."
+          rows={1}
           onChange={(event) => onChange?.(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {

@@ -158,4 +158,45 @@ describe('prepare-upload edge function', () => {
       },
     })
   })
+
+  it('accepts png files reported with a generic browser MIME type', async () => {
+    requireAuthenticatedUserMock.mockResolvedValue({
+      user: {
+        id: 'user-1',
+      },
+    })
+    getActiveSubscriptionWithPlanMock.mockResolvedValue(createSubscription())
+    getOrCreateUsagePeriodMock.mockResolvedValue({
+      id: 'usage-1',
+      period_start: '2026-04-01T00:00:00.000Z',
+      period_end: '2026-05-01T00:00:00.000Z',
+      asset_upload_count: 1,
+      storage_bytes_used: 1024,
+    })
+    createAdminClientMock.mockReturnValue({
+      storage: {
+        from: vi.fn(() => ({
+          createSignedUploadUrl: vi.fn(async () => ({
+            data: {
+              token: 'upload-token',
+            },
+            error: null,
+          })),
+        })),
+      },
+    })
+
+    const handler = await loadHandler()
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      body: JSON.stringify({
+        asset_kind: 'logo',
+        file_name: 'Brand Kit.PNG',
+        mime_type: 'application/octet-stream',
+        file_size_bytes: 2048,
+      }),
+    }))
+
+    expect(response.status).toBe(200)
+  })
 })

@@ -103,6 +103,13 @@ Why here:
 
 - the product is chat-shaped, so this is the backbone for AI workflows
 
+Current status:
+
+- authenticated users can create, list, load, rename, and delete chat records from the minimal
+  `/app` chat shell
+- prompt attachments are saved through the signed upload flow and linked to chat messages
+- generated-post history is loaded with signed previews when records exist
+
 ### 6. Onboarding Context And Asset Intake
 
 Build next:
@@ -173,6 +180,14 @@ Build next:
 Why here:
 
 - by this point auth, billing, storage, and usage protections already exist
+
+Current status:
+
+- `generate-post` now implements the synchronous MVP path for image and caption generation
+- the first prompt in a chat creates an initial generated post
+- later prompts in the same chat create edited generated-post versions
+- personalized reference images are used when available
+- fallback reference image sets for users without personalized references are deferred
 
 ### 11. AI Edit/Regeneration Function
 
