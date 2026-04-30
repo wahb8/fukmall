@@ -7,6 +7,7 @@ const USER_ID = '11111111-1111-4111-8111-111111111111'
 const CHAT_ID = '22222222-2222-4222-8222-222222222222'
 const JOB_ID = '33333333-3333-4333-8333-333333333333'
 const ASSISTANT_MESSAGE_ID = '44444444-4444-4444-8444-444444444444'
+const GENERATED_POST_ID = '55555555-5555-4555-8555-555555555555'
 
 vi.mock('../_shared/auth.ts', () => ({
   requireAuthenticatedUser: requireAuthenticatedUserMock,
@@ -72,7 +73,26 @@ describe('generation-job-status edge function', () => {
         user_id: USER_ID,
         chat_id: CHAT_ID,
         status: 'completed',
-        output_post_id: '55555555-5555-4555-8555-555555555555',
+        output_post_id: GENERATED_POST_ID,
+      },
+      error: null,
+    })
+    const generatedPostQuery = createMaybeSingleQuery({
+      data: {
+        id: GENERATED_POST_ID,
+        user_id: USER_ID,
+        chat_id: CHAT_ID,
+        source_message_id: '66666666-6666-4666-8666-666666666666',
+        status: 'draft',
+        prompt_text: 'Create a post.',
+        caption_text: 'Fresh coffee is here.',
+        bucket_name: 'generated-posts',
+        image_storage_path: `${USER_ID}/renders/${GENERATED_POST_ID}.png`,
+        width: 1080,
+        height: 1350,
+        metadata: {},
+        created_at: '2026-04-29T12:00:00.000Z',
+        updated_at: '2026-04-29T12:00:00.000Z',
       },
       error: null,
     })
@@ -100,6 +120,12 @@ describe('generation-job-status edge function', () => {
           }
         }
 
+        if (table === 'generated_posts') {
+          return {
+            select: vi.fn(() => generatedPostQuery),
+          }
+        }
+
         if (table === 'chat_messages') {
           return {
             select: vi.fn(() => messagesQuery),
@@ -108,6 +134,16 @@ describe('generation-job-status edge function', () => {
 
         throw new Error(`Unexpected table: ${table}`)
       }),
+      storage: {
+        from: vi.fn(() => ({
+          createSignedUrl: vi.fn(async () => ({
+            data: {
+              signedUrl: 'https://signed.example/generated-post.png',
+            },
+            error: null,
+          })),
+        })),
+      },
     })
     requireAuthenticatedUserMock.mockResolvedValue({
       user: {
@@ -137,6 +173,11 @@ describe('generation-job-status edge function', () => {
         },
         assistant_message: {
           id: ASSISTANT_MESSAGE_ID,
+        },
+        generated_post: {
+          id: GENERATED_POST_ID,
+          preview_url: 'https://signed.example/generated-post.png',
+          previewUrl: 'https://signed.example/generated-post.png',
         },
       },
     })

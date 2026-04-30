@@ -23,13 +23,12 @@ Current model defaults:
   `OPENAI_TITLE_MODEL`
 - GPT Image model defaults use the direct Images API; older/mainline overrides can still use the
   Responses image-generation tool path
-- image quality defaults to `high` in code for best output quality; it can be overridden with
+- image quality defaults to `medium` in code to reduce generation latency and timeout risk; it can be overridden with
   `OPENAI_IMAGE_QUALITY`
 - image requests are guarded by `OPENAI_IMAGE_TIMEOUT_MS` so provider delays fail cleanly before the
   platform kills the function; the code default is `135000` ms, while the current dev deployment is
   configured at `145000` ms
-- the current dev deployment sets `OPENAI_IMAGE_QUALITY=medium` to reduce timeout risk while still
-  keeping output quality acceptable for testing
+- high-quality final/export generation can be added later as a separate product flow if needed
 - image and caption provider calls run in a background generation job so the browser does not hold
   one long request open while OpenAI creates the image
 - image and caption provider calls still run in parallel inside that job so caption generation does
@@ -64,6 +63,8 @@ Current model defaults:
 16. write message, post, version, and usage records
 17. move the job to `completed`, `failed`, or `canceled`
 18. let the frontend poll `generation-job-status` until the generated post is ready
+19. return the completed generated-post preview from `generation-job-status` so the frontend can
+    paint the canvas before the heavier full chat-session refresh finishes
 
 If the user presses stop while a job is active, the frontend aborts its request/polling and calls
 `cancel-generation-job`. The background worker checks the job state before writing final artifacts,
@@ -158,6 +159,8 @@ Recommended metadata to save:
 - use bounded retries only for safe failure classes
 - do not double-charge usage events for failed attempts
 - keep post version creation transactional where practical
+- reducing the number of brand reference images per request is intentionally deferred because it
+  could affect style accuracy and consistency
 - the current async implementation uses Supabase Edge Function background tasks; a durable queue or
   scheduled worker can be added later if generation needs to survive provider delays beyond the Edge
   Runtime lifecycle

@@ -209,6 +209,7 @@ import {
   generatePost,
   listChats,
   loadChatSession,
+  normalizeGeneratedPostPreview,
   renameChat,
   uploadPromptAttachment,
   waitForGenerationJob,
@@ -227,6 +228,34 @@ const INSPECTOR_ADJUSTMENT_IDLE_MS = 450
 const DEFAULT_EDITOR_CHROME_ENABLED = false
 const DEFAULT_NEW_FILE_PRESET_WIDTH = 1080
 const DEFAULT_NEW_FILE_PRESET_HEIGHT = 1350
+const PROMPT_GENERATION_SIZE_PRESETS = [
+  { width: 1080, height: 1080, aspectRatio: '1:1' },
+  { width: 1080, height: 1350, aspectRatio: '4:5' },
+  { width: 1080, height: 1920, aspectRatio: '9:16' },
+]
+
+function resolvePromptGenerationSize(width, height) {
+  const normalizedWidth = Math.max(1, Math.round(Number(width) || DEFAULT_NEW_FILE_PRESET_WIDTH))
+  const normalizedHeight = Math.max(1, Math.round(Number(height) || DEFAULT_NEW_FILE_PRESET_HEIGHT))
+  const exactPreset = PROMPT_GENERATION_SIZE_PRESETS.find((preset) => (
+    preset.width === normalizedWidth && preset.height === normalizedHeight
+  ))
+
+  if (exactPreset) {
+    return exactPreset
+  }
+
+  const requestedRatio = normalizedWidth / normalizedHeight
+
+  return PROMPT_GENERATION_SIZE_PRESETS
+    .map((preset) => ({
+      preset,
+      distance: Math.abs(requestedRatio - (preset.width / preset.height)),
+    }))
+    .sort((left, right) => left.distance - right.distance)[0]?.preset ??
+    PROMPT_GENERATION_SIZE_PRESETS[1]
+}
+
 function createStartupState() {
   const savedDocument = loadCurrentDocumentFromStorage()
 
@@ -1093,6 +1122,51 @@ function getGeneratedPostCanvasDimensions(post, documentState) {
     width: Math.max(1, Math.round(Number(documentState?.width) || DEFAULT_DOCUMENT_WIDTH)),
     height: Math.max(1, Math.round(Number(documentState?.height) || DEFAULT_DOCUMENT_HEIGHT)),
   }
+}
+
+function createGeneratedPostTimelineEntry(post) {
+  if (!post?.id) {
+    return null
+  }
+
+  return {
+    id: post.id,
+    kind: 'generated_post',
+    status: post.status,
+    promptText: post.prompt_text ?? '',
+    captionText: post.caption_text ?? '',
+    createdAt: post.created_at ?? new Date().toISOString(),
+    sourceMessageId: post.source_message_id ?? null,
+    previewUrl: post.previewUrl ?? null,
+    width: post.width,
+    height: post.height,
+    detail: post.status
+      ? String(post.status).replace(/_/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase())
+      : '',
+    metadata: post.metadata ?? {},
+  }
+}
+
+function upsertGeneratedPostTimelineEntry(entries, post) {
+  const entry = createGeneratedPostTimelineEntry(post)
+
+  if (!entry) {
+    return entries
+  }
+
+  return [
+    ...entries.filter((currentEntry) => currentEntry.id !== entry.id),
+    entry,
+  ].sort((left, right) => {
+    const leftTime = Date.parse(left.createdAt ?? '')
+    const rightTime = Date.parse(right.createdAt ?? '')
+
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime !== rightTime) {
+      return leftTime - rightTime
+    }
+
+    return String(left.id).localeCompare(String(right.id))
+  })
 }
 
 function createGeneratedPostCanvasLayer(post, canvasDimensions, existingLayerId = null) {
@@ -4592,6 +4666,7 @@ function App({
     setChatStatusTone('info')
     setChatStatusMessage('Creating your post...')
     let chatId = null
+    let completedStatus = null
     const generationRun = {
       id: `${Date.now()}-${Math.random()}`,
       jobId: null,
@@ -4604,12 +4679,14 @@ function App({
 
     try {
       chatId = await ensureActiveChat(documentName)
+      const generationSize = resolvePromptGenerationSize(documentWidth, documentHeight)
 
       const generationStart = await generatePost({
         chatId,
         prompt: normalizedPrompt,
-        width: documentWidth,
-        height: documentHeight,
+        width: generationSize.width,
+        height: generationSize.height,
+        aspectRatio: generationSize.aspectRatio,
         businessProfileId: defaultBusinessProfileId,
         attachmentAssetIds: promptComposerAttachments.map((attachment) => attachment.id),
       })
@@ -4632,7 +4709,7 @@ function App({
           throw new Error('Generation job could not be started.')
         }
 
-        await waitForGenerationJob(generationJobId, {
+        completedStatus = await waitForGenerationJob(generationJobId, {
           signal: generationRun.pollAbortController.signal,
         })
       }
@@ -4643,6 +4720,24 @@ function App({
         promptGenerationRunRef.current !== generationRun
       ) {
         return
+      }
+
+      const completedGeneratedPost = normalizeGeneratedPostPreview(
+        completedStatus?.generated_post ??
+        completedStatus?.post ??
+        generationStart?.generated_post ??
+        generationStart?.post ??
+        null,
+      )
+
+      if (completedGeneratedPost?.previewUrl) {
+        setActiveChatId(chatId)
+        setActiveChatTimeline((currentEntries) => (
+          upsertGeneratedPostTimelineEntry(currentEntries, completedGeneratedPost)
+        ))
+        syncLatestGeneratedPostToCanvas(completedGeneratedPost)
+        clearPromptComposer()
+        setChatStatusMessage('')
       }
 
       await refreshChatSummaries(chatId)

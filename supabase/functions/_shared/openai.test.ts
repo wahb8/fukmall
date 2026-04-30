@@ -67,7 +67,7 @@ describe('OpenAI shared helper', () => {
     const requestBody = openAiCall?.[1]?.body as FormData
     expect(requestBody.get('model')).toBe('gpt-image-2')
     expect(requestBody.get('size')).toBe('1080x1080')
-    expect(requestBody.get('quality')).toBe('high')
+    expect(requestBody.get('quality')).toBe('medium')
     expect(requestBody.get('background')).toBe('opaque')
     expect(requestBody.get('format')).toBeNull()
     expect(requestBody.get('input_fidelity')).toBeNull()
@@ -106,7 +106,7 @@ describe('OpenAI shared helper', () => {
     expect(requestBody).toMatchObject({
       model: 'gpt-image-2',
       size: '1080x1080',
-      quality: 'high',
+      quality: 'medium',
       background: 'opaque',
     })
   })
@@ -152,7 +152,7 @@ describe('OpenAI shared helper', () => {
     const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(requestBody.model).toBe('gpt-4.1-mini')
     expect(requestBody.tools[0]).toMatchObject({
-      quality: 'high',
+      quality: 'medium',
       input_fidelity: 'high',
     })
   })

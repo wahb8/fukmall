@@ -485,6 +485,7 @@ describe('chatSessions', () => {
       prompt: '  Create a launch post  ',
       width: 1080,
       height: 1350,
+      aspectRatio: '4:5',
       businessProfileId: 'profile-1',
       attachmentAssetIds: ['asset-1', 'asset-1', 'asset-2'],
     })
@@ -496,6 +497,7 @@ describe('chatSessions', () => {
         prompt: 'Create a launch post',
         width: 1080,
         height: 1350,
+        aspect_ratio: '4:5',
         business_profile_id: 'profile-1',
         attachment_asset_ids: ['asset-1', 'asset-2'],
       },

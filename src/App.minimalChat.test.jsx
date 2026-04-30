@@ -33,6 +33,9 @@ vi.mock('./lib/chatSessions', () => ({
   generatePost: generatePostMock,
   listChats: listChatsMock,
   loadChatSession: loadChatSessionMock,
+  normalizeGeneratedPostPreview: (post) => (
+    post ? { ...post, previewUrl: post.previewUrl ?? post.preview_url ?? null } : null
+  ),
   renameChat: renameChatMock,
   uploadPromptAttachment: uploadPromptAttachmentMock,
   waitForGenerationJob: waitForGenerationJobMock,
@@ -384,7 +387,8 @@ describe('App minimal chat shell', () => {
         chatId: 'chat-1',
         prompt: 'Create a launch post for our new coffee line',
         width: 1080,
-        height: 1440,
+        height: 1350,
+        aspectRatio: '4:5',
         businessProfileId: null,
         attachmentAssetIds: [],
       })
@@ -565,6 +569,75 @@ describe('App minimal chat shell', () => {
         height: '1350px',
       })
     })
+  })
+
+  it('places a completed job status post into the canvas before the full chat reload finishes', async () => {
+    const sessionReloadDeferred = createDeferred()
+
+    listChatsMock.mockResolvedValue([
+      createChatSummary('chat-1', 'Campaign ideas'),
+    ])
+    loadChatSessionMock
+      .mockResolvedValueOnce(createChatSession('chat-1', 'Campaign ideas'))
+      .mockReturnValueOnce(sessionReloadDeferred.promise)
+    generatePostMock.mockResolvedValue({
+      generation_mode: 'initial',
+      job: {
+        id: 'job-1',
+        status: 'pending',
+      },
+    })
+    waitForGenerationJobMock.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        status: 'completed',
+        output_post_id: 'post-1',
+      },
+      generated_post: {
+        id: 'post-1',
+        chat_id: 'chat-1',
+        bucket_name: 'generated-posts',
+        image_storage_path: 'user/renders/post-1.png',
+        preview_url: 'https://example.com/generated-post-fast.png',
+        width: 1080,
+        height: 1350,
+        status: 'draft',
+        caption_text: 'Fresh coffee, now pouring.',
+        created_at: '2026-04-29T10:00:00.000Z',
+      },
+    })
+
+    const { container } = render(<App />)
+
+    const promptInput = await screen.findByPlaceholderText('Describe what you want to create...')
+    fireEvent.change(promptInput, {
+      target: { value: 'Create a launch post for our new coffee line' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit prompt' }))
+
+    await waitFor(() => {
+      const generatedLayer = container.querySelector('[data-generated-post-id="post-1"]')
+
+      expect(generatedLayer).toBeInTheDocument()
+      expect(generatedLayer).toHaveStyle({
+        width: '1080px',
+        height: '1350px',
+      })
+      expect(loadChatSessionMock).toHaveBeenCalledTimes(2)
+    })
+
+    sessionReloadDeferred.resolve(createChatSession('chat-1', 'Campaign ideas', {
+      latestGeneratedPost: {
+        id: 'post-1',
+        chat_id: 'chat-1',
+        bucket_name: 'generated-posts',
+        image_storage_path: 'user/renders/post-1.png',
+        previewUrl: 'https://example.com/generated-post-fast.png',
+        width: 1080,
+        height: 1350,
+      },
+      timelineEntries: [],
+    }))
   })
 
   it('resizes the canvas from the selected chat generated post dimensions', async () => {

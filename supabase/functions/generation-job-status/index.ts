@@ -40,6 +40,81 @@ async function loadAssistantMessageForJob(
   )) ?? null
 }
 
+async function createSignedGeneratedPostPreviewUrl(
+  adminClient: ReturnType<typeof createAdminClient>,
+  bucketName: string | null,
+  storagePath: string | null,
+) {
+  if (!bucketName || !storagePath) {
+    return null
+  }
+
+  const { data, error } = await adminClient.storage
+    .from(bucketName)
+    .createSignedUrl(storagePath, 60 * 60)
+
+  if (error || !data?.signedUrl) {
+    throw new AppError('STORAGE_SIGN_FAILED', 'Failed to create a signed generated post URL.', 500)
+  }
+
+  return data.signedUrl
+}
+
+async function loadGeneratedPostForJob(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  job: {
+    status: string
+    output_post_id?: string | null
+  },
+) {
+  if (job.status !== 'completed' || !job.output_post_id) {
+    return null
+  }
+
+  const { data, error } = await adminClient
+    .from('generated_posts')
+    .select(`
+      id,
+      user_id,
+      chat_id,
+      source_message_id,
+      status,
+      prompt_text,
+      caption_text,
+      bucket_name,
+      image_storage_path,
+      width,
+      height,
+      metadata,
+      created_at,
+      updated_at
+    `)
+    .eq('id', job.output_post_id)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) {
+    throw new AppError('POST_LOOKUP_FAILED', 'Failed to load generated post state.', 500)
+  }
+
+  if (!data) {
+    return null
+  }
+
+  const previewUrl = await createSignedGeneratedPostPreviewUrl(
+    adminClient,
+    data.bucket_name,
+    data.image_storage_path,
+  )
+
+  return {
+    ...data,
+    preview_url: previewUrl,
+    previewUrl,
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
     return optionsResponse()
@@ -97,13 +172,20 @@ Deno.serve(async (request) => {
       throw new AppError('NOT_FOUND', 'Generation job not found.', 404)
     }
 
-    const assistantMessage = ['completed', 'failed'].includes(job.status)
-      ? await loadAssistantMessageForJob(adminClient, user.id, job.chat_id, job.id)
-      : null
+    const [
+      assistantMessage,
+      generatedPost,
+    ] = await Promise.all([
+      ['completed', 'failed'].includes(job.status)
+        ? loadAssistantMessageForJob(adminClient, user.id, job.chat_id, job.id)
+        : Promise.resolve(null),
+      loadGeneratedPostForJob(adminClient, user.id, job),
+    ])
 
     return ok({
       job,
       assistant_message: assistantMessage,
+      generated_post: generatedPost,
       poll_after_ms: job.status === 'pending' ? 1500 : 2500,
     })
   } catch (error) {

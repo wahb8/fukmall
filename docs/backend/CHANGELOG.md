@@ -1,5 +1,14 @@
 # Backend Docs Changelog
 
+## 2026-04-30
+
+- changed the OpenAI image quality code default back to `medium` to reduce latency and timeout risk
+  during normal generation
+- updated `generation-job-status` to return the completed generated post with a signed preview URL
+  so the frontend can paint the canvas before the full chat-session refresh finishes
+- documented that reducing the number of reference images is deferred because it may affect brand
+  style accuracy
+
 ## 2026-04-29
 
 - updated the initial image prompt to preserve reference-image color schemes and explicitly prevent

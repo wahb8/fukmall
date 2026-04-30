@@ -226,6 +226,17 @@ async function createGeneratedPostPreview(supabase, post) {
   }
 }
 
+export function normalizeGeneratedPostPreview(post) {
+  if (!post) {
+    return null
+  }
+
+  return {
+    ...post,
+    previewUrl: post.previewUrl ?? post.preview_url ?? null,
+  }
+}
+
 async function loadAttachmentAssetMap(supabase, messages) {
   const attachmentIds = normalizeAssetIds(
     messages.flatMap((message) => getMessageAttachmentIds(message)),
@@ -460,6 +471,7 @@ export async function generatePost({
   prompt,
   width,
   height,
+  aspectRatio = null,
   businessProfileId = null,
   attachmentAssetIds = [],
   signal = null,
@@ -485,6 +497,7 @@ export async function generatePost({
       prompt: normalizedPrompt,
       width,
       height,
+      aspect_ratio: aspectRatio,
       business_profile_id: businessProfileId,
       attachment_asset_ids: normalizeAssetIds(attachmentAssetIds),
     },

@@ -80,6 +80,8 @@ Current behavior:
 - loads only the current user's matching `generation_jobs` row
 - returns the current job status and the matching assistant result/error message after completion
   or failure
+- returns the completed `generated_post` plus a signed `preview_url` when the job has produced an
+  output post, allowing the frontend to update the canvas before a full chat reload completes
 - lets the frontend poll `pending`, `processing`, `completed`, and `failed` states without holding
   the original request open
 - reports `canceled` jobs as terminal so the frontend can stop polling cleanly
