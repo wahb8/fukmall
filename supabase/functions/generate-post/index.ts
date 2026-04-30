@@ -69,6 +69,12 @@ interface UploadedAssetRow {
   file_size_bytes: number
   width: number | null
   height: number | null
+  optimized_bucket_name: string | null
+  optimized_storage_path: string | null
+  optimized_mime_type: string | null
+  optimized_file_size_bytes: number | null
+  optimized_width: number | null
+  optimized_height: number | null
 }
 
 interface GeneratedPostRow {
@@ -99,6 +105,16 @@ const SUPPORTED_REFERENCE_MIME_TYPES = new Set([
   'image/jpeg',
   'image/webp',
 ])
+
+const TRANSFORMABLE_REFERENCE_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+])
+
+const REFERENCE_TRANSFORM_MAX_DIMENSION = 1024
+const REFERENCE_TRANSFORM_MIN_SIZE_BYTES = 1024 * 1024
+const REFERENCE_TRANSFORM_QUALITY = 76
 
 function assertUuid(value: string, fieldName: string) {
   if (!UUID_PATTERN.test(value)) {
@@ -189,16 +205,84 @@ async function createSignedStorageUrl(
   bucketName: string,
   storagePath: string,
   expiresInSeconds = 10 * 60,
+  options?: Record<string, unknown>,
 ) {
   const { data, error } = await adminClient.storage
     .from(bucketName)
-    .createSignedUrl(storagePath, expiresInSeconds)
+    .createSignedUrl(storagePath, expiresInSeconds, options)
 
   if (error || !data?.signedUrl) {
     throw new AppError('STORAGE_SIGN_FAILED', 'Failed to create a signed asset URL.', 500)
   }
 
   return data.signedUrl
+}
+
+function resolveGenerationAssetStorage(asset: UploadedAssetRow) {
+  return {
+    bucketName: asset.optimized_bucket_name || asset.bucket_name,
+    storagePath: asset.optimized_storage_path || asset.storage_path,
+    usesStoredOptimizedCopy: Boolean(asset.optimized_bucket_name && asset.optimized_storage_path),
+  }
+}
+
+function shouldUseStorageTransform(asset: UploadedAssetRow) {
+  if (!TRANSFORMABLE_REFERENCE_MIME_TYPES.has(asset.mime_type)) {
+    return false
+  }
+
+  if ((asset.width ?? 0) > REFERENCE_TRANSFORM_MAX_DIMENSION) {
+    return true
+  }
+
+  if ((asset.height ?? 0) > REFERENCE_TRANSFORM_MAX_DIMENSION) {
+    return true
+  }
+
+  return asset.file_size_bytes > REFERENCE_TRANSFORM_MIN_SIZE_BYTES
+}
+
+async function createSignedTransformedStorageUrl(
+  adminClient: ReturnType<typeof createAdminClient>,
+  asset: UploadedAssetRow,
+) {
+  try {
+    return await createSignedStorageUrl(
+      adminClient,
+      asset.bucket_name,
+      asset.storage_path,
+      10 * 60,
+      {
+        transform: {
+          width: REFERENCE_TRANSFORM_MAX_DIMENSION,
+          height: REFERENCE_TRANSFORM_MAX_DIMENSION,
+          resize: 'contain',
+          format: 'webp',
+          quality: REFERENCE_TRANSFORM_QUALITY,
+        },
+      },
+    )
+  } catch (error) {
+    console.error('Failed to create transformed reference asset URL; falling back to original', error)
+    return createSignedStorageUrl(adminClient, asset.bucket_name, asset.storage_path)
+  }
+}
+
+async function createSignedGenerationAssetUrl(
+  adminClient: ReturnType<typeof createAdminClient>,
+  asset: UploadedAssetRow,
+) {
+  const storageReference = resolveGenerationAssetStorage(asset)
+
+  if (storageReference.usesStoredOptimizedCopy) {
+    return createSignedStorageUrl(adminClient, storageReference.bucketName, storageReference.storagePath)
+  }
+
+  if (shouldUseStorageTransform(asset)) {
+    return createSignedTransformedStorageUrl(adminClient, asset)
+  }
+
+  return createSignedStorageUrl(adminClient, storageReference.bucketName, storageReference.storagePath)
 }
 
 async function loadChat(
@@ -331,7 +415,13 @@ async function loadAttachmentAssets(
       mime_type,
       file_size_bytes,
       width,
-      height
+      height,
+      optimized_bucket_name,
+      optimized_storage_path,
+      optimized_mime_type,
+      optimized_file_size_bytes,
+      optimized_width,
+      optimized_height
     `)
     .eq('user_id', userId)
     .in('id', attachmentAssetIds)
@@ -380,7 +470,13 @@ async function loadBrandReferenceAssets(
       mime_type,
       file_size_bytes,
       width,
-      height
+      height,
+      optimized_bucket_name,
+      optimized_storage_path,
+      optimized_mime_type,
+      optimized_file_size_bytes,
+      optimized_width,
+      optimized_height
     `)
     .eq('user_id', userId)
     .eq('business_profile_id', businessProfileId)
@@ -418,7 +514,13 @@ async function loadBrandLogoAsset(
       mime_type,
       file_size_bytes,
       width,
-      height
+      height,
+      optimized_bucket_name,
+      optimized_storage_path,
+      optimized_mime_type,
+      optimized_file_size_bytes,
+      optimized_width,
+      optimized_height
     `)
     .eq('user_id', userId)
     .eq('business_profile_id', businessProfile.id)
@@ -960,18 +1062,14 @@ async function completeGenerationJob(params: {
 
   const brandReferenceImageUrls = await Promise.all(
     params.usableBrandReferenceAssets
-      .map((asset) => createSignedStorageUrl(params.adminClient, asset.bucket_name, asset.storage_path)),
+      .map((asset) => createSignedGenerationAssetUrl(params.adminClient, asset)),
   )
   const brandLogoImageUrl = params.usableBrandLogoAsset
-    ? await createSignedStorageUrl(
-      params.adminClient,
-      params.usableBrandLogoAsset.bucket_name,
-      params.usableBrandLogoAsset.storage_path,
-    )
+    ? await createSignedGenerationAssetUrl(params.adminClient, params.usableBrandLogoAsset)
     : null
   const attachmentImageUrls = await Promise.all(
     params.usableAttachmentAssets
-      .map((asset) => createSignedStorageUrl(params.adminClient, asset.bucket_name, asset.storage_path)),
+      .map((asset) => createSignedGenerationAssetUrl(params.adminClient, asset)),
   )
   const logoImageInput: ReferenceImageInput[] = brandLogoImageUrl
     ? [{ url: brandLogoImageUrl, fileName: 'logo' }]

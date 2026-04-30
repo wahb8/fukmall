@@ -39,6 +39,12 @@ Current model defaults:
   prompts do not get overwritten
 - GPT Image 2 reference-image requests omit `input_fidelity` because that model already processes
   image inputs at high fidelity
+- uploaded logo, brand-reference, and prompt-attachment assets can include optional optimized WEBP
+  copies capped at 1024px on the longest side; generation signs and sends those optimized copies
+  when present, while keeping the original uploads untouched
+- if an older uploaded asset does not have a stored optimized copy, `generate-post` requests a
+  transformed 1024px WEBP signed URL from Supabase Storage for large PNG/JPEG/WEBP references
+  before falling back to the original object
 
 ### Initial Post Generation
 
@@ -164,3 +170,7 @@ Recommended metadata to save:
 - the current async implementation uses Supabase Edge Function background tasks; a durable queue or
   scheduled worker can be added later if generation needs to survive provider delays beyond the Edge
   Runtime lifecycle
+- optimized reference images reduce Storage download time, Edge Function preparation time, and
+  OpenAI upload/process time without changing the user's saved original files
+- transformed signed URLs make the same optimization path available to older uploads that were
+  created before stored optimized copies existed

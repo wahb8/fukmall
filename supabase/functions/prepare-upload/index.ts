@@ -5,6 +5,7 @@ import { getActiveSubscriptionWithPlan } from '../_shared/plans.ts'
 import {
   assertAllowedUploadMimeType,
   assertAllowedUploadSize,
+  buildOptimizedStoragePath,
   assertSupportedUploadAssetKind,
   buildStoragePath,
   getBucketForAssetKind,
@@ -28,6 +29,12 @@ interface PrepareUploadRequest {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const OPTIMIZABLE_UPLOAD_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+])
 
 function assertUuid(value: string, fieldName: string) {
   if (!UUID_PATTERN.test(value)) {
@@ -64,6 +71,10 @@ function assertChatContext(assetKind: SupportedUploadAssetKind, chatId?: string 
   if ((assetKind === 'prompt_attachment' || assetKind === 'chat_attachment') && !chatId) {
     throw new AppError('VALIDATION_ERROR', 'chat_id is required for chat attachments.', 400)
   }
+}
+
+function shouldPrepareOptimizedUpload(mimeType: string) {
+  return OPTIMIZABLE_UPLOAD_MIME_TYPES.has(mimeType)
 }
 
 Deno.serve(async (request) => {
@@ -118,13 +129,27 @@ Deno.serve(async (request) => {
     assertStorageAllowed(subscription, usagePeriod, body.file_size_bytes)
 
     const bucketName = getBucketForAssetKind(assetKind)
-    const storagePath = buildStoragePath(user.id, assetKind, fileName)
+    const resourceId = crypto.randomUUID()
+    const storagePath = buildStoragePath(user.id, assetKind, fileName, resourceId)
+    const optimizedStoragePath = shouldPrepareOptimizedUpload(mimeType)
+      ? buildOptimizedStoragePath(user.id, assetKind, fileName, resourceId)
+      : null
     const signedUpload = await adminClient.storage
       .from(bucketName)
       .createSignedUploadUrl(storagePath)
 
     if (signedUpload.error || !signedUpload.data) {
       throw new AppError('SIGNED_UPLOAD_FAILED', 'Failed to prepare the upload.', 500)
+    }
+
+    const signedOptimizedUpload = optimizedStoragePath
+      ? await adminClient.storage
+        .from(bucketName)
+        .createSignedUploadUrl(optimizedStoragePath)
+      : null
+
+    if (signedOptimizedUpload?.error) {
+      console.error('Failed to prepare optimized upload target', signedOptimizedUpload.error)
     }
 
     return ok({
@@ -134,6 +159,15 @@ Deno.serve(async (request) => {
         storage_path: storagePath,
         token: signedUpload.data.token,
       },
+      optimized_upload: signedOptimizedUpload?.data
+        ? {
+          asset_kind: assetKind,
+          bucket_name: bucketName,
+          storage_path: optimizedStoragePath,
+          token: signedOptimizedUpload.data.token,
+          mime_type: 'image/webp',
+        }
+        : null,
       usage: {
         period_start: usagePeriod.period_start,
         period_end: usagePeriod.period_end,

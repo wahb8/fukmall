@@ -162,6 +162,8 @@ Current behavior:
 - resolves the effective plan and current usage period
 - enforces asset-upload and storage limits before any object upload starts
 - issues a signed upload token for a user-owned private Storage path
+- for PNG, JPEG, and WEBP uploads, also issues an optional signed optimized WEBP upload target so
+  the frontend can store a smaller generation-only copy
 
 Current limitation:
 
@@ -176,6 +178,8 @@ Current behavior:
 - loads Storage object metadata from the private bucket
 - normalizes the stored object MIME type against the original file name before validating it
 - writes a trusted `uploaded_assets` row only after the object exists
+- validates optional optimized WEBP upload metadata and stores the optimized path on the same asset
+  row when the browser produced a smaller copy
 - records the storage upload usage event
 - removes the uploaded object again if metadata persistence or usage recording fails
 
@@ -194,6 +198,8 @@ Current behavior:
 - links uploaded assets back to that business profile
 - deletes removed brand reference images and logos from private Storage and removes their
   `uploaded_assets` metadata rows, instead of leaving stale unlinked profile assets behind
+- deletes optimized WEBP copies together with the original uploaded asset when brand references or
+  logos are removed
 - also cleans stale unlinked brand-reference and logo assets for the same user while preserving
   assets included in the current save request
 - stale asset cleanup is best-effort and does not block saving/linking the current profile assets

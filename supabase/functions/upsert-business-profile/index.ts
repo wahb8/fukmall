@@ -19,6 +19,9 @@ interface UploadedAssetDeleteCandidate {
   bucket_name: string
   storage_path: string
   file_size_bytes: number
+  optimized_bucket_name?: string | null
+  optimized_storage_path?: string | null
+  optimized_file_size_bytes?: number | null
   asset_kind?: string
 }
 
@@ -89,7 +92,7 @@ async function loadLinkedReferenceAssets(
 ) {
   const { data, error } = await adminClient
     .from('uploaded_assets')
-    .select('id, bucket_name, storage_path, file_size_bytes, asset_kind')
+    .select('id, bucket_name, storage_path, file_size_bytes, optimized_bucket_name, optimized_storage_path, optimized_file_size_bytes, asset_kind')
     .eq('user_id', userId)
     .eq('asset_kind', 'brand_reference')
     .eq('business_profile_id', profileId)
@@ -121,7 +124,7 @@ async function loadLinkedLogoAssets(
 ) {
   const { data, error } = await adminClient
     .from('uploaded_assets')
-    .select('id, bucket_name, storage_path, file_size_bytes, asset_kind')
+    .select('id, bucket_name, storage_path, file_size_bytes, optimized_bucket_name, optimized_storage_path, optimized_file_size_bytes, asset_kind')
     .eq('user_id', userId)
     .eq('asset_kind', 'logo')
     .eq('business_profile_id', profileId)
@@ -154,7 +157,7 @@ async function loadStaleUnlinkedAssets(
 ) {
   const { data, error } = await adminClient
     .from('uploaded_assets')
-    .select('id, bucket_name, storage_path, file_size_bytes, asset_kind')
+    .select('id, bucket_name, storage_path, file_size_bytes, optimized_bucket_name, optimized_storage_path, optimized_file_size_bytes, asset_kind')
     .eq('user_id', userId)
     .eq('asset_kind', assetKind)
     .is('business_profile_id', null)
@@ -192,6 +195,12 @@ async function deleteStoredUploadedAssets(
     const paths = assetsByBucket.get(asset.bucket_name) ?? []
     paths.push(asset.storage_path)
     assetsByBucket.set(asset.bucket_name, paths)
+
+    if (asset.optimized_bucket_name && asset.optimized_storage_path) {
+      const optimizedPaths = assetsByBucket.get(asset.optimized_bucket_name) ?? []
+      optimizedPaths.push(asset.optimized_storage_path)
+      assetsByBucket.set(asset.optimized_bucket_name, optimizedPaths)
+    }
   }
 
   for (const [bucketName, storagePaths] of assetsByBucket.entries()) {
@@ -244,7 +253,10 @@ async function recordDeletedAssetUsage(
       resourceType: 'uploaded_asset',
       resourceId: asset.id,
       quantity: 1,
-      storageBytesDelta: -Math.max(0, asset.file_size_bytes ?? 0),
+      storageBytesDelta: -Math.max(
+        0,
+        (asset.file_size_bytes ?? 0) + (asset.optimized_file_size_bytes ?? 0),
+      ),
       metadata: {
         asset_kind: asset.asset_kind ?? 'uploaded_asset',
         bucket_name: asset.bucket_name,

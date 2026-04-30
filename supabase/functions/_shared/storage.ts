@@ -52,6 +52,13 @@ const FOLDER_BY_ASSET_KIND: Record<SupportedUploadAssetKind, string> = {
   chat_attachment: 'attachments',
 }
 
+const OPTIMIZED_FOLDER_BY_ASSET_KIND: Record<SupportedUploadAssetKind, string> = {
+  logo: 'logos/optimized',
+  brand_reference: 'references/optimized',
+  prompt_attachment: 'attachments/optimized',
+  chat_attachment: 'attachments/optimized',
+}
+
 const MAX_FILE_SIZE_BYTES_BY_ASSET_KIND: Record<SupportedUploadAssetKind, number> = {
   logo: 6 * 1024 * 1024,
   brand_reference: 12 * 1024 * 1024,
@@ -144,6 +151,21 @@ export function assertOwnedStoragePath(
   return normalizedPath
 }
 
+export function assertOwnedOptimizedStoragePath(
+  userId: string,
+  assetKind: SupportedUploadAssetKind,
+  storagePath: string,
+) {
+  const normalizedPath = storagePath.trim().replace(/^\/+/, '')
+  const requiredPrefix = `${userId}/${OPTIMIZED_FOLDER_BY_ASSET_KIND[assetKind]}/`
+
+  if (!normalizedPath.startsWith(requiredPrefix)) {
+    throw new AppError('VALIDATION_ERROR', 'Optimized upload path does not match the current user and asset kind.', 400)
+  }
+
+  return normalizedPath
+}
+
 export function buildStoragePath(
   userId: string,
   assetKind: SupportedUploadAssetKind,
@@ -155,6 +177,18 @@ export function buildStoragePath(
   const fileStem = sanitizeFileStem(fileName.replace(/\.[^.]+$/, ''))
 
   return `${userId}/${folder}/${resourceId}-${fileStem}${extension}`
+}
+
+export function buildOptimizedStoragePath(
+  userId: string,
+  assetKind: SupportedUploadAssetKind,
+  fileName: string,
+  resourceId = crypto.randomUUID(),
+) {
+  const folder = OPTIMIZED_FOLDER_BY_ASSET_KIND[assetKind]
+  const fileStem = sanitizeFileStem(fileName.replace(/\.[^.]+$/, ''))
+
+  return `${userId}/${folder}/${resourceId}-${fileStem}.webp`
 }
 
 export function buildGeneratedPostStoragePath(userId: string, postId: string, extension = '.png') {

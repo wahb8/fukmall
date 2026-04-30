@@ -2,6 +2,10 @@
 
 ## 2026-04-30
 
+- added optimized WEBP upload copies for logo, brand-reference, and prompt-attachment assets so
+  `generate-post` can send smaller reference images to OpenAI while preserving original uploads
+- added a transformed signed-URL fallback so existing large uploaded references can be resized for
+  OpenAI generation even if they were uploaded before optimized copies were stored
 - changed the OpenAI image quality code default back to `medium` to reduce latency and timeout risk
   during normal generation
 - updated `generation-job-status` to return the completed generated post with a signed preview URL

@@ -225,6 +225,12 @@ Columns:
 - `file_size_bytes bigint not null`
 - `width integer`
 - `height integer`
+- `optimized_bucket_name text`
+- `optimized_storage_path text`
+- `optimized_mime_type text`
+- `optimized_file_size_bytes bigint`
+- `optimized_width integer`
+- `optimized_height integer`
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
 
@@ -232,6 +238,9 @@ Notes:
 
 - file binaries live in Storage, not Postgres
 - a unique constraint on `(bucket_name, storage_path)` prevents duplicate path records
+- optimized references are optional WEBP copies stored beside the original upload and used only for
+  generation; original files remain available for previews, profile management, and future export
+  behavior
 - `asset_kind` covers logo, brand-reference, prompt attachment, chat attachment, generated input,
   and fallback `other`
 - client-side metadata writes are intentionally blocked until the upload flow is implemented through

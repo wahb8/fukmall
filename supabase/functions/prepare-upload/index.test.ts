@@ -95,15 +95,16 @@ describe('prepare-upload edge function', () => {
       asset_upload_count: 1,
       storage_bytes_used: 1024,
     })
+    const createSignedUploadUrlMock = vi.fn(async (storagePath: string) => ({
+      data: {
+        token: storagePath.includes('/optimized/') ? 'optimized-upload-token' : 'upload-token',
+      },
+      error: null,
+    }))
     createAdminClientMock.mockReturnValue({
       storage: {
         from: vi.fn(() => ({
-          createSignedUploadUrl: vi.fn(async () => ({
-            data: {
-              token: 'upload-token',
-            },
-            error: null,
-          })),
+          createSignedUploadUrl: createSignedUploadUrlMock,
         })),
       },
     })
@@ -128,8 +129,16 @@ describe('prepare-upload edge function', () => {
           bucket_name: 'brand-assets',
           token: 'upload-token',
         },
+        optimized_upload: {
+          asset_kind: 'logo',
+          bucket_name: 'brand-assets',
+          token: 'optimized-upload-token',
+          mime_type: 'image/webp',
+        },
       },
     })
+    expect(createSignedUploadUrlMock).toHaveBeenCalledTimes(2)
+    expect(createSignedUploadUrlMock.mock.calls[1][0]).toContain('/logos/optimized/')
   })
 
   it('rejects unsupported upload types', async () => {
@@ -198,5 +207,54 @@ describe('prepare-upload edge function', () => {
     }))
 
     expect(response.status).toBe(200)
+  })
+
+  it('does not prepare an optimized target for SVG uploads', async () => {
+    requireAuthenticatedUserMock.mockResolvedValue({
+      user: {
+        id: 'user-1',
+      },
+    })
+    getActiveSubscriptionWithPlanMock.mockResolvedValue(createSubscription())
+    getOrCreateUsagePeriodMock.mockResolvedValue({
+      id: 'usage-1',
+      period_start: '2026-04-01T00:00:00.000Z',
+      period_end: '2026-05-01T00:00:00.000Z',
+      asset_upload_count: 1,
+      storage_bytes_used: 1024,
+    })
+    const createSignedUploadUrlMock = vi.fn(async () => ({
+      data: {
+        token: 'upload-token',
+      },
+      error: null,
+    }))
+    createAdminClientMock.mockReturnValue({
+      storage: {
+        from: vi.fn(() => ({
+          createSignedUploadUrl: createSignedUploadUrlMock,
+        })),
+      },
+    })
+
+    const handler = await loadHandler()
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      body: JSON.stringify({
+        asset_kind: 'logo',
+        file_name: 'Brand Mark.svg',
+        mime_type: 'image/svg+xml',
+        file_size_bytes: 2048,
+      }),
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      data: {
+        optimized_upload: null,
+      },
+    })
+    expect(createSignedUploadUrlMock).toHaveBeenCalledTimes(1)
   })
 })

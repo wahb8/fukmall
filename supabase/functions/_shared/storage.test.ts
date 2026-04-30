@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   assertAllowedUploadMimeType,
   assertAllowedUploadSize,
+  assertOwnedOptimizedStoragePath,
   assertOwnedStoragePath,
   assertSupportedUploadAssetKind,
+  buildOptimizedStoragePath,
   buildStoragePath,
   getBucketForAssetKind,
   normalizeUploadMimeType,
@@ -21,6 +23,13 @@ describe('storage helpers', () => {
       'Brand Kit Final.PNG',
       'resource-1',
     )).toBe('user-1/logos/resource-1-brand-kit-final.png')
+
+    expect(buildOptimizedStoragePath(
+      'user-1',
+      'brand_reference',
+      'Mood Board.PNG',
+      'resource-2',
+    )).toBe('user-1/references/optimized/resource-2-mood-board.webp')
   })
 
   it('validates asset kinds, mime types, sizes, and owned storage paths', () => {
@@ -48,6 +57,18 @@ describe('storage helpers', () => {
       'logo',
       'user-2/logos/file.png',
     )).toThrowError('Upload path does not match the current user and asset kind.')
+
+    expect(assertOwnedOptimizedStoragePath(
+      'user-1',
+      'prompt_attachment',
+      'user-1/attachments/optimized/file.webp',
+    )).toBe('user-1/attachments/optimized/file.webp')
+
+    expect(() => assertOwnedOptimizedStoragePath(
+      'user-1',
+      'prompt_attachment',
+      'user-1/attachments/file.webp',
+    )).toThrowError('Optimized upload path does not match the current user and asset kind.')
   })
 
   it('normalizes browser MIME aliases and generic image uploads by extension', () => {

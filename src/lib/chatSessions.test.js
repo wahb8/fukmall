@@ -5,12 +5,14 @@ const {
   getRequiredSupabaseClientMock,
   createSignedAssetPreviewMock,
   createSignedStorageUrlMock,
+  rememberSignedStorageUrlMock,
   uploadAssetFileMock,
 } = vi.hoisted(() => ({
   invokeEdgeFunctionMock: vi.fn(),
   getRequiredSupabaseClientMock: vi.fn(),
   createSignedAssetPreviewMock: vi.fn(),
   createSignedStorageUrlMock: vi.fn(),
+  rememberSignedStorageUrlMock: vi.fn(),
   uploadAssetFileMock: vi.fn(),
 }))
 
@@ -19,6 +21,7 @@ vi.mock('./storageAssets', () => ({
   getRequiredSupabaseClient: getRequiredSupabaseClientMock,
   createSignedAssetPreview: createSignedAssetPreviewMock,
   createSignedStorageUrl: createSignedStorageUrlMock,
+  rememberSignedStorageUrl: rememberSignedStorageUrlMock,
   uploadAssetFile: uploadAssetFileMock,
 }))
 
@@ -48,6 +51,7 @@ describe('chatSessions', () => {
     getRequiredSupabaseClientMock.mockReset()
     createSignedAssetPreviewMock.mockReset()
     createSignedStorageUrlMock.mockReset()
+    rememberSignedStorageUrlMock.mockReset()
     uploadAssetFileMock.mockReset()
   })
 
@@ -335,6 +339,23 @@ describe('chatSessions', () => {
         previewUrl: 'https://example.com/post-1.png',
       }),
     ])
+  })
+
+  it('remembers generated post preview URLs returned by edge functions', async () => {
+    const { normalizeGeneratedPostPreview } = await import('./chatSessions')
+    const post = normalizeGeneratedPostPreview({
+      id: 'post-1',
+      bucket_name: 'generated-posts',
+      image_storage_path: 'user-1/renders/post-1.png',
+      preview_url: 'https://edge.example.com/signed/post-1.png',
+    })
+
+    expect(post.previewUrl).toBe('https://edge.example.com/signed/post-1.png')
+    expect(rememberSignedStorageUrlMock).toHaveBeenCalledWith(
+      'generated-posts',
+      'user-1/renders/post-1.png',
+      'https://edge.example.com/signed/post-1.png',
+    )
   })
 
   it('saves user prompts and uploads prompt attachments', async () => {

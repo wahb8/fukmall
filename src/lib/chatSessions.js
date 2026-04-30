@@ -3,6 +3,7 @@ import {
   createSignedStorageUrl,
   getRequiredSupabaseClient,
   invokeEdgeFunction,
+  rememberSignedStorageUrl,
   uploadAssetFile,
 } from './storageAssets'
 
@@ -231,9 +232,15 @@ export function normalizeGeneratedPostPreview(post) {
     return null
   }
 
+  const previewUrl = post.previewUrl ?? post.preview_url ?? null
+
+  if (previewUrl && post.bucket_name && post.image_storage_path) {
+    rememberSignedStorageUrl(post.bucket_name, post.image_storage_path, previewUrl)
+  }
+
   return {
     ...post,
-    previewUrl: post.previewUrl ?? post.preview_url ?? null,
+    previewUrl,
   }
 }
 

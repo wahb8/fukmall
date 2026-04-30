@@ -225,11 +225,11 @@ async function loadHandler() {
 function createStorageMock() {
   const uploadCalls: Array<{ bucketName: string, path: string, byteLength: number }> = []
   const removeCalls: Array<{ bucketName: string, paths: string[] }> = []
-  const signedUrlCalls: Array<{ bucketName: string, path: string }> = []
+  const signedUrlCalls: Array<{ bucketName: string, path: string, options?: Record<string, unknown> }> = []
 
   const from = vi.fn((bucketName: string) => ({
-    createSignedUrl: vi.fn(async (path: string) => {
-      signedUrlCalls.push({ bucketName, path })
+    createSignedUrl: vi.fn(async (path: string, _expiresIn?: number, options?: Record<string, unknown>) => {
+      signedUrlCalls.push({ bucketName, path, options })
       return {
         data: {
           signedUrl: `https://signed.example/${bucketName}/${path}`,
@@ -346,6 +346,12 @@ describe('generate-post edge function', () => {
           storage_path: `${USER_ID}/attachments/${ATTACHMENT_ASSET_ID}.png`,
           mime_type: 'image/png',
           file_size_bytes: 1024,
+          optimized_bucket_name: 'chat-assets',
+          optimized_storage_path: `${USER_ID}/attachments/optimized/${ATTACHMENT_ASSET_ID}.webp`,
+          optimized_mime_type: 'image/webp',
+          optimized_file_size_bytes: 512,
+          optimized_width: 1024,
+          optimized_height: 768,
         },
       ],
       error: null,
@@ -360,6 +366,12 @@ describe('generate-post edge function', () => {
         storage_path: `${USER_ID}/logos/${BRAND_LOGO_ASSET_ID}.png`,
         mime_type: 'image/png',
         file_size_bytes: 1536,
+        optimized_bucket_name: 'brand-assets',
+        optimized_storage_path: `${USER_ID}/logos/optimized/${BRAND_LOGO_ASSET_ID}.webp`,
+        optimized_mime_type: 'image/webp',
+        optimized_file_size_bytes: 640,
+        optimized_width: 512,
+        optimized_height: 512,
       },
       error: null,
     })
@@ -374,6 +386,12 @@ describe('generate-post edge function', () => {
           storage_path: `${USER_ID}/references/${BRAND_REFERENCE_ASSET_ID}.png`,
           mime_type: 'image/png',
           file_size_bytes: 2048,
+          optimized_bucket_name: 'brand-assets',
+          optimized_storage_path: `${USER_ID}/references/optimized/${BRAND_REFERENCE_ASSET_ID}.webp`,
+          optimized_mime_type: 'image/webp',
+          optimized_file_size_bytes: 768,
+          optimized_width: 1024,
+          optimized_height: 1024,
         },
       ],
       error: null,
@@ -615,15 +633,15 @@ describe('generate-post edge function', () => {
       requestedHeight: 1350,
       referenceImageUrls: [
         {
-          url: `https://signed.example/brand-assets/${USER_ID}/logos/${BRAND_LOGO_ASSET_ID}.png`,
+          url: `https://signed.example/brand-assets/${USER_ID}/logos/optimized/${BRAND_LOGO_ASSET_ID}.webp`,
           fileName: 'logo',
         },
         {
-          url: `https://signed.example/brand-assets/${USER_ID}/references/${BRAND_REFERENCE_ASSET_ID}.png`,
+          url: `https://signed.example/brand-assets/${USER_ID}/references/optimized/${BRAND_REFERENCE_ASSET_ID}.webp`,
           fileName: 'reference-1',
         },
         {
-          url: `https://signed.example/chat-assets/${USER_ID}/attachments/${ATTACHMENT_ASSET_ID}.png`,
+          url: `https://signed.example/chat-assets/${USER_ID}/attachments/optimized/${ATTACHMENT_ASSET_ID}.webp`,
           fileName: 'attachment-1',
         },
       ],
@@ -991,7 +1009,9 @@ describe('generate-post edge function', () => {
           bucket_name: 'chat-assets',
           storage_path: `${USER_ID}/attachments/${ATTACHMENT_ASSET_ID}.png`,
           mime_type: 'image/png',
-          file_size_bytes: 1024,
+          file_size_bytes: 2 * 1024 * 1024,
+          width: 3000,
+          height: 2000,
         },
       ],
       error: null,
@@ -1243,6 +1263,19 @@ describe('generate-post edge function', () => {
           fileName: 'attachment-1',
         },
       ],
+    }))
+    expect(storageMock.signedUrlCalls).toContainEqual(expect.objectContaining({
+      bucketName: 'chat-assets',
+      path: `${USER_ID}/attachments/${ATTACHMENT_ASSET_ID}.png`,
+      options: {
+        transform: {
+          width: 1024,
+          height: 1024,
+          resize: 'contain',
+          format: 'webp',
+          quality: 76,
+        },
+      },
     }))
     expect(generatedPostPayloads[0]).toMatchObject({
       previous_post_id: GENERATED_POST_ID,
