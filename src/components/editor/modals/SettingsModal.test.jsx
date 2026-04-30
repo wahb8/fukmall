@@ -111,25 +111,22 @@ describe('SettingsModal', () => {
       ],
     }
 
-    fetchDefaultBusinessProfileMock
-      .mockResolvedValueOnce(existingProfile)
-      .mockResolvedValueOnce({
-        ...existingProfile,
-        name: 'Moonline Roastery',
-        business_type: 'Restaurant',
-        tone_preferences: ['Premium'],
-        brand_colors: ['#111111'],
-        logoAsset: null,
-        referenceAssets: [
-          {
-            id: 'reference-2',
-            original_file_name: 'ref-2.png',
-            previewUrl: 'https://cdn.example.com/ref-2.png',
-          },
-        ],
-      })
+    fetchDefaultBusinessProfileMock.mockResolvedValueOnce(existingProfile)
     saveBusinessProfileMock.mockResolvedValue({
       id: 'profile-1',
+      name: 'Moonline Roastery',
+      business_type: 'Restaurant',
+      tone_preferences: ['Premium'],
+      brand_colors: ['#111111'],
+      logo_asset_id: null,
+      uploadedLogoAsset: null,
+      uploadedReferenceAssets: [
+        {
+          id: 'reference-3',
+          original_file_name: 'new-reference.png',
+          previewUrl: 'https://cdn.example.com/new-reference.png',
+        },
+      ],
     })
 
     render(
@@ -192,7 +189,7 @@ describe('SettingsModal', () => {
     })
 
     await waitFor(() => {
-      expect(fetchDefaultBusinessProfileMock).toHaveBeenCalledTimes(2)
+      expect(fetchDefaultBusinessProfileMock).toHaveBeenCalledTimes(1)
       expect(screen.getByText('Business profile updated.')).toBeInTheDocument()
       expect(screen.getByDisplayValue('Moonline Roastery')).toBeInTheDocument()
     })

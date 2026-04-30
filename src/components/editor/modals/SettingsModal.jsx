@@ -60,6 +60,18 @@ function createExistingAssetEntry(asset) {
   }
 }
 
+function createProfileAssetFromEntry(entry) {
+  if (!entry?.id) {
+    return null
+  }
+
+  return {
+    id: entry.id,
+    original_file_name: entry.fileName || 'Uploaded asset',
+    previewUrl: entry.previewUrl || '',
+  }
+}
+
 function isAcceptedImageFile(file) {
   if (!file) {
     return false
@@ -295,7 +307,9 @@ export function SettingsModal({
     setProfileStatusTone('info')
 
     try {
-      await saveBusinessProfile({
+      const currentLogoEntry = logoEntry
+      const currentReferenceEntries = referenceEntries
+      const savedProfile = await saveBusinessProfile({
         name: businessName.trim(),
         businessType: selectedBusinessType,
         tonePreference: selectedTone,
@@ -310,8 +324,27 @@ export function SettingsModal({
           .map((entry) => entry.id),
       })
 
-      const refreshedProfile = await fetchDefaultBusinessProfile()
-      replaceEditableState(refreshedProfile)
+      let uploadedReferenceAssetIndex = 0
+      const nextLogoAsset = currentLogoEntry?.file
+        ? savedProfile.uploadedLogoAsset
+        : createProfileAssetFromEntry(currentLogoEntry)
+      const nextReferenceAssets = currentReferenceEntries
+        .map((entry) => {
+          if (entry.file) {
+            const uploadedAsset = savedProfile.uploadedReferenceAssets?.[uploadedReferenceAssetIndex] ?? null
+            uploadedReferenceAssetIndex += 1
+            return uploadedAsset
+          }
+
+          return createProfileAssetFromEntry(entry)
+        })
+        .filter(Boolean)
+
+      replaceEditableState({
+        ...savedProfile,
+        logoAsset: nextLogoAsset,
+        referenceAssets: nextReferenceAssets,
+      })
       setProfileStatusMessage('Business profile updated.')
       setProfileStatusTone('success')
     } catch (error) {

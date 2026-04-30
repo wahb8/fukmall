@@ -196,12 +196,13 @@ Current behavior:
 - verifies ownership and asset kind for the selected logo and reference images
 - creates or updates the default `business_profiles` row
 - links uploaded assets back to that business profile
-- deletes removed brand reference images and logos from private Storage and removes their
-  `uploaded_assets` metadata rows, instead of leaving stale unlinked profile assets behind
-- deletes optimized WEBP copies together with the original uploaded asset when brand references or
-  logos are removed
-- also cleans stale unlinked brand-reference and logo assets for the same user while preserving
-  assets included in the current save request
+- unlinks removed brand-reference rows from the profile before returning so they disappear from the
+  active business profile immediately
+- captures the exact removed profile assets before unlinking, then schedules their Storage and
+  metadata deletion in background cleanup instead of making the user-facing save wait on deletion
+- broad stale cleanup only targets older unlinked logo/reference assets so a previous background
+  cleanup cannot delete freshly uploaded assets from a later save before they are linked
+- background cleanup deletes optimized WEBP copies together with original uploaded assets
 - stale asset cleanup is best-effort and does not block saving/linking the current profile assets
   if a stale Storage object, cleanup lookup, metadata delete, or usage rollback fails
 

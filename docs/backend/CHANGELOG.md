@@ -2,6 +2,9 @@
 
 ## 2026-04-30
 
+- moved business-profile asset deletion/usage cleanup into Edge Runtime background work, guarded
+  broad stale cleanup with a fresh-upload grace window, and removed the settings modal's extra
+  profile refetch after save so logo/reference updates return faster without risking new uploads
 - added optimized WEBP upload copies for logo, brand-reference, and prompt-attachment assets so
   `generate-post` can send smaller reference images to OpenAI while preserving original uploads
 - added a transformed signed-URL fallback so existing large uploaded references can be resized for

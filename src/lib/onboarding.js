@@ -132,6 +132,7 @@ export async function saveBusinessProfile({
   existingLogoAssetId = null,
   existingReferenceAssetIds = [],
 }) {
+  const supabase = getRequiredSupabaseClient()
   const uniqueReferenceFiles = Array.from(
     new Map(
       (referenceFiles ?? []).map((file) => [`${file.name}:${file.size}:${file.lastModified}`, file]),
@@ -175,8 +176,20 @@ export async function saveBusinessProfile({
     },
     'Unable to save the business profile.',
   )
+  const [
+    uploadedLogoAsset,
+    uploadedReferenceAssets,
+  ] = await Promise.all([
+    logoAsset ? createSignedAssetPreview(supabase, logoAsset) : null,
+    Promise.all(referenceAssets.map((asset) => createSignedAssetPreview(supabase, asset))),
+  ])
 
-  return saveResult.business_profile
+  return {
+    ...saveResult.business_profile,
+    reference_asset_ids: saveResult.reference_asset_ids ?? referenceAssetIds,
+    uploadedLogoAsset,
+    uploadedReferenceAssets,
+  }
 }
 
 export async function completeOnboarding(payload) {

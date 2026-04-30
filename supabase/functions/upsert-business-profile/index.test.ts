@@ -48,6 +48,7 @@ async function loadHandler() {
 
 describe('upsert-business-profile edge function', () => {
   beforeEach(() => {
+    delete (globalThis as typeof globalThis & { EdgeRuntime?: unknown }).EdgeRuntime
     requireAuthenticatedUserMock.mockReset()
     createAdminClientMock.mockReset()
     getActiveSubscriptionWithPlanMock.mockReset()
@@ -78,38 +79,30 @@ describe('upsert-business-profile edge function', () => {
           }
         }
 
-        return {
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              is: vi.fn(async () => ({
-                data: [],
-                error: null,
-              })),
-            })),
-          })),
+        const result = {
+          data: [],
+          error: null,
         }
+        const chain = {
+          eq: vi.fn(() => chain),
+          is: vi.fn(() => chain),
+          lt: vi.fn(() => chain),
+          then: (onFulfilled, onRejected) => Promise.resolve(result).then(onFulfilled, onRejected),
+        }
+
+        return chain
       }),
       update: vi.fn((payload) => {
         uploadedAssetUpdatePayloads.push(payload)
-        const eqThird = vi.fn(async () => ({
-          error: null,
-        }))
-        const inThird = vi.fn(async () => ({
-          error: null,
-        }))
-        const secondEq = vi.fn(() => ({
-          eq: eqThird,
-          in: inThird,
-        }))
-        const firstIn = vi.fn(async () => ({
-          error: null,
-        }))
-        return {
-          eq: vi.fn(() => ({
-            eq: secondEq,
-            in: firstIn,
-          })),
+        const result = { error: null }
+        const chain = {
+          eq: vi.fn(() => chain),
+          in: vi.fn(() => chain),
+          not: vi.fn(() => chain),
+          then: (onFulfilled, onRejected) => Promise.resolve(result).then(onFulfilled, onRejected),
         }
+
+        return chain
       }),
     }
 
@@ -206,7 +199,7 @@ describe('upsert-business-profile edge function', () => {
       logo_asset_id: logoAssetId,
       is_default: true,
     })
-    expect(uploadedAssetUpdatePayloads).toHaveLength(3)
+    expect(uploadedAssetUpdatePayloads).toHaveLength(4)
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
@@ -229,6 +222,17 @@ describe('upsert-business-profile edge function', () => {
     const uploadedAssetUpdates = []
     const removedStorageObjects = []
     const deletedAssetIds = []
+    const backgroundTasks: Promise<unknown>[] = []
+
+    ;(globalThis as typeof globalThis & {
+      EdgeRuntime?: {
+        waitUntil: (task: Promise<unknown>) => void
+      }
+    }).EdgeRuntime = {
+      waitUntil: vi.fn((task) => {
+        backgroundTasks.push(task)
+      }),
+    }
 
     const existingProfileQuery = {
       eq: vi.fn(() => ({
@@ -289,6 +293,7 @@ describe('upsert-business-profile edge function', () => {
           isStaleLookup = true
           return chain
         }),
+        lt: vi.fn(() => chain),
         then: (onFulfilled, onRejected) => {
           const key = `${isStaleLookup ? 'stale' : 'linked'}:${selectedAssetKind}`
           return Promise.resolve(resultsByKey[key] ?? { data: [], error: null }).then(onFulfilled, onRejected)
@@ -333,6 +338,13 @@ describe('upsert-business-profile edge function', () => {
       'stale:brand_reference': {
         data: [
           {
+            id: removedReferenceAssetId,
+            asset_kind: 'brand_reference',
+            bucket_name: 'brand-assets',
+            storage_path: removedStoragePath,
+            file_size_bytes: 2400,
+          },
+          {
             id: '44444444-4444-4444-8444-444444444444',
             asset_kind: 'brand_reference',
             bucket_name: 'brand-assets',
@@ -344,6 +356,13 @@ describe('upsert-business-profile edge function', () => {
       },
       'stale:logo': {
         data: [
+          {
+            id: removedLogoAssetId,
+            asset_kind: 'logo',
+            bucket_name: 'brand-assets',
+            storage_path: removedLogoStoragePath,
+            file_size_bytes: 3200,
+          },
           {
             id: '66666666-6666-4666-8666-666666666666',
             asset_kind: 'logo',
@@ -380,9 +399,8 @@ describe('upsert-business-profile edge function', () => {
         uploadedAssetUpdates.push(payload)
         const chain = {
           eq: vi.fn(() => chain),
-          in: vi.fn(async () => ({
-            error: null,
-          })),
+          in: vi.fn(() => chain),
+          not: vi.fn(() => chain),
           then: (onFulfilled, onRejected) => Promise.resolve({ error: null }).then(onFulfilled, onRejected),
         }
 
@@ -452,6 +470,12 @@ describe('upsert-business-profile edge function', () => {
     }))
 
     expect(response.status).toBe(200)
+    expect((globalThis as typeof globalThis & {
+      EdgeRuntime?: {
+        waitUntil: ReturnType<typeof vi.fn>
+      }
+    }).EdgeRuntime?.waitUntil).toHaveBeenCalledTimes(1)
+    await Promise.all(backgroundTasks)
     expect(removedStorageObjects).toEqual([
       removedStoragePath,
       'user-1/references/stale-reference.png',
@@ -538,6 +562,7 @@ describe('upsert-business-profile edge function', () => {
       const chain = {
         eq: vi.fn(() => chain),
         is: vi.fn(() => chain),
+        lt: vi.fn(() => chain),
         then: (onFulfilled, onRejected) => Promise.resolve(result).then(onFulfilled, onRejected),
       }
 
@@ -575,13 +600,11 @@ describe('upsert-business-profile edge function', () => {
       update: vi.fn((payload) => {
         const chain = {
           eq: vi.fn(() => chain),
-          in: vi.fn(async () => {
+          in: vi.fn(() => {
             linkedReferenceUpdates.push(payload)
-
-            return {
-              error: null,
-            }
+            return chain
           }),
+          not: vi.fn(() => chain),
           then: (onFulfilled, onRejected) => Promise.resolve({ error: null }).then(onFulfilled, onRejected),
         }
 

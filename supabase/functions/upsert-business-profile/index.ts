@@ -25,6 +25,8 @@ interface UploadedAssetDeleteCandidate {
   asset_kind?: string
 }
 
+const STALE_UNLINKED_ASSET_CLEANUP_GRACE_MS = 10 * 60 * 1000
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -85,66 +87,36 @@ async function assertOwnedAssets(
   return data
 }
 
-async function loadLinkedReferenceAssets(
+async function loadLinkedAssets(
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string,
   profileId: string,
+  assetKind: 'brand_reference' | 'logo',
 ) {
   const { data, error } = await adminClient
     .from('uploaded_assets')
     .select('id, bucket_name, storage_path, file_size_bytes, optimized_bucket_name, optimized_storage_path, optimized_file_size_bytes, asset_kind')
     .eq('user_id', userId)
-    .eq('asset_kind', 'brand_reference')
+    .eq('asset_kind', assetKind)
     .eq('business_profile_id', profileId)
 
   if (error) {
-    throw new AppError('ASSET_LOOKUP_FAILED', 'Failed to load existing reference assets.', 500)
+    throw new AppError('ASSET_LOOKUP_FAILED', 'Failed to load existing profile assets.', 500)
   }
 
   return (data ?? []) as UploadedAssetDeleteCandidate[]
 }
 
-async function loadLinkedReferenceAssetsBestEffort(
+async function loadLinkedAssetsBestEffort(
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string,
   profileId: string,
+  assetKind: 'brand_reference' | 'logo',
 ) {
   try {
-    return await loadLinkedReferenceAssets(adminClient, userId, profileId)
+    return await loadLinkedAssets(adminClient, userId, profileId, assetKind)
   } catch (error) {
-    console.error('Failed to load linked reference assets during profile cleanup', error)
-    return []
-  }
-}
-
-async function loadLinkedLogoAssets(
-  adminClient: ReturnType<typeof createAdminClient>,
-  userId: string,
-  profileId: string,
-) {
-  const { data, error } = await adminClient
-    .from('uploaded_assets')
-    .select('id, bucket_name, storage_path, file_size_bytes, optimized_bucket_name, optimized_storage_path, optimized_file_size_bytes, asset_kind')
-    .eq('user_id', userId)
-    .eq('asset_kind', 'logo')
-    .eq('business_profile_id', profileId)
-
-  if (error) {
-    throw new AppError('ASSET_LOOKUP_FAILED', 'Failed to load existing logo assets.', 500)
-  }
-
-  return (data ?? []) as UploadedAssetDeleteCandidate[]
-}
-
-async function loadLinkedLogoAssetsBestEffort(
-  adminClient: ReturnType<typeof createAdminClient>,
-  userId: string,
-  profileId: string,
-) {
-  try {
-    return await loadLinkedLogoAssets(adminClient, userId, profileId)
-  } catch (error) {
-    console.error('Failed to load linked logo assets during profile cleanup', error)
+    console.error('Failed to load linked profile assets during profile cleanup', error)
     return []
   }
 }
@@ -155,12 +127,14 @@ async function loadStaleUnlinkedAssets(
   assetKind: 'brand_reference' | 'logo',
   preservedAssetIds: Set<string>,
 ) {
+  const staleBefore = new Date(Date.now() - STALE_UNLINKED_ASSET_CLEANUP_GRACE_MS).toISOString()
   const { data, error } = await adminClient
     .from('uploaded_assets')
     .select('id, bucket_name, storage_path, file_size_bytes, optimized_bucket_name, optimized_storage_path, optimized_file_size_bytes, asset_kind')
     .eq('user_id', userId)
     .eq('asset_kind', assetKind)
     .is('business_profile_id', null)
+    .lt('created_at', staleBefore)
 
   if (error) {
     throw new AppError('ASSET_LOOKUP_FAILED', 'Failed to load stale uploaded assets.', 500)
@@ -266,6 +240,12 @@ async function recordDeletedAssetUsage(
   }
 }
 
+function uniqueAssetsById(assets: UploadedAssetDeleteCandidate[]) {
+  return Array.from(
+    new Map(assets.map((asset) => [asset.id, asset])).values(),
+  )
+}
+
 async function cleanupRemovedAssetsBestEffort(
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string,
@@ -297,6 +277,121 @@ async function cleanupRemovedAssetsBestEffort(
   } catch (error) {
     console.error('Failed to record removed uploaded asset usage during profile save', error)
   }
+}
+
+async function clearRemovedReferenceLinks(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  profileId: string,
+  preservedReferenceAssetIds: Set<string>,
+) {
+  let query = adminClient
+    .from('uploaded_assets')
+    .update({
+      business_profile_id: null,
+    })
+    .eq('user_id', userId)
+    .eq('asset_kind', 'brand_reference')
+    .eq('business_profile_id', profileId)
+
+  if (preservedReferenceAssetIds.size > 0) {
+    query = query.not('id', 'in', `(${[...preservedReferenceAssetIds].join(',')})`)
+  }
+
+  const { error } = await query
+
+  if (error) {
+    throw new AppError('ASSET_LINK_FAILED', 'Failed to refresh reference image links.', 500)
+  }
+}
+
+function scheduleBackgroundTask(task: Promise<unknown>, failureMessage: string) {
+  const guardedTask = task.catch((error) => {
+    console.error(failureMessage, error)
+  })
+  const edgeRuntime = (
+    globalThis as typeof globalThis & {
+      EdgeRuntime?: {
+        waitUntil?: (task: Promise<unknown>) => void
+      }
+    }
+  ).EdgeRuntime
+
+  if (typeof edgeRuntime?.waitUntil === 'function') {
+    edgeRuntime.waitUntil(guardedTask)
+    return
+  }
+
+  void guardedTask
+}
+
+async function runBusinessProfileAssetCleanup(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  removedReferenceAssets: UploadedAssetDeleteCandidate[],
+  removedLogoAssets: UploadedAssetDeleteCandidate[],
+  keptReferenceAssetIds: Set<string>,
+  keptLogoAssetIds: Set<string>,
+) {
+  const [
+    staleUnlinkedReferenceAssets,
+    staleUnlinkedLogoAssets,
+  ] = await Promise.all([
+    loadStaleUnlinkedAssetsBestEffort(
+      adminClient,
+      userId,
+      'brand_reference',
+      keptReferenceAssetIds,
+    ),
+    loadStaleUnlinkedAssetsBestEffort(
+      adminClient,
+      userId,
+      'logo',
+      keptLogoAssetIds,
+    ),
+  ])
+
+  await Promise.all([
+    cleanupRemovedAssetsBestEffort(
+      adminClient,
+      userId,
+      uniqueAssetsById([
+        ...removedReferenceAssets,
+        ...staleUnlinkedReferenceAssets,
+      ]),
+      'business_profile_reference_removed',
+    ),
+    cleanupRemovedAssetsBestEffort(
+      adminClient,
+      userId,
+      uniqueAssetsById([
+        ...removedLogoAssets,
+        ...staleUnlinkedLogoAssets,
+      ]),
+      'business_profile_logo_removed',
+    ),
+  ])
+}
+
+function scheduleBusinessProfileAssetCleanup(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  removedReferenceAssets: UploadedAssetDeleteCandidate[],
+  removedLogoAssets: UploadedAssetDeleteCandidate[],
+  keptReferenceAssetIds: Set<string>,
+  keptLogoAssetIds: Set<string>,
+) {
+  scheduleBackgroundTask(
+    Promise.resolve().then(() => runBusinessProfileAssetCleanup(
+      adminClient,
+      userId,
+      removedReferenceAssets,
+      removedLogoAssets,
+      keptReferenceAssetIds,
+      keptLogoAssetIds,
+    )),
+    'Async business profile asset cleanup failed',
+  )
 }
 
 Deno.serve(async (request) => {
@@ -380,38 +475,23 @@ Deno.serve(async (request) => {
     }
 
     let profileId = existingProfile?.id ?? null
-    const existingReferenceAssets = profileId
-      ? await loadLinkedReferenceAssetsBestEffort(adminClient, user.id, profileId)
-      : []
-    const existingLogoAssets = profileId
-      ? await loadLinkedLogoAssetsBestEffort(adminClient, user.id, profileId)
-      : []
     const keptReferenceAssetIds = new Set(referenceAssetIds)
     const keptLogoAssetIds = new Set(logoAssetId ? [logoAssetId] : [])
-    const staleUnlinkedReferenceAssets = await loadStaleUnlinkedAssetsBestEffort(
-      adminClient,
-      user.id,
-      'brand_reference',
-      keptReferenceAssetIds,
-    )
-    const staleUnlinkedLogoAssets = await loadStaleUnlinkedAssetsBestEffort(
-      adminClient,
-      user.id,
-      'logo',
-      keptLogoAssetIds,
-    )
-    const removedReferenceAssets = [
-      ...existingReferenceAssets.filter((asset) => (
-        !keptReferenceAssetIds.has(asset.id)
-      )),
-      ...staleUnlinkedReferenceAssets,
-    ]
-    const removedLogoAssets = [
-      ...existingLogoAssets.filter((asset) => (
-        !keptLogoAssetIds.has(asset.id)
-      )),
-      ...staleUnlinkedLogoAssets,
-    ]
+    const [
+      existingReferenceAssets,
+      existingLogoAssets,
+    ] = profileId
+      ? await Promise.all([
+        loadLinkedAssetsBestEffort(adminClient, user.id, profileId, 'brand_reference'),
+        loadLinkedAssetsBestEffort(adminClient, user.id, profileId, 'logo'),
+      ])
+      : [[], []]
+    const removedReferenceAssets = existingReferenceAssets.filter((asset) => (
+      !keptReferenceAssetIds.has(asset.id)
+    ))
+    const removedLogoAssets = existingLogoAssets.filter((asset) => (
+      !keptLogoAssetIds.has(asset.id)
+    ))
 
     if (profileId) {
       const { error: updateProfileError } = await adminClient
@@ -451,24 +531,6 @@ Deno.serve(async (request) => {
       profileId = createdProfile.id
     }
 
-    if (removedReferenceAssets.length > 0) {
-      await cleanupRemovedAssetsBestEffort(
-        adminClient,
-        user.id,
-        removedReferenceAssets,
-        'business_profile_reference_removed',
-      )
-    }
-
-    if (removedLogoAssets.length > 0) {
-      await cleanupRemovedAssetsBestEffort(
-        adminClient,
-        user.id,
-        removedLogoAssets,
-        'business_profile_logo_removed',
-      )
-    }
-
     if (referenceAssetIds.length > 0) {
       const { error: linkReferenceError } = await adminClient
         .from('uploaded_assets')
@@ -482,6 +544,8 @@ Deno.serve(async (request) => {
         throw new AppError('ASSET_LINK_FAILED', 'Failed to link the reference assets.', 500)
       }
     }
+
+    await clearRemovedReferenceLinks(adminClient, user.id, profileId, keptReferenceAssetIds)
 
     const { error: clearLogoError } = await adminClient
       .from('uploaded_assets')
@@ -531,6 +595,15 @@ Deno.serve(async (request) => {
     if (savedProfileError || !savedProfile) {
       throw new AppError('BUSINESS_PROFILE_LOOKUP_FAILED', 'Failed to reload the saved business profile.', 500)
     }
+
+    scheduleBusinessProfileAssetCleanup(
+      adminClient,
+      user.id,
+      removedReferenceAssets,
+      removedLogoAssets,
+      keptReferenceAssetIds,
+      keptLogoAssetIds,
+    )
 
     return ok({
       business_profile: savedProfile,
