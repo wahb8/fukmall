@@ -218,6 +218,8 @@ class MockCanvasRenderingContext2D {
   rect() {}
   clip() {}
   setLineDash() {}
+  stroke() {}
+  fill() {}
   strokeRect() {}
 }
 

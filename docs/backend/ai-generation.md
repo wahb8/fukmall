@@ -80,10 +80,12 @@ Current prompt behavior:
 - attached reference images are treated as style references only; the prompt tells the model not to
   copy exact layouts, logos, text, people, products, or specific objects unless the user explicitly
   asks for them
+- when reference images exist, the prompt now also asks the model to preserve the reference color
+  scheme and keep any additional colors aligned with the post and brand mood
 - saved brand logos are attached separately from style references and are sent to OpenAI with the
   file name `logo`; when a logo exists, the prompt explicitly allows using it as the brand logo while
   keeping it subtle and professionally integrated
-- when no saved logo exists, the prompt does not mention an uploaded logo
+- when no saved logo exists, the prompt explicitly tells the model not to invent a logo
 - when no profile reference images exist, fallback reference images are deferred and the function
   uses the no-reference prompt: `Create a polished Instagram post design based on the written brand
   context and user request.`

@@ -8,7 +8,7 @@ afterEach(() => {
 
 describe('AssetImage', () => {
   it('shows a loading placeholder until the image loads', () => {
-    render(<AssetImage src="/preview.png" alt="Preview" />)
+    render(<AssetImage src="/preview.png" alt="Preview" announceLoading />)
 
     expect(screen.getByRole('status', { name: 'Loading asset' })).toBeInTheDocument()
 
@@ -18,12 +18,12 @@ describe('AssetImage', () => {
   })
 
   it('resets the loading state when the source changes', () => {
-    const { rerender } = render(<AssetImage src="/first.png" alt="Preview" />)
+    const { rerender } = render(<AssetImage src="/first.png" alt="Preview" announceLoading />)
 
     fireEvent.load(screen.getByAltText('Preview'))
     expect(screen.queryByRole('status', { name: 'Loading asset' })).toBeNull()
 
-    rerender(<AssetImage src="/second.png" alt="Preview" />)
+    rerender(<AssetImage src="/second.png" alt="Preview" announceLoading />)
 
     expect(screen.getByRole('status', { name: 'Loading asset' })).toBeInTheDocument()
   })

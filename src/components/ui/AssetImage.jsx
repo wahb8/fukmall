@@ -36,6 +36,7 @@ function AssetImageInner({
   nativeClassName = '',
   fit = 'cover',
   loadingLabel = 'Loading asset',
+  announceLoading = false,
   onLoad,
   onError,
   ...imageProps
@@ -65,7 +66,7 @@ function AssetImageInner({
         <AssetLoadingFrame
           className="asset-load-placeholder-frame"
           loadingLabel={loadingLabel}
-          decorative={isDecorative}
+          decorative={!announceLoading || isDecorative}
         />
       ) : null}
       <img

@@ -2,6 +2,8 @@
 
 ## 2026-04-29
 
+- updated the initial image prompt to preserve reference-image color schemes and explicitly prevent
+  invented logos when no logo reference is available
 - fixed automatic chat title generation to recognize the frontend's plain `Untitled` default chat
   title, not only `Untitled chat`
 - added generation interruption support with `cancel-generation-job`, a `canceled`

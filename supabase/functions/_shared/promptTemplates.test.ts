@@ -29,6 +29,8 @@ describe('prompt template helpers', () => {
     })
 
     expect(prompt).toContain('Create a polished Instagram post design that matches the visual style, mood, color palette, typography feel, spacing, and composition style of the attached reference images.')
+    expect(prompt).toContain('Make sure to use the same color scheme in the attached images as well.')
+    expect(prompt).toContain('- Logo reference: attached as "logo" when available.')
     expect(prompt).toContain('The attached image named logo is the only logo that may be used as a brand asset.')
     expect(prompt).toContain('User request:')
     expect(prompt).toContain('Announce a new iced latte.')
@@ -52,6 +54,7 @@ describe('prompt template helpers', () => {
     })
 
     expect(prompt).toContain('Create a polished Instagram post design based on the written brand context and user request.')
+    expect(prompt).toContain('- Logo reference: no logo reference is provided. Do not invent a logo.')
     expect(prompt).toContain('- Use the brand colors and style preferences where appropriate.')
     expect(prompt).toContain('- Match the requested aspect ratio: 1:1.')
     expect(prompt).not.toContain('Using the attached images')

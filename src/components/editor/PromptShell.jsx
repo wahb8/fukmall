@@ -35,6 +35,7 @@ export function PromptAttachmentTabs({
                 src={attachment.previewUrl}
                 alt={attachment.original_file_name || 'Prompt attachment'}
                 loadingLabel={`Loading ${attachment.original_file_name || 'attachment'}`}
+                announceLoading
                 onLoad={() => onAttachmentPreviewLoad?.(attachment.id)}
                 onError={() => onAttachmentPreviewLoad?.(attachment.id)}
               />

@@ -66,6 +66,12 @@ function buildBusinessContext(profile: BusinessProfileContext | null) {
     .join('\n')
 }
 
+function buildLogoReferenceContext(hasBrandLogo: boolean) {
+  return hasBrandLogo
+    ? '- Logo reference: attached as "logo" when available. Use it only if the user asks for the brand logo or if a logo would normally appear in the requested post. Do not invent a logo if no logo reference is provided.'
+    : '- Logo reference: no logo reference is provided. Do not invent a logo.'
+}
+
 export function buildImageGenerationInstructions(params: ImagePromptParams) {
   const referenceGuidance = params.hasBrandReferences
     ? 'Brand reference images are attached. Match their aesthetic, composition rhythm, color behavior, and overall feel without copying them exactly.'
@@ -97,8 +103,8 @@ export function buildImageGenerationInstructions(params: ImagePromptParams) {
 export function buildImageGenerationUserPrompt(params: ImagePromptParams) {
   const hasStyleReferences = params.hasBrandReferences
   const styleReferenceRestriction = params.hasBrandLogo
-    ? 'Use the attached reference images only as style references. Do not copy or reuse exact layouts, text, people, products, specific objects, or logos from the style reference images. The attached image named logo is the only logo that may be used as a brand asset.'
-    : 'Use the attached images only as style references. Do not copy or reuse exact layouts, logos, text, people, products, or specific objects from the reference images unless the user explicitly asks for them.'
+    ? 'Use the attached images only as style references. Do not copy or reuse exact layouts, logos, text, people, products, or specific objects from the reference images unless the user explicitly asks for them. Make sure to use the same color scheme in the attached images as well. If there are colors that are not used in the style of the attached images, make sure they fit the mood and aesthetics of the entire post and brand. The attached image named logo is the only logo that may be used as a brand asset.'
+    : 'Use the attached images only as style references. Do not copy or reuse exact layouts, logos, text, people, products, or specific objects from the reference images unless the user explicitly asks for them. Make sure to use the same color scheme in the attached images as well. If there are colors that are not used in the style of the attached images, make sure they fit the mood and aesthetics of the entire post and brand.'
   const firstInstruction = params.generationMode === 'edit'
     ? 'Update the current post based on the latest instruction.'
     : hasStyleReferences
@@ -114,6 +120,7 @@ export function buildImageGenerationUserPrompt(params: ImagePromptParams) {
     '',
     'Brand context:',
     buildBusinessContext(params.businessProfile),
+    buildLogoReferenceContext(params.hasBrandLogo),
     '',
     params.previousCaption && params.generationMode === 'edit'
       ? `Current caption: ${params.previousCaption}`
