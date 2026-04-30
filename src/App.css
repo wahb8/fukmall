@@ -691,6 +691,19 @@
     var(--surface);
 }
 
+.asset-load-frame.asset-load-transparent {
+  background: transparent;
+}
+
+.asset-load-frame.asset-load-transparent .asset-load-placeholder {
+  background: transparent;
+  animation: none;
+}
+
+.asset-load-frame.asset-load-transparent .asset-load-spinner {
+  display: none;
+}
+
 .asset-load-placeholder-frame {
   position: absolute;
   inset: 0;

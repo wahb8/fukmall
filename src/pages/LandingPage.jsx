@@ -45,7 +45,7 @@ export function LandingPage({
         <header className="landing-nav" aria-label="Primary navigation">
           <a className="landing-brand" href="#top" aria-label="Kryopic home">
             <AssetImage
-              className="landing-brand-mark"
+              className="landing-brand-mark asset-load-transparent"
               src={logoConceptTransparent}
               alt=""
               aria-hidden="true"

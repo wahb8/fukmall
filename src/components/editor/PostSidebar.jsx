@@ -67,7 +67,7 @@ export function PostSidebar({
           aria-label="Kryopic home"
         >
           <AssetImage
-            className="post-sidebar-brand-mark"
+            className="post-sidebar-brand-mark asset-load-transparent"
             src={logoConceptTransparent}
             alt=""
             aria-hidden="true"

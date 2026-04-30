@@ -1169,6 +1169,39 @@ function upsertGeneratedPostTimelineEntry(entries, post) {
   })
 }
 
+function getGeneratedPostTime(post) {
+  const parsedTime = Date.parse(post?.created_at ?? post?.createdAt ?? '')
+  return Number.isFinite(parsedTime) ? parsedTime : 0
+}
+
+function chooseLatestGeneratedPostAfterRefresh(refreshedPost, completedPost) {
+  if (!completedPost?.previewUrl) {
+    return refreshedPost ?? null
+  }
+
+  if (!refreshedPost?.previewUrl) {
+    return completedPost
+  }
+
+  if (refreshedPost.id === completedPost.id) {
+    return refreshedPost
+  }
+
+  return getGeneratedPostTime(refreshedPost) >= getGeneratedPostTime(completedPost)
+    ? refreshedPost
+    : completedPost
+}
+
+function mergeCompletedGeneratedPostTimeline(entries, completedPost) {
+  if (!completedPost?.previewUrl) {
+    return entries
+  }
+
+  return entries.some((entry) => entry.id === completedPost.id)
+    ? entries
+    : upsertGeneratedPostTimelineEntry(entries, completedPost)
+}
+
 function createGeneratedPostCanvasLayer(post, canvasDimensions, existingLayerId = null) {
   if (!post?.previewUrl) {
     return null
@@ -4753,8 +4786,14 @@ function App({
 
       setActiveChatId(chatId)
       setActiveChatSession(session?.chat ?? null)
-      setActiveChatTimeline(session?.timelineEntries ?? [])
-      syncLatestGeneratedPostToCanvas(session?.latestGeneratedPost ?? null)
+      setActiveChatTimeline(mergeCompletedGeneratedPostTimeline(
+        session?.timelineEntries ?? [],
+        completedGeneratedPost,
+      ))
+      syncLatestGeneratedPostToCanvas(chooseLatestGeneratedPostAfterRefresh(
+        session?.latestGeneratedPost ?? null,
+        completedGeneratedPost,
+      ))
       clearPromptComposer()
       setChatStatusMessage('')
     } catch (error) {

@@ -151,7 +151,7 @@ export function PricingPage({
             onClick={(event) => handleNavigate(event, '/')}
           >
             <AssetImage
-              className="landing-brand-mark"
+              className="landing-brand-mark asset-load-transparent"
               src={logoConceptTransparent}
               alt=""
               aria-hidden="true"
