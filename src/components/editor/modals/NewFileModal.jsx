@@ -85,8 +85,8 @@ export function NewFileModal({
               <span className="new-file-preset-icon-shell" aria-hidden="true">
                 <AssetImage
                   className={preset.key === 'portrait'
-                    ? 'new-file-preset-icon new-file-preset-icon-portrait'
-                    : 'new-file-preset-icon'}
+                    ? 'new-file-preset-icon new-file-preset-icon-portrait asset-load-transparent'
+                    : 'new-file-preset-icon asset-load-transparent'}
                   src={preset.imageSrc}
                   alt=""
                   fit="contain"
