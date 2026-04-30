@@ -85,9 +85,13 @@ export function ChatTimelinePanel({
   emptyMessage = 'Start with a prompt to create a new chat history.',
   statusMessage = '',
   statusTone = 'info',
+  className = '',
 }) {
   return (
-    <section className="canvas-caption-area chat-timeline-panel" aria-label={title}>
+    <section
+      className={['canvas-caption-area chat-timeline-panel', className].filter(Boolean).join(' ')}
+      aria-label={title}
+    >
       <div className="chat-timeline-header">
         <strong>{title}</strong>
       </div>

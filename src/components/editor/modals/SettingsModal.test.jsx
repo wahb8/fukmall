@@ -50,15 +50,18 @@ describe('SettingsModal', () => {
     const onClose = vi.fn()
     const onToggleTheme = vi.fn()
     const onToggleTrimTransparentImports = vi.fn()
+    const onToggleShowChatPanel = vi.fn()
 
     render(
       <SettingsModal
         isOpen
         theme="light"
         trimTransparentImports
+        showChatPanel={false}
         onClose={onClose}
         onToggleTheme={onToggleTheme}
         onToggleTrimTransparentImports={onToggleTrimTransparentImports}
+        onToggleShowChatPanel={onToggleShowChatPanel}
       />,
     )
 
@@ -68,14 +71,17 @@ describe('SettingsModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Toggle dark mode' }))
     fireEvent.click(screen.getByRole('button', { name: /Trim Transparent Imports/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Chat Side Panel/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
 
     expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument()
     expect(screen.getByText('Dark UI')).toBeInTheDocument()
     expect(screen.getByText('On')).toBeInTheDocument()
+    expect(screen.getByText('Hidden')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save profile' })).toBeNull()
     expect(onToggleTheme).toHaveBeenCalledTimes(1)
     expect(onToggleTrimTransparentImports).toHaveBeenCalledTimes(1)
+    expect(onToggleShowChatPanel).toHaveBeenCalledTimes(1)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 

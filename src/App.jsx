@@ -10,6 +10,7 @@ import { ExternalImageDropOverlay } from './components/editor/ExternalImageDropO
 import { FileMenu } from './components/editor/FileMenu'
 import { FontSizeStepper } from './components/editor/FontSizeStepper'
 import { ChatTimelinePanel } from './components/editor/ChatTimelinePanel'
+import { InstagramCaptionPreview } from './components/editor/InstagramCaptionPreview'
 import { LayerFlipControls } from './components/editor/LayerFlipControls'
 import { LayerPanel } from './components/editor/LayerPanel'
 import { PostSidebar } from './components/editor/PostSidebar'
@@ -18,6 +19,7 @@ import { NewFileModal } from './components/editor/modals/NewFileModal'
 import { SettingsModal } from './components/editor/modals/SettingsModal'
 import { UnsavedChangesModal } from './components/editor/modals/UnsavedChangesModal'
 import { AssetImage } from './components/ui/AssetImage'
+import { useAuth } from './auth/authContext'
 import {
   ASSET_DRAG_MIME_TYPE,
   DEFAULT_BUCKET_TOLERANCE,
@@ -220,6 +222,7 @@ const PIXEL_HIT_PADDING = 4
 const VISIBLE_PIXEL_ALPHA_THRESHOLD = 8
 const THEME_STORAGE_KEY = 'fukmall.theme'
 const TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY = 'fukmall.trim-transparent-imports'
+const SHOW_CHAT_PANEL_STORAGE_KEY = 'fukmall.show-chat-panel'
 const INSPECTOR_ADJUSTMENT_IDLE_MS = 450
 const DEFAULT_EDITOR_CHROME_ENABLED = false
 const DEFAULT_NEW_FILE_PRESET_WIDTH = 1080
@@ -249,6 +252,14 @@ function loadTrimTransparentImportsFromStorage() {
   }
 
   return window.localStorage.getItem(TRIM_TRANSPARENT_IMPORTS_STORAGE_KEY) !== 'false'
+}
+
+function loadShowChatPanelFromStorage() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  return window.localStorage.getItem(SHOW_CHAT_PANEL_STORAGE_KEY) === 'true'
 }
 
 function navigateTo(pathname) {
@@ -1165,6 +1176,7 @@ function App({
   editorChromeEnabled = DEFAULT_EDITOR_CHROME_ENABLED,
   defaultBusinessProfile = null,
 } = {}) {
+  const auth = useAuth()
   const startupState = useMemo(() => createStartupState(), [])
   const appShellRef = useRef(null)
   const canvasRef = useRef(null)
@@ -1274,6 +1286,7 @@ function App({
   const [trimTransparentImports, setTrimTransparentImports] = useState(
     () => loadTrimTransparentImportsFromStorage(),
   )
+  const [showChatPanel, setShowChatPanel] = useState(() => loadShowChatPanelFromStorage())
   useEffect(() => () => {
     promptGenerationRunRef.current?.pollAbortController?.abort()
     promptGenerationAbortRef.current?.abort()
@@ -1340,6 +1353,20 @@ function App({
     attachment?.isPreviewLoading ||
     String(attachment?.id ?? '').startsWith('pending-attachment-')
   ))
+  const latestGeneratedCaption = useMemo(() => {
+    const latestGeneratedEntry = [...activeChatTimeline]
+      .reverse()
+      .find((entry) => entry.kind === 'generated_post' && String(entry.captionText ?? '').trim())
+
+    return String(latestGeneratedEntry?.captionText ?? '').trim()
+  }, [activeChatTimeline])
+  const captionProfileName = (
+    defaultBusinessProfile?.name ||
+    auth.user?.user_metadata?.full_name ||
+    auth.user?.user_metadata?.name ||
+    auth.user?.email?.split('@')[0] ||
+    'Kryopic'
+  )
   const editorIcons = useMemo(() => getEditorIcons(theme), [theme])
   const currentDocumentSignature = useMemo(() => serializeProjectFile(documentState), [documentState])
   const hasUnsavedChanges = currentDocumentSignature !== savedDocumentSignature
@@ -2171,6 +2198,17 @@ function App({
       trimTransparentImports ? 'true' : 'false',
     )
   }, [trimTransparentImports])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.localStorage.setItem(
+      SHOW_CHAT_PANEL_STORAGE_KEY,
+      showChatPanel ? 'true' : 'false',
+    )
+  }, [showChatPanel])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -7933,11 +7971,13 @@ function App({
         isOpen={isSettingsModalOpen}
         theme={theme}
         trimTransparentImports={trimTransparentImports}
+        showChatPanel={showChatPanel}
         onClose={() => setIsSettingsModalOpen(false)}
         onToggleTheme={() => setTheme((currentTheme) => (
           currentTheme === 'dark' ? 'light' : 'dark'
         ))}
         onToggleTrimTransparentImports={() => setTrimTransparentImports((currentValue) => !currentValue)}
+        onToggleShowChatPanel={() => setShowChatPanel((currentValue) => !currentValue)}
       />
     </>
   )
@@ -7976,7 +8016,7 @@ function App({
       onExport={handleExport}
     />
   )
-  const canvasCaptionArea = isMinimalEditorMode ? (
+  const chatSidePanel = isMinimalEditorMode && showChatPanel ? (
     <ChatTimelinePanel
       title={activeChatSession?.title || 'Conversation'}
       entries={activeChatTimeline}
@@ -7986,6 +8026,14 @@ function App({
       emptyMessage={activeChatId
         ? 'This chat is ready for your first prompt.'
         : 'Create a new post or send a prompt to start a chat.'}
+      className="chat-timeline-side-panel"
+    />
+  ) : null
+  const canvasCaptionArea = isMinimalEditorMode ? (
+    <InstagramCaptionPreview
+      profileName={captionProfileName}
+      caption={latestGeneratedCaption}
+      isLoading={isActiveChatLoading}
     />
   ) : (
     <section className="canvas-caption-area" aria-label="Caption">
@@ -8037,65 +8085,68 @@ function App({
             onLogoClick={() => navigateTo('/')}
           />
           <section className="editor-panel editor-panel-minimal">
-            <div className="workspace-main-column editor-canvas-only" style={stageLayoutStyle}>
-              <section className="canvas-panel canvas-panel-minimal" aria-label="Canvas panel">
-                <div className="canvas-composer-shell">
-                  {canvasUtilityPanels}
-                  <PromptAttachmentTabs
-                    attachments={promptComposerAttachments}
-                    disabled={isPromptAttachmentUploading || isPromptSubmitting || hasPendingPromptAttachments}
-                    isSubmitting={isPromptSubmitting}
-                    onRemoveAttachment={handleRemovePromptAttachment}
-                    onAttachmentPreviewLoad={handlePromptAttachmentPreviewLoad}
-                    className="canvas-attachment-tabs"
-                  />
-                  <div
-                    ref={canvasRef}
-                    className="canvas-stage canvas-stage-read-only"
-                    role="presentation"
-                  >
+            <div className="editor-minimal-workspace" style={stageLayoutStyle}>
+              <div className="workspace-main-column editor-canvas-only" style={stageLayoutStyle}>
+                <section className="canvas-panel canvas-panel-minimal" aria-label="Canvas panel">
+                  <div className="canvas-composer-shell">
+                    {canvasUtilityPanels}
+                    <PromptAttachmentTabs
+                      attachments={promptComposerAttachments}
+                      disabled={isPromptAttachmentUploading || isPromptSubmitting || hasPendingPromptAttachments}
+                      isSubmitting={isPromptSubmitting}
+                      onRemoveAttachment={handleRemovePromptAttachment}
+                      onAttachmentPreviewLoad={handlePromptAttachmentPreviewLoad}
+                      className="canvas-attachment-tabs"
+                    />
                     <div
-                      className="canvas-viewport"
-                      style={{
-                        width: `${documentWidth}px`,
-                        height: `${documentHeight}px`,
-                        transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * documentScale})`,
-                      }}
+                      ref={canvasRef}
+                      className="canvas-stage canvas-stage-read-only"
+                      role="presentation"
                     >
                       <div
-                        ref={canvasSurfaceRef}
-                        className="canvas-surface"
+                        className="canvas-viewport"
                         style={{
                           width: `${documentWidth}px`,
                           height: `${documentHeight}px`,
+                          transform: `translate(${viewport.offsetX}px, ${viewport.offsetY}px) scale(${viewport.zoom * documentScale})`,
                         }}
                       >
-                        {renderFirstEntryCanvasOverlay()}
-                        {documentState.layers.map(renderLayer)}
-                        {renderGenerationLoadingOverlay()}
+                        <div
+                          ref={canvasSurfaceRef}
+                          className="canvas-surface"
+                          style={{
+                            width: `${documentWidth}px`,
+                            height: `${documentHeight}px`,
+                          }}
+                        >
+                          {renderFirstEntryCanvasOverlay()}
+                          {documentState.layers.map(renderLayer)}
+                          {renderGenerationLoadingOverlay()}
+                        </div>
                       </div>
                     </div>
+                    {canvasCaptionArea}
                   </div>
-                  {canvasCaptionArea}
-                </div>
-              </section>
+                </section>
 
-              <PromptShell
-                value={promptComposerValue}
-                attachments={promptComposerAttachments}
-                showAttachments={false}
-                disabled={isPromptAttachmentUploading || hasPendingPromptAttachments}
-                isSubmitting={isPromptSubmitting}
-                isUploadingAttachments={isPromptAttachmentUploading || hasPendingPromptAttachments}
-                statusMessage={chatStatusTone === 'error' ? chatStatusMessage : ''}
-                statusTone={chatStatusTone}
-                onChange={setPromptComposerValue}
-                onSubmit={handleSubmitPromptComposer}
-                onStop={handleStopPromptGeneration}
-                onFilesSelected={handlePromptAttachmentsSelected}
-                onRemoveAttachment={handleRemovePromptAttachment}
-                onAttachmentPreviewLoad={handlePromptAttachmentPreviewLoad}
-              />
+                <PromptShell
+                  value={promptComposerValue}
+                  attachments={promptComposerAttachments}
+                  showAttachments={false}
+                  disabled={isPromptAttachmentUploading || hasPendingPromptAttachments}
+                  isSubmitting={isPromptSubmitting}
+                  isUploadingAttachments={isPromptAttachmentUploading || hasPendingPromptAttachments}
+                  statusMessage={chatStatusTone === 'error' ? chatStatusMessage : ''}
+                  statusTone={chatStatusTone}
+                  onChange={setPromptComposerValue}
+                  onSubmit={handleSubmitPromptComposer}
+                  onStop={handleStopPromptGeneration}
+                  onFilesSelected={handlePromptAttachmentsSelected}
+                  onRemoveAttachment={handleRemovePromptAttachment}
+                  onAttachmentPreviewLoad={handlePromptAttachmentPreviewLoad}
+                />
+              </div>
+              {chatSidePanel}
             </div>
           </section>
         </div>

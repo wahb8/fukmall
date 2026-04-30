@@ -114,6 +114,30 @@ describe('App minimal chat shell', () => {
       })
   })
 
+  it('keeps the right chat panel hidden by default', async () => {
+    listChatsMock.mockResolvedValue([])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(listChatsMock).toHaveBeenCalled()
+    })
+
+    expect(screen.queryByLabelText('Conversation')).toBeNull()
+    expect(screen.getByLabelText('Instagram caption preview')).toBeInTheDocument()
+  })
+
+  it('shows the right chat panel when the workspace setting is enabled', async () => {
+    window.localStorage.setItem('fukmall.show-chat-panel', 'true')
+    listChatsMock.mockResolvedValue([])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Conversation')).toBeInTheDocument()
+    })
+  })
+
   it('downloads the current canvas from the bottom hover panel as PNG and JPG', async () => {
     listChatsMock.mockResolvedValue([
       createChatSummary('chat-1', 'Campaign ideas'),

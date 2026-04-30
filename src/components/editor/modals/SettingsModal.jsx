@@ -80,9 +80,11 @@ export function SettingsModal({
   isOpen,
   theme,
   trimTransparentImports,
+  showChatPanel = false,
   onClose,
   onToggleTheme,
   onToggleTrimTransparentImports,
+  onToggleShowChatPanel,
 }) {
   const [activeTab, setActiveTab] = useState('workspace')
   const [businessName, setBusinessName] = useState('')
@@ -388,6 +390,15 @@ export function SettingsModal({
               >
                 <span>Trim Transparent Imports</span>
                 <strong>{trimTransparentImports ? 'On' : 'Off'}</strong>
+              </button>
+              <button
+                className={showChatPanel ? 'settings-toggle active' : 'settings-toggle'}
+                type="button"
+                onClick={onToggleShowChatPanel}
+                aria-pressed={showChatPanel}
+              >
+                <span>Chat Side Panel</span>
+                <strong>{showChatPanel ? 'Shown' : 'Hidden'}</strong>
               </button>
             </div>
             </section>
