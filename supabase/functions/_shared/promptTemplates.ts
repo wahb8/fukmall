@@ -83,12 +83,15 @@ export function buildImageGenerationInstructions(params: ImagePromptParams) {
     ? 'A brand logo image is attached and named logo. Treat it as the official brand mark, not as a general style reference.'
     : 'No brand logo image is attached for this request.'
   const modeGuidance = params.generationMode === 'edit'
-    ? 'You are revising an existing social post. Preserve the core brand language unless the user explicitly asks for a change.'
+    ? 'You are revising an existing social post. Change only the specific element, area, wording, object, color, or layout detail requested by the user. Preserve everything else from the current post as closely as possible, including composition, style, colors, text, objects, logo placement, background, and overall brand language unless the user explicitly asks to change them.'
     : 'You are creating a fresh social post from scratch.'
 
   return [
     'You create polished, production-ready social media post images for businesses.',
     modeGuidance,
+    params.generationMode === 'edit'
+      ? 'Do not redesign, restyle, replace, or reinterpret unrelated parts of the post. The result should still look natural, cleanly integrated, and professionally finished after the requested edit.'
+      : null,
     referenceGuidance,
     logoGuidance,
     attachmentGuidance,
@@ -106,7 +109,7 @@ export function buildImageGenerationUserPrompt(params: ImagePromptParams) {
     ? 'Use the attached images only as style references. Do not copy or reuse exact layouts, logos, text, people, products, or specific objects from the reference images unless the user explicitly asks for them. Make sure to use the same color scheme in the attached images as well. If there are colors that are not used in the style of the attached images, make sure they fit the mood and aesthetics of the entire post and brand. The attached image named logo is the only logo that may be used as a brand asset.'
     : 'Use the attached images only as style references. Do not copy or reuse exact layouts, logos, text, people, products, or specific objects from the reference images unless the user explicitly asks for them. Make sure to use the same color scheme in the attached images as well. If there are colors that are not used in the style of the attached images, make sure they fit the mood and aesthetics of the entire post and brand.'
   const firstInstruction = params.generationMode === 'edit'
-    ? 'Update the current post based on the latest instruction.'
+    ? 'Edit the current post using the latest instruction. Only change the part the user asks to edit. Do not alter anything else unless it is absolutely required to make the requested edit look natural and professionally integrated.'
     : hasStyleReferences
       ? [
         'Create a polished Instagram post design that matches the visual style, mood, color palette, typography feel, spacing, and composition style of the attached reference images.',
@@ -130,6 +133,12 @@ export function buildImageGenerationUserPrompt(params: ImagePromptParams) {
     params.userPrompt,
     '',
     'Design requirements:',
+    params.generationMode === 'edit'
+      ? '- Preserve all unrelated parts of the current post. Do not change the background, layout, colors, objects, text, logo, typography, crop, or style unless the user specifically requests that change.'
+      : null,
+    params.generationMode === 'edit'
+      ? '- Make the requested edit blend cleanly with the existing design so it does not look pasted on, misplaced, or unfinished.'
+      : null,
     '- Make it look like a finished social media post, not a generic illustration.',
     '- Keep the layout clean, balanced, and commercially usable.',
     '- If the post needs text, make the text short, readable, and visually integrated.',

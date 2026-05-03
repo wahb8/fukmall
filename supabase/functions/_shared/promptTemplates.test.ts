@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildImageGenerationInstructions,
   buildCaptionUserPrompt,
   buildImageGenerationUserPrompt,
   buildSafeGenerationErrorMessage,
@@ -78,6 +79,39 @@ describe('prompt template helpers', () => {
     expect(prompt).toContain('Create a polished Instagram post design based on the written brand context and user request.')
     expect(prompt).toContain('- Use the brand colors and style preferences where appropriate.')
     expect(prompt).not.toContain('attached reference images')
+  })
+
+  it('uses strict preservation guidance for image edits', () => {
+    const instructions = buildImageGenerationInstructions({
+      businessProfile,
+      userPrompt: 'Move the logo to the right.',
+      requestedWidth: 1080,
+      requestedHeight: 1350,
+      aspectRatioLabel: '4:5',
+      hasBrandReferences: true,
+      hasBrandLogo: true,
+      hasUserAttachments: false,
+      generationMode: 'edit',
+      previousCaption: 'Fresh coffee, now pouring.',
+    })
+    const prompt = buildImageGenerationUserPrompt({
+      businessProfile,
+      userPrompt: 'Move the logo to the right.',
+      requestedWidth: 1080,
+      requestedHeight: 1350,
+      aspectRatioLabel: '4:5',
+      hasBrandReferences: true,
+      hasBrandLogo: true,
+      hasUserAttachments: false,
+      generationMode: 'edit',
+      previousCaption: 'Fresh coffee, now pouring.',
+    })
+
+    expect(instructions).toContain('Change only the specific element, area, wording, object, color, or layout detail requested by the user.')
+    expect(instructions).toContain('Do not redesign, restyle, replace, or reinterpret unrelated parts of the post.')
+    expect(prompt).toContain('Only change the part the user asks to edit.')
+    expect(prompt).toContain('Preserve all unrelated parts of the current post.')
+    expect(prompt).toContain('Make the requested edit blend cleanly with the existing design')
   })
 
   it('builds the requested caption-only prompt for first generation', () => {
