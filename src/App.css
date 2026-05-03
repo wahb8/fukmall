@@ -2987,6 +2987,78 @@
     color-mix(in srgb, var(--surface-strong) 76%, transparent);
 }
 
+.canvas-history-controls {
+  --history-control-height: 3.35rem;
+  position: absolute;
+  top: 0;
+  right: 1.8rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.36rem;
+  border: 1px solid var(--line);
+  border-bottom-color: var(--line-strong);
+  border-radius: 16px 16px 0 0;
+  background:
+    linear-gradient(180deg, rgba(255, 251, 245, 0.96), rgba(255, 247, 237, 0.88)),
+    var(--surface);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 -12px 28px rgba(120, 92, 55, 0.12);
+  transform: translateY(calc(-1 * var(--history-control-height) + 0.62rem));
+}
+
+.canvas-history-controls:hover,
+.canvas-history-controls:focus-within {
+  z-index: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    0 -16px 34px rgba(120, 92, 55, 0.16);
+}
+
+.canvas-history-controls button {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    opacity 160ms ease;
+}
+
+.canvas-history-controls button:hover,
+.canvas-history-controls button:focus-visible {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.canvas-history-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
+.canvas-history-controls img {
+  width: 1.05rem;
+  height: 1.05rem;
+  object-fit: contain;
+}
+
+.canvas-history-controls span {
+  min-width: 2.25rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
 .canvas-slide-panel {
   --slide-tab-width: 3.65rem;
   --slide-tab-visible-width: 3.5rem;

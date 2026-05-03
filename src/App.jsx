@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import addImageIcon from './assets/add image.svg'
 import penTabIcon from './assets/pen.svg'
+import redoIcon from './assets/redo.svg'
+import undoIcon from './assets/undo.svg'
 import { AddLayerPanel } from './components/editor/AddLayerPanel'
 import { AssetLibraryPanel } from './components/editor/AssetLibraryPanel'
 import { CanvasDownloadPanel } from './components/editor/CanvasDownloadPanel'
@@ -1202,6 +1204,50 @@ function mergeCompletedGeneratedPostTimeline(entries, completedPost) {
     : upsertGeneratedPostTimelineEntry(entries, completedPost)
 }
 
+function sortGeneratedPostHistory(posts) {
+  return [...(posts ?? [])]
+    .filter((post) => post?.id && post?.previewUrl)
+    .sort((left, right) => {
+      const leftTime = getGeneratedPostTime(left)
+      const rightTime = getGeneratedPostTime(right)
+
+      if (leftTime !== rightTime) {
+        return leftTime - rightTime
+      }
+
+      return String(left.id).localeCompare(String(right.id))
+    })
+}
+
+function mergeGeneratedPostHistory(posts, post) {
+  if (!post?.id || !post?.previewUrl) {
+    return sortGeneratedPostHistory(posts)
+  }
+
+  return sortGeneratedPostHistory([
+    ...(posts ?? []).filter((currentPost) => currentPost?.id !== post.id),
+    post,
+  ])
+}
+
+function getSelectedGeneratedPostFromHistory(posts, selectedPostId = null) {
+  if (!posts.length) {
+    return null
+  }
+
+  return posts.find((post) => post.id === selectedPostId) ?? posts.at(-1) ?? null
+}
+
+function getGeneratedPostHistoryFromSession(session) {
+  const generatedPosts = sortGeneratedPostHistory(session?.generatedPosts ?? [])
+
+  if (generatedPosts.length > 0) {
+    return generatedPosts
+  }
+
+  return sortGeneratedPostHistory(session?.latestGeneratedPost ? [session.latestGeneratedPost] : [])
+}
+
 function createGeneratedPostCanvasLayer(post, canvasDimensions, existingLayerId = null) {
   if (!post?.previewUrl) {
     return null
@@ -1360,6 +1406,8 @@ function App({
   const [activeChatId, setActiveChatId] = useState(null)
   const [activeChatTimeline, setActiveChatTimeline] = useState([])
   const [activeChatSession, setActiveChatSession] = useState(null)
+  const [activeChatGeneratedPosts, setActiveChatGeneratedPosts] = useState([])
+  const [activeCanvasGeneratedPostId, setActiveCanvasGeneratedPostId] = useState(null)
   const [isChatListLoading, setIsChatListLoading] = useState(false)
   const [isActiveChatLoading, setIsActiveChatLoading] = useState(false)
   const [pendingGeneratedPostCanvasLoadId, setPendingGeneratedPostCanvasLoadId] = useState(null)
@@ -1460,13 +1508,34 @@ function App({
     attachment?.isPreviewLoading ||
     String(attachment?.id ?? '').startsWith('pending-attachment-')
   ))
+  const sortedActiveGeneratedPosts = useMemo(
+    () => sortGeneratedPostHistory(activeChatGeneratedPosts),
+    [activeChatGeneratedPosts],
+  )
+  const activeCanvasGeneratedPost = useMemo(() => (
+    getSelectedGeneratedPostFromHistory(sortedActiveGeneratedPosts, activeCanvasGeneratedPostId)
+  ), [activeCanvasGeneratedPostId, sortedActiveGeneratedPosts])
+  const activeCanvasGeneratedPostIndex = activeCanvasGeneratedPost
+    ? sortedActiveGeneratedPosts.findIndex((post) => post.id === activeCanvasGeneratedPost.id)
+    : -1
+  const canShowPreviousGeneratedPost = activeCanvasGeneratedPostIndex > 0
+  const canShowNextGeneratedPost = (
+    activeCanvasGeneratedPostIndex >= 0 &&
+    activeCanvasGeneratedPostIndex < sortedActiveGeneratedPosts.length - 1
+  )
   const latestGeneratedCaption = useMemo(() => {
+    const activeCaption = String(activeCanvasGeneratedPost?.caption_text ?? '').trim()
+
+    if (activeCaption) {
+      return activeCaption
+    }
+
     const latestGeneratedEntry = [...activeChatTimeline]
       .reverse()
       .find((entry) => entry.kind === 'generated_post' && String(entry.captionText ?? '').trim())
 
     return String(latestGeneratedEntry?.captionText ?? '').trim()
-  }, [activeChatTimeline])
+  }, [activeCanvasGeneratedPost?.caption_text, activeChatTimeline])
   const captionProfileName = (
     defaultBusinessProfile?.name ||
     auth.user?.user_metadata?.full_name ||
@@ -1572,6 +1641,37 @@ function App({
     }
   }, [])
 
+  const selectGeneratedPostForCanvas = useCallback((post) => {
+    setActiveCanvasGeneratedPostId(post?.id ?? null)
+    syncLatestGeneratedPostToCanvas(post)
+  }, [syncLatestGeneratedPostToCanvas])
+
+  const handleShowPreviousGeneratedPost = useCallback(() => {
+    if (!canShowPreviousGeneratedPost) {
+      return
+    }
+
+    selectGeneratedPostForCanvas(sortedActiveGeneratedPosts[activeCanvasGeneratedPostIndex - 1])
+  }, [
+    activeCanvasGeneratedPostIndex,
+    canShowPreviousGeneratedPost,
+    selectGeneratedPostForCanvas,
+    sortedActiveGeneratedPosts,
+  ])
+
+  const handleShowNextGeneratedPost = useCallback(() => {
+    if (!canShowNextGeneratedPost) {
+      return
+    }
+
+    selectGeneratedPostForCanvas(sortedActiveGeneratedPosts[activeCanvasGeneratedPostIndex + 1])
+  }, [
+    activeCanvasGeneratedPostIndex,
+    canShowNextGeneratedPost,
+    selectGeneratedPostForCanvas,
+    sortedActiveGeneratedPosts,
+  ])
+
   useEffect(() => {
     if (!isMinimalEditorMode) {
       return undefined
@@ -1606,7 +1706,8 @@ function App({
     if (!activeChatId) {
       setActiveChatSession(null)
       setActiveChatTimeline([])
-      syncLatestGeneratedPostToCanvas(null)
+      setActiveChatGeneratedPosts([])
+      selectGeneratedPostForCanvas(null)
       clearPromptComposer()
       return undefined
     }
@@ -1625,7 +1726,10 @@ function App({
 
         setActiveChatSession(session?.chat ?? null)
         setActiveChatTimeline(session?.timelineEntries ?? [])
-        syncLatestGeneratedPostToCanvas(session?.latestGeneratedPost ?? null)
+        const sessionGeneratedPosts = getGeneratedPostHistoryFromSession(session)
+        const latestSessionPost = sessionGeneratedPosts.at(-1) ?? null
+        setActiveChatGeneratedPosts(sessionGeneratedPosts)
+        selectGeneratedPostForCanvas(latestSessionPost)
         setChatStatusMessage('')
       } catch (error) {
         if (!isMounted) {
@@ -1635,6 +1739,8 @@ function App({
         console.error('Failed to load the active chat session', error)
         setActiveChatSession(null)
         setActiveChatTimeline([])
+        setActiveChatGeneratedPosts([])
+        selectGeneratedPostForCanvas(null)
         showChatStatusMessage(
           error instanceof Error ? error.message : 'Unable to load the selected chat.',
           'error',
@@ -1655,8 +1761,8 @@ function App({
     activeChatId,
     clearPromptComposer,
     isMinimalEditorMode,
+    selectGeneratedPostForCanvas,
     showChatStatusMessage,
-    syncLatestGeneratedPostToCanvas,
   ])
   const activeBrushTool = currentTool === 'eraser' ? 'eraser' : 'pen'
   const hasActiveLassoSelection = Boolean(lassoSelection?.isClosed)
@@ -4560,6 +4666,8 @@ function App({
       if (isDeletingActiveChat) {
         setActiveChatSession(null)
         setActiveChatTimeline([])
+        setActiveChatGeneratedPosts([])
+        selectGeneratedPostForCanvas(null)
         setActiveChatId(remainingChats[0]?.id ?? null)
         clearPromptComposer()
       }
@@ -4569,7 +4677,7 @@ function App({
         'error',
       )
     }
-  }, [activeChatId, clearPromptComposer, refreshChatSummaries, showChatStatusMessage])
+  }, [activeChatId, clearPromptComposer, refreshChatSummaries, selectGeneratedPostForCanvas, showChatStatusMessage])
 
   const handlePromptAttachmentsSelected = useCallback(async (files) => {
     if (
@@ -4768,7 +4876,8 @@ function App({
         setActiveChatTimeline((currentEntries) => (
           upsertGeneratedPostTimelineEntry(currentEntries, completedGeneratedPost)
         ))
-        syncLatestGeneratedPostToCanvas(completedGeneratedPost)
+        setActiveChatGeneratedPosts((currentPosts) => mergeGeneratedPostHistory(currentPosts, completedGeneratedPost))
+        selectGeneratedPostForCanvas(completedGeneratedPost)
         clearPromptComposer()
         setChatStatusMessage('')
       }
@@ -4790,10 +4899,16 @@ function App({
         session?.timelineEntries ?? [],
         completedGeneratedPost,
       ))
-      syncLatestGeneratedPostToCanvas(chooseLatestGeneratedPostAfterRefresh(
-        session?.latestGeneratedPost ?? null,
+      const nextGeneratedPostHistory = mergeGeneratedPostHistory(
+        getGeneratedPostHistoryFromSession(session),
         completedGeneratedPost,
-      ))
+      )
+      const selectedGeneratedPost = chooseLatestGeneratedPostAfterRefresh(
+        nextGeneratedPostHistory.at(-1) ?? null,
+        completedGeneratedPost,
+      )
+      setActiveChatGeneratedPosts(nextGeneratedPostHistory)
+      selectGeneratedPostForCanvas(selectedGeneratedPost)
       clearPromptComposer()
       setChatStatusMessage('')
     } catch (error) {
@@ -4815,6 +4930,9 @@ function App({
           setActiveChatId(chatId)
           setActiveChatSession(session?.chat ?? null)
           setActiveChatTimeline(session?.timelineEntries ?? [])
+          const sessionGeneratedPosts = getGeneratedPostHistoryFromSession(session)
+          setActiveChatGeneratedPosts(sessionGeneratedPosts)
+          selectGeneratedPostForCanvas(sessionGeneratedPosts.at(-1) ?? null)
         } catch (refreshError) {
           console.error('Failed to refresh chat after generation error', refreshError)
         }
@@ -4846,8 +4964,8 @@ function App({
     promptComposerAttachments,
     promptComposerValue,
     refreshChatSummaries,
+    selectGeneratedPostForCanvas,
     showChatStatusMessage,
-    syncLatestGeneratedPostToCanvas,
   ])
 
   function handleNewFile() {
@@ -4889,6 +5007,8 @@ function App({
         setActiveChatId(createdChat.id)
         setActiveChatSession(createdChat)
         setActiveChatTimeline([])
+        setActiveChatGeneratedPosts([])
+        setActiveCanvasGeneratedPostId(null)
         clearPromptComposer()
         setChatStatusMessage('')
       } catch (error) {
@@ -8179,6 +8299,31 @@ function App({
   )
   const canvasUtilityPanels = (
     <>
+      {isMinimalEditorMode && sortedActiveGeneratedPosts.length > 1 ? (
+        <aside className="canvas-history-controls" aria-label="Generated image history">
+          <button
+            type="button"
+            onClick={handleShowPreviousGeneratedPost}
+            disabled={!canShowPreviousGeneratedPost || isActiveChatLoading}
+            aria-label="Show previous generated image"
+            title="Previous generated image"
+          >
+            <img src={undoIcon} alt="" aria-hidden="true" />
+          </button>
+          <span aria-live="polite">
+            {`${Math.max(activeCanvasGeneratedPostIndex + 1, 1)} / ${sortedActiveGeneratedPosts.length}`}
+          </span>
+          <button
+            type="button"
+            onClick={handleShowNextGeneratedPost}
+            disabled={!canShowNextGeneratedPost || isActiveChatLoading}
+            aria-label="Show next generated image"
+            title="Next generated image"
+          >
+            <img src={redoIcon} alt="" aria-hidden="true" />
+          </button>
+        </aside>
+      ) : null}
       <aside className="canvas-slide-panel canvas-slide-panel-right" aria-label="Canvas side tools">
         <span className="canvas-slide-tab" aria-label="Tools">
           <img src={penTabIcon} alt="" aria-hidden="true" />

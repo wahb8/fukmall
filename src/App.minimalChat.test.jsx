@@ -63,6 +63,7 @@ function createChatSession(id, title, overrides = {}) {
       status: 'active',
     },
     timelineEntries: [],
+    generatedPosts: [],
     latestGeneratedPost: null,
     ...overrides,
   }
@@ -199,6 +200,103 @@ describe('App minimal chat shell', () => {
         expect.any(String),
       )
     })
+  })
+
+  it('navigates generated image history from the canvas top controls', async () => {
+    const firstPost = {
+      id: 'post-1',
+      chat_id: 'chat-1',
+      bucket_name: 'generated-posts',
+      image_storage_path: 'user/renders/post-1.png',
+      previewUrl: 'https://example.com/generated-post-1.png',
+      caption_text: 'First generated caption.',
+      width: 1080,
+      height: 1080,
+      created_at: '2026-04-29T10:00:00.000Z',
+    }
+    const secondPost = {
+      id: 'post-2',
+      chat_id: 'chat-1',
+      bucket_name: 'generated-posts',
+      image_storage_path: 'user/renders/post-2.png',
+      previewUrl: 'https://example.com/generated-post-2.png',
+      caption_text: 'Second generated caption.',
+      width: 1080,
+      height: 1350,
+      created_at: '2026-04-29T10:05:00.000Z',
+    }
+
+    listChatsMock.mockResolvedValue([
+      createChatSummary('chat-1', 'Campaign ideas'),
+    ])
+    loadChatSessionMock.mockResolvedValue(createChatSession('chat-1', 'Campaign ideas', {
+      generatedPosts: [firstPost, secondPost],
+      latestGeneratedPost: secondPost,
+      timelineEntries: [],
+    }))
+
+    const { container } = render(<App />)
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-generated-post-id="post-2"]')).toBeInTheDocument()
+      expect(screen.getByText('2 / 2')).toBeInTheDocument()
+      expect(screen.getByText('Second generated caption.')).toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('button', { name: 'Show previous generated image' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Show next generated image' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show previous generated image' }))
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-generated-post-id="post-1"]')).toBeInTheDocument()
+      expect(screen.getByText('1 / 2')).toBeInTheDocument()
+      expect(screen.getByText('First generated caption.')).toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('button', { name: 'Show previous generated image' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Show next generated image' })).not.toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show next generated image' }))
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-generated-post-id="post-2"]')).toBeInTheDocument()
+      expect(screen.getByText('2 / 2')).toBeInTheDocument()
+      expect(screen.getByText('Second generated caption.')).toBeInTheDocument()
+    })
+  })
+
+  it('hides generated image history controls until a chat has an edited version', async () => {
+    const firstPost = {
+      id: 'post-1',
+      chat_id: 'chat-1',
+      bucket_name: 'generated-posts',
+      image_storage_path: 'user/renders/post-1.png',
+      previewUrl: 'https://example.com/generated-post-1.png',
+      caption_text: 'Only generated caption.',
+      width: 1080,
+      height: 1080,
+      created_at: '2026-04-29T10:00:00.000Z',
+    }
+
+    listChatsMock.mockResolvedValue([
+      createChatSummary('chat-1', 'Campaign ideas'),
+    ])
+    loadChatSessionMock.mockResolvedValue(createChatSession('chat-1', 'Campaign ideas', {
+      generatedPosts: [firstPost],
+      latestGeneratedPost: firstPost,
+      timelineEntries: [],
+    }))
+
+    const { container } = render(<App />)
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-generated-post-id="post-1"]')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByLabelText('Generated image history')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Show previous generated image' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Show next generated image' })).toBeNull()
   })
 
   it('anchors prompt image attachments to the canvas instead of between the canvas and prompt input', async () => {

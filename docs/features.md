@@ -110,6 +110,9 @@ Current behavior:
 - the sidebar supports selecting, renaming, and deleting chats
 - the conversation panel below the canvas loads previous prompts, saved prompt attachments, and
   saved generated-post records for the active chat
+- generated-post versions for the active chat are kept in memory after the chat loads, and the
+  canvas exposes compact top controls for stepping backward or forward through those generated
+  images without refetching the chat once there is more than one generated version
 - the prompt composer can upload image attachments through the existing signed upload flow and save
   those asset references onto the user prompt
 - sending a prompt saves a real `chat_messages` row and refreshes the active chat history

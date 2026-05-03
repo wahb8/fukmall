@@ -440,6 +440,7 @@ export async function loadChatSession(chatId) {
   return {
     chat,
     timelineEntries,
+    generatedPosts: generatedPostEntries,
     latestGeneratedPost: generatedPostEntries.at(-1) ?? null,
   }
 }

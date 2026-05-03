@@ -339,6 +339,17 @@ describe('chatSessions', () => {
         previewUrl: 'https://example.com/post-1.png',
       }),
     ])
+    expect(session.generatedPosts).toEqual([
+      expect.objectContaining({
+        id: 'post-1',
+        caption_text: 'Fresh roast landing this week.',
+        previewUrl: 'https://example.com/post-1.png',
+      }),
+    ])
+    expect(session.latestGeneratedPost).toEqual(expect.objectContaining({
+      id: 'post-1',
+      previewUrl: 'https://example.com/post-1.png',
+    }))
   })
 
   it('remembers generated post preview URLs returned by edge functions', async () => {
