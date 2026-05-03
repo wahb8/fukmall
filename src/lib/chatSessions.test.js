@@ -504,6 +504,40 @@ describe('chatSessions', () => {
     })
   })
 
+  it('deletes chats through the chats table so database FK cleanup owns related assets', async () => {
+    const eqMock = vi.fn(async (column, value) => {
+      expect(column).toBe('id')
+      expect(value).toBe('chat-1')
+
+      return {
+        error: null,
+      }
+    })
+    const deleteMock = vi.fn(() => ({
+      eq: eqMock,
+    }))
+    const supabase = {
+      from: vi.fn((table) => {
+        if (table === 'chats') {
+          return {
+            delete: deleteMock,
+          }
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+    }
+
+    getRequiredSupabaseClientMock.mockReturnValue(supabase)
+
+    const { deleteChat } = await import('./chatSessions')
+    await deleteChat('chat-1')
+
+    expect(supabase.from).toHaveBeenCalledWith('chats')
+    expect(deleteMock).toHaveBeenCalledTimes(1)
+    expect(eqMock).toHaveBeenCalledTimes(1)
+  })
+
   it('invokes the generate-post edge function with normalized data', async () => {
     invokeEdgeFunctionMock.mockResolvedValue({
       post: {
@@ -541,6 +575,22 @@ describe('chatSessions', () => {
         id: 'post-1',
       },
     })
+  })
+
+  it('rejects more than five prompt attachments before calling generation', async () => {
+    const attachmentAssetIds = Array.from({ length: 6 }, (_, index) => `asset-${index + 1}`)
+
+    const { generatePost, MAX_PROMPT_ATTACHMENT_COUNT } = await import('./chatSessions')
+
+    expect(MAX_PROMPT_ATTACHMENT_COUNT).toBe(5)
+    await expect(generatePost({
+      chatId: 'chat-1',
+      prompt: 'Create a launch post',
+      width: 1080,
+      height: 1350,
+      attachmentAssetIds,
+    })).rejects.toThrow('You can attach up to 5 images per prompt.')
+    expect(invokeEdgeFunctionMock).not.toHaveBeenCalled()
   })
 
   it('loads generation job status through the status edge function', async () => {

@@ -3557,6 +3557,55 @@
   }
 }
 
+.canvas-attachment-tabs.canvas-attachment-tabs-right {
+  top: 11.65rem;
+  right: 0;
+  left: auto;
+  transform: translateX(calc(var(--attachment-drawer-width) + var(--attachment-tab-size)));
+}
+
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment::before {
+  right: var(--attachment-drawer-width);
+  left: auto;
+}
+
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment-track {
+  right: auto;
+  left: calc(var(--attachment-tab-overhang) - var(--attachment-drawer-width));
+}
+
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment:hover .canvas-prompt-attachment-track,
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment:focus-within .canvas-prompt-attachment-track {
+  transform: translateX(var(--attachment-drawer-width));
+  filter: drop-shadow(6px 8px 14px rgba(120, 92, 55, 0.08));
+}
+
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment-details {
+  padding: 1rem 1.1rem 1rem 1rem;
+  border-right: 1px solid var(--line);
+  border-left: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 251, 245, 0.98), rgba(255, 247, 237, 0.9)),
+    var(--panel-strong);
+  box-shadow: 18px 22px 46px rgba(120, 92, 55, 0.16);
+}
+
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment:hover .canvas-prompt-attachment-details,
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment:focus-within .canvas-prompt-attachment-details {
+  box-shadow: 22px 24px 54px rgba(120, 92, 55, 0.2);
+}
+
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment-image,
+.canvas-attachment-tabs.canvas-attachment-tabs-right .canvas-prompt-attachment-fallback {
+  right: calc(-1 * var(--attachment-tab-size));
+  left: auto;
+  padding-right: 0;
+  border-right: 1px solid var(--line-strong);
+  border-left: 0;
+  border-radius: 0 20px 20px 0;
+  box-shadow: 12px 16px 34px rgba(120, 92, 55, 0.16);
+}
+
 .canvas-prompt-shell {
   display: flex;
   align-items: flex-start;

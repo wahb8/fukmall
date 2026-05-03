@@ -211,6 +211,7 @@ import {
   generatePost,
   listChats,
   loadChatSession,
+  MAX_PROMPT_ATTACHMENT_COUNT,
   normalizeGeneratedPostPreview,
   renameChat,
   uploadPromptAttachment,
@@ -4680,17 +4681,26 @@ function App({
   }, [activeChatId, clearPromptComposer, refreshChatSummaries, selectGeneratedPostForCanvas, showChatStatusMessage])
 
   const handlePromptAttachmentsSelected = useCallback(async (files) => {
+    const selectedFiles = Array.isArray(files) ? files : []
+
     if (
       !isMinimalEditorMode ||
       isPromptSubmitting ||
       isPromptAttachmentUploading ||
-      !Array.isArray(files) ||
-      files.length === 0
+      selectedFiles.length === 0
     ) {
       return
     }
 
-    const pendingAttachments = files.map((file, index) => ({
+    if (promptComposerAttachments.length + selectedFiles.length > MAX_PROMPT_ATTACHMENT_COUNT) {
+      showChatStatusMessage(
+        `You can attach up to ${MAX_PROMPT_ATTACHMENT_COUNT} images per prompt.`,
+        'error',
+      )
+      return
+    }
+
+    const pendingAttachments = selectedFiles.map((file, index) => ({
       id: `pending-attachment-${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
       original_file_name: file.name,
       isLoading: true,
@@ -4706,7 +4716,7 @@ function App({
     try {
       const chatId = await ensureActiveChat(documentName)
       const uploadedAttachments = await Promise.all(
-        files.map((file) => uploadPromptAttachment(chatId, file)),
+        selectedFiles.map((file) => uploadPromptAttachment(chatId, file)),
       )
 
       setPromptComposerAttachments((currentAttachments) => {
@@ -4744,6 +4754,7 @@ function App({
     isMinimalEditorMode,
     isPromptAttachmentUploading,
     isPromptSubmitting,
+    promptComposerAttachments.length,
     showChatStatusMessage,
   ])
 
@@ -4792,6 +4803,14 @@ function App({
 
     if (isPromptAttachmentUploading || hasPendingPromptAttachments) {
       showChatStatusMessage('Wait for attached images to finish loading before sending.', 'error')
+      return
+    }
+
+    if (promptComposerAttachments.length > MAX_PROMPT_ATTACHMENT_COUNT) {
+      showChatStatusMessage(
+        `You can attach up to ${MAX_PROMPT_ATTACHMENT_COUNT} images per prompt.`,
+        'error',
+      )
       return
     }
 
@@ -8370,13 +8389,23 @@ function App({
                   <div className="canvas-composer-shell">
                     {canvasUtilityPanels}
                     <PromptAttachmentTabs
-                      attachments={promptComposerAttachments}
+                      attachments={promptComposerAttachments.slice(0, 3)}
                       disabled={isPromptAttachmentUploading || isPromptSubmitting || hasPendingPromptAttachments}
                       isSubmitting={isPromptSubmitting}
                       onRemoveAttachment={handleRemovePromptAttachment}
                       onAttachmentPreviewLoad={handlePromptAttachmentPreviewLoad}
                       className="canvas-attachment-tabs"
                     />
+                    {promptComposerAttachments.length > 3 ? (
+                      <PromptAttachmentTabs
+                        attachments={promptComposerAttachments.slice(3)}
+                        disabled={isPromptAttachmentUploading || isPromptSubmitting || hasPendingPromptAttachments}
+                        isSubmitting={isPromptSubmitting}
+                        onRemoveAttachment={handleRemovePromptAttachment}
+                        onAttachmentPreviewLoad={handlePromptAttachmentPreviewLoad}
+                        className="canvas-attachment-tabs canvas-attachment-tabs-right"
+                      />
+                    ) : null}
                     <div
                       ref={canvasRef}
                       className="canvas-stage canvas-stage-read-only"
@@ -8412,6 +8441,7 @@ function App({
                   value={promptComposerValue}
                   attachments={promptComposerAttachments}
                   showAttachments={false}
+                  isAttachmentPickerDisabled={promptComposerAttachments.length >= MAX_PROMPT_ATTACHMENT_COUNT}
                   isSubmitting={isPromptSubmitting}
                   isUploadingAttachments={isPromptAttachmentUploading || hasPendingPromptAttachments}
                   statusMessage={chatStatusTone === 'error' ? chatStatusMessage : ''}

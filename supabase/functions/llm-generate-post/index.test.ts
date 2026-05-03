@@ -117,6 +117,43 @@ describe('llm-generate-post edge function', () => {
     })
   })
 
+  it('rejects generation requests with more than five prompt attachments', async () => {
+    requireAuthenticatedUserMock.mockResolvedValue({
+      user: {
+        id: '11111111-1111-4111-8111-111111111111',
+      },
+    })
+
+    const handler = await loadHandler()
+    const attachmentIds = Array.from({ length: 6 }, (_, index) => (
+      `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`
+    ))
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: '37a9f95e-f2fa-42fe-9690-604fce8198d3',
+        prompt: 'Create a post',
+        width: 1080,
+        height: 1080,
+        attachment_asset_ids: attachmentIds,
+      }),
+    }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'A maximum of 5 attachment assets is allowed per generation request.',
+      },
+    })
+    expect(createAdminClientMock).not.toHaveBeenCalled()
+  })
+
   it('creates a generation job with normalized attachment ids', async () => {
     const attachmentIds = [
       '1fb64d91-7468-4c1e-827a-7a4bb93343fb',

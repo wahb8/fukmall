@@ -112,6 +112,30 @@ describe('PromptShell', () => {
     expect(handleSubmit).not.toHaveBeenCalled()
   })
 
+  it('can disable only the attachment picker while leaving prompt entry available', () => {
+    const handleChange = vi.fn()
+
+    render(
+      <PromptShell
+        value="Create a launch post"
+        isAttachmentPickerDisabled
+        onChange={handleChange}
+      />,
+    )
+
+    const promptInput = screen.getByRole('textbox')
+
+    expect(screen.getByRole('button', { name: 'Add image' })).toBeDisabled()
+    expect(promptInput).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Submit prompt' })).not.toBeDisabled()
+
+    fireEvent.change(promptInput, {
+      target: { value: 'Create a launch post with a product photo' },
+    })
+
+    expect(handleChange).toHaveBeenCalledWith('Create a launch post with a product photo')
+  })
+
   it('keeps keyboard submit behavior for normal prompt entry', () => {
     const handleSubmit = vi.fn()
 

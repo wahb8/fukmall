@@ -109,6 +109,10 @@ Current status:
   `/app` chat shell
 - prompt attachments are saved through the signed upload flow and linked to chat messages
 - generated-post history is loaded with signed previews when records exist
+- deleting a chat now detaches linked uploaded-asset metadata at the database FK layer so chat
+  deletion is not blocked by prompt attachments
+- related generated-post and generation-job pointer columns are also cleared on parent deletion so
+  chat cleanup is not blocked by child-to-child relationships
 
 ### 6. Onboarding Context And Asset Intake
 

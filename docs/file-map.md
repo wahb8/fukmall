@@ -120,7 +120,9 @@ This document describes what each tracked file in the repo currently does.
 - contains the fixed left-side tool layout, zoom-tool reset behavior, and file-menu interactions
 - contains the transient top-toolbar status/error state plus the timer and manual-dismiss wiring for
   that pill
-- contains a currently unwired prompt-style input below the canvas
+- contains the minimal chat workspace orchestration, including the centered canvas/caption column,
+  right-side chat panel, prompt composer, generation polling, image-history selection, and
+  prompt-attachment readiness state
 - contains move interaction behavior such as snapping and temporary Shift axis locking
 - contains the selected-frame move behavior so already-selected layers can be dragged from their transformed selection frame without another opaque-pixel hit
 - renders selected-layer chrome outside the per-layer artwork subtree so selection frames and resize handles do not inherit layer artwork opacity
@@ -226,15 +228,25 @@ This document describes what each tracked file in the repo currently does.
 
 ### `src/components/editor/ChatTimelinePanel.jsx`
 
-- presentational conversation/history panel rendered below the canvas in the minimal `/app` shell
+- presentational conversation/history panel rendered as the right-side chat panel in the minimal
+  `/app` shell
 - shows saved user/assistant messages, attachment previews, generated-post previews, and empty or
   loading states
+
+### `src/components/editor/InstagramCaptionPreview.jsx`
+
+- presentational Instagram-style caption strip rendered below the minimal canvas
+- shows the active profile name immediately beside the generated caption or a calm empty/loading
+  placeholder
 
 ### `src/components/editor/PromptShell.jsx`
 
 - prompt composer used below the canvas
 - supports a controlled prompt value, attachment uploads, attachment removal, submit handling, and
   inline status messaging
+- keeps the prompt textarea editable while attachment upload/preview work is still pending, while
+  disabling add/send actions until the attachments are ready
+- supports disabling only the attachment picker when the prompt reaches the 5-image cap
 
 ### `src/components/editor/modals/NewFileModal.jsx`
 
@@ -350,7 +362,11 @@ This document describes what each tracked file in the repo currently does.
 - constrains the asset library panel height and makes the thumbnail region scroll independently from the header
 - constrains the Add Layer panel height and gives it its own internal scroll region below the asset library
 - controls the masonry-like asset card layout and the asset delete button placement
-- styles the file menu dropdown, active asset-drop canvas state, shared multi-selection frame, inline text editor, and the prompt shell below the canvas
+- styles the file menu dropdown, active asset-drop canvas state, shared multi-selection frame, inline
+  text editor, centered canvas/caption column, right-side chat panel, edge-mounted attachment
+  previews, the mirrored right-side attachment rail for larger attachment sets, and the prompt shell
+  below the canvas
+- keeps the mirrored right-side attachment rail visually below the PNG/JPG download controls
 - styles the transient top-toolbar status/error pill and its corner-mounted dismiss button
 - makes the single-layer selection frame interactive so it can act as the move region for already-selected layers
 - styles the selection overlay path so visible selection chrome stays independent from layer artwork opacity

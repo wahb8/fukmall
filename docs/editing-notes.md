@@ -347,13 +347,21 @@ Resize now depends on a stable pointer-down snapshot:
 
 ### Prompt Input
 
-The prompt-style input below the canvas is currently visual-only.
+The prompt-style input below the minimal canvas is part of the real generation/edit flow.
 
 That means:
 
-- it is rendered and styled in the UI
-- it does not currently generate content or modify the document
-- future work can either wire it into a real flow or remove it cleanly
+- it submits prompts through the chat/generation pipeline rather than mutating document layers
+  directly
+- follow-up prompts are treated as edits once the active chat has a generated post
+- prompt attachments use the signed upload flow and block sending until the upload/preview state is
+  ready
+- prompt attachments are capped at 5 images per prompt in both the frontend composer and backend
+  generation request validation
+- typing remains available while attachments are still being prepared, so attachment readiness
+  should only lock send/add actions rather than the textarea itself
+- generated results are loaded back onto the canvas as the active generated image, with separate
+  image-history navigation for older/newer generated versions
 
 ## Testing Reality
 

@@ -216,9 +216,13 @@ The background combines:
 - white-to-cream gradients
 - soft rounded corners
 
-The stage now sits inside a post-composer shell that adds a compact caption area directly below
-the canvas. The caption area is editor chrome, not document content, and the canvas/document display
-size remains controlled by the stage metrics above.
+The minimal editor stage now sits inside a post-composer shell that keeps the canvas and
+Instagram-style caption preview grouped as the centered main content column. The caption area is
+editor chrome, not document content, and the canvas/document display size remains controlled by the
+stage metrics above.
+
+The conversation/chat history panel lives to the right of that centered main column. It should not
+be implemented as a simple two-column layout that pushes the canvas left.
 
 ## Controls
 
@@ -300,7 +304,13 @@ Inline text editing swaps the rendered text canvas for a textarea with a dashed 
 
 There is currently no active group-layer-specific UI because the group feature is disabled.
 
-Below the canvas there is a styled prompt shell with a single input, but it is currently visual-only and not connected to editing logic.
+Below the canvas there is a styled prompt shell with a single input connected to the minimal
+generation/edit flow. Attachment upload/loading can disable send actions, but typing in the prompt
+input should remain available while attachments are still being prepared. The attachment picker
+should stop accepting more images once the prompt reaches the 5-image cap. Canvas-edge attachment
+tabs keep the first 3 images on the left edge and mirror only overflow images to the right edge.
+The right-edge overflow rail starts below the PNG/JPG download control so attachment thumbnails do
+not cover those export actions.
 
 During supported external desktop image-file drags, the stage also shows a centered import overlay card.
 

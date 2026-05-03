@@ -49,7 +49,8 @@ Current model defaults:
 ### Initial Post Generation
 
 1. authenticate the user
-2. validate input prompt, dimensions, and attachment references
+2. validate input prompt, dimensions, and attachment references, including the 5-image prompt
+   attachment cap
 3. verify chat ownership
 4. verify subscription tier and usage availability
 5. fetch profile context:
@@ -114,6 +115,11 @@ Current prompt behavior:
 Current MVP behavior:
 
 - `generate-post` treats any chat with an existing generated post as an edit request
+- edit prompts send the latest generated image as `current-post`, plus the optional saved `logo`
+  image and any new prompt attachments for that edit
+- edit prompt language is intentionally strict: it tells the model to change only the requested
+  element/area/detail, preserve unrelated background/layout/colors/objects/text/logo/typography, and
+  blend the requested change cleanly so it still looks professionally integrated
 - each edit writes a new `generated_posts` row with `previous_post_id`, `version_group_id`, and an
   incremented `version_number`
 - a dedicated `edit-post` function can still be added later if the edit flow needs a separate API

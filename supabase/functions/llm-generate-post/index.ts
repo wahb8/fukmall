@@ -16,6 +16,7 @@ interface GeneratePostRequest {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const MAX_PROMPT_ATTACHMENT_COUNT = 5
 
 function assertUuid(value: string, fieldName: string) {
   if (!UUID_PATTERN.test(value)) {
@@ -28,10 +29,10 @@ function normalizeAttachmentIds(attachmentAssetIds?: string[]) {
     ? [...new Set(attachmentAssetIds.filter(Boolean))]
     : []
 
-  if (normalized.length > 5) {
+  if (normalized.length > MAX_PROMPT_ATTACHMENT_COUNT) {
     throw new AppError(
       'VALIDATION_ERROR',
-      'A maximum of 5 attachment assets is allowed per generation request.',
+      `A maximum of ${MAX_PROMPT_ATTACHMENT_COUNT} attachment assets is allowed per generation request.`,
       400,
     )
   }

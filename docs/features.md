@@ -108,24 +108,32 @@ Current behavior:
 - the left sidebar now lists the user's saved chats instead of placeholder posts
 - creating a new file in the minimal editor mode also creates a matching chat record
 - the sidebar supports selecting, renaming, and deleting chats
-- the conversation panel below the canvas loads previous prompts, saved prompt attachments, and
-  saved generated-post records for the active chat
+- the right-side conversation panel loads previous prompts, saved prompt attachments, and saved
+  generated-post records for the active chat without pushing the main canvas column off-center
+- the Instagram-style caption preview below the canvas shows the profile name beside the latest
+  selected generated caption, so the canvas reads like a post preview rather than only an editor
+  artboard
 - generated-post versions for the active chat are kept in memory after the chat loads, and the
   canvas exposes compact top controls for stepping backward or forward through those generated
   images without refetching the chat once there is more than one generated version
 - the prompt composer can upload image attachments through the existing signed upload flow and save
   those asset references onto the user prompt
-- sending a prompt saves a real `chat_messages` row and refreshes the active chat history
+- prompt attachment previews sit on the canvas edge, show loading placeholders while upload/preview
+  work is still pending, enforce a maximum of 5 images per prompt, and block sending until
+  attachments are ready while keeping the prompt text editable
+- the first 3 prompt attachment previews stay on the left canvas edge; any extra attachments after
+  that render in a mirrored right-edge rail so larger attachment sets do not crowd one side
+- sending a prompt starts the real backend generation flow, creates/polls a generation job, paints
+  the completed image onto the canvas, and refreshes the active chat history
 - chat titles can auto-update from the first meaningful prompt when the chat still has a generic
   title such as `Untitled chat`
 
 Current constraints:
 
-- this pass only saves user prompts and prompt-attachment references directly from the client
-- assistant responses and generated-post rows are still expected to be written by the trusted
-  backend generation/edit flows
 - the minimal chat shell currently restores conversation history, not a full per-chat editor canvas
   document snapshot
+- the right-side chat layout can be hidden through the editor setting that toggles the chat panel
+  visibility
 
 ## Layer Types
 
@@ -626,7 +634,9 @@ Supported behavior includes:
 
 The stage visually represents the active document dimensions fitted inside the editor display frame.
 
-There is also a prompt-style input rendered below the canvas, but it is currently presentational only and is not wired into document generation or editing behavior.
+In the minimal chat workspace, the prompt composer below the canvas is wired into the backend
+generation/edit flow. The composer supports text prompts, prompt attachments, stop-generation
+behavior, and readiness locking while attachment previews are still loading.
 
 ## Transient Status UI
 

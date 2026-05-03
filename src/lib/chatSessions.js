@@ -63,12 +63,24 @@ const UPLOADED_ASSET_SELECT = `
   updated_at
 `
 
+export const MAX_PROMPT_ATTACHMENT_COUNT = 5
+
 function normalizeAssetIds(assetIds) {
   return Array.from(new Set(
     (assetIds ?? [])
       .map((assetId) => String(assetId ?? '').trim())
       .filter(Boolean),
   ))
+}
+
+function normalizePromptAttachmentIds(assetIds) {
+  const normalized = normalizeAssetIds(assetIds)
+
+  if (normalized.length > MAX_PROMPT_ATTACHMENT_COUNT) {
+    throw new Error(`You can attach up to ${MAX_PROMPT_ATTACHMENT_COUNT} images per prompt.`)
+  }
+
+  return normalized
 }
 
 function getMessageAttachmentIds(message) {
@@ -507,7 +519,7 @@ export async function generatePost({
       height,
       aspect_ratio: aspectRatio,
       business_profile_id: businessProfileId,
-      attachment_asset_ids: normalizeAssetIds(attachmentAssetIds),
+      attachment_asset_ids: normalizePromptAttachmentIds(attachmentAssetIds),
     },
     'Unable to generate the post.',
     { signal },
@@ -669,7 +681,7 @@ export async function submitUserPrompt({
       message_type: 'text',
       content_text: normalizedPrompt,
       metadata: {
-        attachment_asset_ids: normalizeAssetIds(attachmentAssetIds),
+        attachment_asset_ids: normalizePromptAttachmentIds(attachmentAssetIds),
       },
     })
     .select(CHAT_MESSAGE_SELECT)

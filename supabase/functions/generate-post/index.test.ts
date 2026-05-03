@@ -289,6 +289,44 @@ describe('generate-post edge function', () => {
     delete (globalThis as typeof globalThis & { EdgeRuntime?: unknown }).EdgeRuntime
   })
 
+  it('rejects generation requests with more than five prompt attachments', async () => {
+    requireAuthenticatedUserMock.mockResolvedValue({
+      user: {
+        id: USER_ID,
+      },
+    })
+
+    const attachmentAssetIds = Array.from({ length: 6 }, (_, index) => (
+      `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`
+    ))
+    const handler = await loadHandler()
+    const response = await handler(new Request('https://example.com', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        prompt: 'Create a launch post',
+        width: 1080,
+        height: 1350,
+        attachment_asset_ids: attachmentAssetIds,
+      }),
+    }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'A maximum of 5 attachment assets is allowed per generation request.',
+      },
+    })
+    expect(generatePostImageMock).not.toHaveBeenCalled()
+    expect(generateCaptionMock).not.toHaveBeenCalled()
+  })
+
   it('creates an initial generated post, assistant response, and usage records', async () => {
     vi.spyOn(crypto, 'randomUUID').mockReturnValue(GENERATED_POST_ID)
     const titleDeferred = createDeferred<{

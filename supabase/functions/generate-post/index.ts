@@ -115,6 +115,7 @@ const TRANSFORMABLE_REFERENCE_MIME_TYPES = new Set([
 const REFERENCE_TRANSFORM_MAX_DIMENSION = 1024
 const REFERENCE_TRANSFORM_MIN_SIZE_BYTES = 1024 * 1024
 const REFERENCE_TRANSFORM_QUALITY = 76
+const MAX_PROMPT_ATTACHMENT_COUNT = 5
 
 function assertUuid(value: string, fieldName: string) {
   if (!UUID_PATTERN.test(value)) {
@@ -127,10 +128,10 @@ function normalizeAttachmentIds(attachmentAssetIds?: string[]) {
     ? [...new Set(attachmentAssetIds.filter(Boolean))]
     : []
 
-  if (normalized.length > 5) {
+  if (normalized.length > MAX_PROMPT_ATTACHMENT_COUNT) {
     throw new AppError(
       'VALIDATION_ERROR',
-      'A maximum of 5 attachment assets is allowed per generation request.',
+      `A maximum of ${MAX_PROMPT_ATTACHMENT_COUNT} attachment assets is allowed per generation request.`,
       400,
     )
   }

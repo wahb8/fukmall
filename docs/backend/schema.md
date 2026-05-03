@@ -243,6 +243,8 @@ Notes:
   behavior
 - `asset_kind` covers logo, brand-reference, prompt attachment, chat attachment, generated input,
   and fallback `other`
+- when a chat is deleted, `uploaded_assets.chat_id` is set to `null` instead of blocking the chat
+  delete; this preserves user-owned upload metadata while detaching it from the removed chat
 - client-side metadata writes are intentionally blocked until the upload flow is implemented through
   trusted backend/storage rules
 
@@ -277,6 +279,8 @@ Notes:
 
 - each edit or regeneration creates a new row in this table
 - `previous_post_id` links a version to the row it was derived from
+- if a referenced source message or previous post is removed, the nullable pointer is cleared
+  instead of blocking cleanup
 - `version_group_id` groups all versions of the same logical post
 - statuses are constrained to `draft`, `edited`, `final`, `exported`, or `failed`
 - generated image files are referenced by storage bucket/path, not stored inline
@@ -315,6 +319,8 @@ Notes:
 - statuses are constrained to `pending`, `processing`, `completed`, `failed`, or `canceled`
 - `canceled` is used when the user interrupts an in-progress async generation from the frontend
 - this supports the current async MVP and gives a clean path to durable job processing later
+- if a referenced source message or output post is removed, the nullable job pointer is cleared
+  instead of blocking chat cleanup
 
 ### `usage_periods`
 
@@ -439,10 +445,12 @@ Key relationships:
 - `profiles 1:n chats`
 - `chats 1:n chat_messages`
 - `profiles 1:n uploaded_assets`
+- `chats 1:n uploaded_assets` through nullable `chat_id`; chat deletion clears this link
 - `chats 1:n generated_posts`
 - `chat_messages 1:n generated_posts` through `source_message_id`
 - `generated_posts` self-references through `previous_post_id`
 - `generated_posts` can be linked back from `generation_jobs.output_post_id`
+- nullable source/output/version pointers are set to `null` when their referenced rows are removed
 - `profiles 1:n usage_periods`
 - `usage_periods 1:n usage_events`
 

@@ -1,5 +1,16 @@
 # Backend Docs Changelog
 
+## 2026-05-03
+
+- fixed chat deletion with linked upload metadata by changing `uploaded_assets_chat_fk` so deleting
+  a chat clears `uploaded_assets.chat_id` instead of blocking the delete with a foreign-key error
+- hardened chat deletion cleanup by changing nullable generated-post and generation-job pointer FKs
+  to clear their pointer columns when related messages/posts are removed
+- documented the current strict edit-prompt behavior that preserves unrelated post details while
+  blending requested changes cleanly
+- enforced a 5-image hard cap for prompt attachments in the frontend composer and generation Edge
+  Function validation
+
 ## 2026-04-30
 
 - moved business-profile asset deletion/usage cleanup into Edge Runtime background work, guarded

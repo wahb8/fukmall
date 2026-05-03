@@ -33,6 +33,7 @@ vi.mock('./lib/chatSessions', () => ({
   generatePost: generatePostMock,
   listChats: listChatsMock,
   loadChatSession: loadChatSessionMock,
+  MAX_PROMPT_ATTACHMENT_COUNT: 5,
   normalizeGeneratedPostPreview: (post) => (
     post ? { ...post, previewUrl: post.previewUrl ?? post.preview_url ?? null } : null
   ),
@@ -337,10 +338,84 @@ describe('App minimal chat shell', () => {
       expect(attachmentTabs).not.toBeNull()
     })
 
+    expect(attachmentTabs).not.toHaveClass('canvas-attachment-tabs-right')
     expect(attachmentTabs.closest('.canvas-composer-shell')).not.toBeNull()
     expect(attachmentTabs.closest('.canvas-prompt-stack')).toBeNull()
     expect(screen.getByAltText('coffee.png')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove coffee.png' })).toBeInTheDocument()
+  })
+
+  it('keeps the first three attachments on the left and places overflow attachments on the right', async () => {
+    listChatsMock.mockResolvedValue([])
+    createChatMock.mockResolvedValue({
+      id: 'chat-1',
+    })
+    uploadPromptAttachmentMock.mockImplementation(async (_chatId, file) => ({
+      id: `asset-${file.name}`,
+      original_file_name: file.name,
+      previewUrl: `https://example.com/${file.name}`,
+    }))
+
+    const { container } = render(<App />)
+    let fileInput = null
+
+    await waitFor(() => {
+      fileInput = container.querySelector('input[type="file"][accept="image/*"][multiple]')
+      expect(fileInput).not.toBeNull()
+    })
+
+    const files = Array.from({ length: 4 }, (_, index) => (
+      new File(['image'], `attachment-${index + 1}.png`, { type: 'image/png' })
+    ))
+
+    fireEvent.change(fileInput, {
+      target: {
+        files,
+      },
+    })
+
+    await waitFor(() => {
+      expect(uploadPromptAttachmentMock).toHaveBeenCalledTimes(4)
+    })
+
+    await waitFor(() => {
+      const attachmentTabs = Array.from(container.querySelectorAll('.canvas-attachment-tabs'))
+      const leftTabs = attachmentTabs.filter((tab) => !tab.classList.contains('canvas-attachment-tabs-right'))
+      const rightTabs = attachmentTabs.filter((tab) => tab.classList.contains('canvas-attachment-tabs-right'))
+
+      expect(leftTabs).toHaveLength(1)
+      expect(rightTabs).toHaveLength(1)
+      expect(leftTabs[0].querySelectorAll('.canvas-prompt-attachment')).toHaveLength(3)
+      expect(rightTabs[0].querySelectorAll('.canvas-prompt-attachment')).toHaveLength(1)
+    })
+  })
+
+  it('blocks prompt attachment selections above the five image limit', async () => {
+    listChatsMock.mockResolvedValue([])
+    createChatMock.mockResolvedValue({
+      id: 'chat-1',
+    })
+
+    const { container } = render(<App />)
+    let fileInput = null
+
+    await waitFor(() => {
+      fileInput = container.querySelector('input[type="file"][accept="image/*"][multiple]')
+      expect(fileInput).not.toBeNull()
+    })
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: Array.from({ length: 6 }, (_, index) => (
+          new File(['image'], `attachment-${index + 1}.png`, { type: 'image/png' })
+        )),
+      },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('You can attach up to 5 images per prompt.')).toBeInTheDocument()
+    })
+    expect(uploadPromptAttachmentMock).not.toHaveBeenCalled()
   })
 
   it('shows pending attachment placeholders and blocks sending until attachments are ready', async () => {

@@ -70,6 +70,7 @@ export function PromptShell({
   attachments = [],
   showAttachments = true,
   disabled = false,
+  isAttachmentPickerDisabled = false,
   isSubmitting = false,
   isUploadingAttachments = false,
   statusMessage = '',
@@ -145,7 +146,7 @@ export function PromptShell({
           className="canvas-prompt-button canvas-prompt-button-left"
           type="button"
           aria-label="Add image"
-          disabled={disabled || isSubmitting || isUploadingAttachments}
+          disabled={disabled || isAttachmentPickerDisabled || isSubmitting || isUploadingAttachments}
           onClick={() => fileInputRef.current?.click()}
         >
           <img src={addImageIcon} alt="" aria-hidden="true" />

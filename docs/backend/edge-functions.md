@@ -36,6 +36,7 @@ Current behavior:
 - verifies chat ownership and active chat status
 - loads the user's default or chat-linked business profile from the database
 - loads user-owned prompt attachments and brand reference images
+- enforces a maximum of 5 prompt attachment images per generation request
 - treats the first prompt in a chat as initial generation and later prompts as edits
 - enforces generation or edit limits before calling OpenAI
 - builds hidden image and caption prompts through shared prompt-template helpers
