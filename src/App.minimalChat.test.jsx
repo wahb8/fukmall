@@ -381,6 +381,12 @@ describe('App minimal chat shell', () => {
       expect(screen.getByRole('button', { name: 'Submit prompt' })).toBeDisabled()
     })
 
+    expect(promptInput).not.toBeDisabled()
+    fireEvent.change(promptInput, {
+      target: { value: 'Create a coffee launch post with a warm caption' },
+    })
+    expect(promptInput).toHaveValue('Create a coffee launch post with a warm caption')
+
     fireEvent.click(screen.getByRole('button', { name: 'Submit prompt' }))
     expect(generatePostMock).not.toHaveBeenCalled()
 
@@ -411,7 +417,7 @@ describe('App minimal chat shell', () => {
     await waitFor(() => {
       expect(generatePostMock).toHaveBeenCalledWith(expect.objectContaining({
         chatId: 'chat-1',
-        prompt: 'Create a coffee launch post',
+        prompt: 'Create a coffee launch post with a warm caption',
         attachmentAssetIds: ['asset-1'],
       }))
     })

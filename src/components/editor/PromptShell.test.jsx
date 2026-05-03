@@ -81,6 +81,37 @@ describe('PromptShell', () => {
     expect(handleSubmit).not.toHaveBeenCalled()
   })
 
+  it('keeps prompt text editable while attachments are still loading', () => {
+    const handleSubmit = vi.fn()
+    const handleChange = vi.fn()
+
+    render(
+      <PromptShell
+        value="Create a launch post"
+        isUploadingAttachments
+        onChange={handleChange}
+        onSubmit={handleSubmit}
+      />,
+    )
+
+    const promptInput = screen.getByRole('textbox')
+
+    expect(promptInput).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add image' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Submit prompt' })).toBeDisabled()
+
+    fireEvent.change(promptInput, {
+      target: { value: 'Create a launch post with brighter colors' },
+    })
+    fireEvent.keyDown(promptInput, {
+      key: 'Enter',
+      shiftKey: false,
+    })
+
+    expect(handleChange).toHaveBeenCalledWith('Create a launch post with brighter colors')
+    expect(handleSubmit).not.toHaveBeenCalled()
+  })
+
   it('keeps keyboard submit behavior for normal prompt entry', () => {
     const handleSubmit = vi.fn()
 

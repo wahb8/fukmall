@@ -102,7 +102,7 @@ export function PromptShell({
       return
     }
 
-    if (disabled) {
+    if (disabled || isUploadingAttachments) {
       return
     }
 
@@ -170,7 +170,7 @@ export function PromptShell({
           type="button"
           aria-label={submitButtonLabel}
           title={submitButtonLabel}
-          disabled={disabled && !isSubmitting}
+          disabled={(disabled || isUploadingAttachments) && !isSubmitting}
           onClick={handleSubmit}
         >
           <img src={isSubmitting ? closeIcon : upIcon} alt="" aria-hidden="true" />

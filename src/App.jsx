@@ -8412,7 +8412,6 @@ function App({
                   value={promptComposerValue}
                   attachments={promptComposerAttachments}
                   showAttachments={false}
-                  disabled={isPromptAttachmentUploading || hasPendingPromptAttachments}
                   isSubmitting={isPromptSubmitting}
                   isUploadingAttachments={isPromptAttachmentUploading || hasPendingPromptAttachments}
                   statusMessage={chatStatusTone === 'error' ? chatStatusMessage : ''}
