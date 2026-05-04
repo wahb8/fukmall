@@ -10,6 +10,10 @@
   blending requested changes cleanly
 - enforced a 5-image hard cap for prompt attachments in the frontend composer and generation Edge
   Function validation
+- added automatic cleanup for abandoned placeholder chats, guarded by checks that the chat has no
+  messages and no generated posts before deletion
+- changed chat listing so empty New Post placeholder chats stay hidden from the left sidebar until
+  the user sends a prompt or a generated post exists
 
 ## 2026-04-30
 

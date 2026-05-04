@@ -6,6 +6,7 @@ const {
   createChatMock,
   cancelGenerationJobMock,
   deleteChatMock,
+  deleteChatIfEmptyMock,
   generatePostMock,
   listChatsMock,
   loadChatSessionMock,
@@ -17,6 +18,7 @@ const {
   createChatMock: vi.fn(),
   cancelGenerationJobMock: vi.fn(),
   deleteChatMock: vi.fn(),
+  deleteChatIfEmptyMock: vi.fn(),
   generatePostMock: vi.fn(),
   listChatsMock: vi.fn(),
   loadChatSessionMock: vi.fn(),
@@ -30,6 +32,7 @@ vi.mock('./lib/chatSessions', () => ({
   cancelGenerationJob: cancelGenerationJobMock,
   createChat: createChatMock,
   deleteChat: deleteChatMock,
+  deleteChatIfEmpty: deleteChatIfEmptyMock,
   generatePost: generatePostMock,
   listChats: listChatsMock,
   loadChatSession: loadChatSessionMock,
@@ -91,6 +94,8 @@ describe('App minimal chat shell', () => {
     createChatMock.mockReset()
     cancelGenerationJobMock.mockReset()
     deleteChatMock.mockReset()
+    deleteChatIfEmptyMock.mockReset()
+    deleteChatIfEmptyMock.mockResolvedValue(false)
     generatePostMock.mockReset()
     listChatsMock.mockReset()
     loadChatSessionMock.mockReset()
@@ -533,6 +538,27 @@ describe('App minimal chat shell', () => {
       expect(deleteChatMock).toHaveBeenCalledWith('chat-1')
       expect(loadChatSessionMock).toHaveBeenCalledWith('chat-2')
       expect(promptInput).toHaveValue('')
+    })
+  })
+
+  it('cleans up an empty active chat when selecting another chat', async () => {
+    listChatsMock.mockResolvedValue([
+      createChatSummary('chat-1', 'Untitled'),
+      createChatSummary('chat-2', 'Campaign ideas'),
+    ])
+    loadChatSessionMock.mockImplementation(async (chatId) => (
+      createChatSession(chatId, chatId === 'chat-1' ? 'Untitled' : 'Campaign ideas')
+    ))
+    deleteChatIfEmptyMock.mockResolvedValue(true)
+
+    render(<App />)
+
+    await screen.findByRole('button', { name: 'Untitled' })
+    fireEvent.click(screen.getByRole('button', { name: 'Campaign ideas' }))
+
+    await waitFor(() => {
+      expect(deleteChatIfEmptyMock).toHaveBeenCalledWith('chat-1')
+      expect(loadChatSessionMock).toHaveBeenCalledWith('chat-2')
     })
   })
 

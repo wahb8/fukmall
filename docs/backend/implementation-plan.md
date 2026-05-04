@@ -107,8 +107,12 @@ Current status:
 
 - authenticated users can create, list, load, rename, and delete chat records from the minimal
   `/app` chat shell
+- the chat list hides empty placeholder chats until they contain at least one message or generated
+  post, so the left sidebar only shows real prompted work
 - prompt attachments are saved through the signed upload flow and linked to chat messages
 - generated-post history is loaded with signed previews when records exist
+- placeholder chats with no messages and no generated posts are automatically deleted when the user
+  leaves or replaces them, so abandoned New Post shells do not accumulate
 - deleting a chat now detaches linked uploaded-asset metadata at the database FK layer so chat
   deletion is not blocked by prompt attachments
 - related generated-post and generation-job pointer columns are also cleared on parent deletion so

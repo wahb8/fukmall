@@ -355,6 +355,7 @@ export async function listChats() {
   }))
 
   return chats
+    .filter((chat) => latestMessageByChatId.has(chat.id) || latestPostByChatId.has(chat.id))
     .map((chat) => {
       const latestMessage = latestMessageByChatId.get(chat.id) ?? null
       const latestPost = latestPostByChatId.get(chat.id) ?? null
@@ -659,6 +660,54 @@ export async function deleteChat(chatId) {
   if (error) {
     throw new Error(error.message || 'Unable to delete the chat.')
   }
+}
+
+export async function deleteChatIfEmpty(chatId) {
+  const normalizedChatId = String(chatId ?? '').trim()
+
+  if (!normalizedChatId) {
+    return false
+  }
+
+  const supabase = getRequiredSupabaseClient('Supabase is not configured for chats.')
+  const [
+    { data: messages, error: messagesError },
+    { data: generatedPosts, error: generatedPostsError },
+  ] = await Promise.all([
+    supabase
+      .from('chat_messages')
+      .select('id')
+      .eq('chat_id', normalizedChatId)
+      .limit(1),
+    supabase
+      .from('generated_posts')
+      .select('id')
+      .eq('chat_id', normalizedChatId)
+      .limit(1),
+  ])
+
+  if (messagesError) {
+    throw new Error(messagesError.message || 'Unable to check chat messages before cleanup.')
+  }
+
+  if (generatedPostsError) {
+    throw new Error(generatedPostsError.message || 'Unable to check generated posts before cleanup.')
+  }
+
+  if ((messages ?? []).length > 0 || (generatedPosts ?? []).length > 0) {
+    return false
+  }
+
+  const { error } = await supabase
+    .from('chats')
+    .delete()
+    .eq('id', normalizedChatId)
+
+  if (error) {
+    throw new Error(error.message || 'Unable to delete the empty chat.')
+  }
+
+  return true
 }
 
 export async function submitUserPrompt({

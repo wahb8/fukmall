@@ -208,6 +208,7 @@ import {
   cancelGenerationJob,
   createChat,
   deleteChat,
+  deleteChatIfEmpty,
   generatePost,
   listChats,
   loadChatSession,
@@ -1421,6 +1422,8 @@ function App({
   const promptGenerationAbortRef = useRef(null)
   const promptGenerationJobIdRef = useRef(null)
   const promptGenerationRunRef = useRef(null)
+  const activeChatIdRef = useRef(null)
+  const promptStartedChatIdsRef = useRef(new Set())
   const [editingTextLayerId, setEditingTextLayerId] = useState(null)
   const [textDraft, setTextDraft] = useState('')
   const [textEditorSelection, setTextEditorSelection] = useState({ start: 0, end: 0 })
@@ -1446,6 +1449,14 @@ function App({
   useEffect(() => () => {
     promptGenerationRunRef.current?.pollAbortController?.abort()
     promptGenerationAbortRef.current?.abort()
+
+    const chatId = activeChatIdRef.current
+
+    if (chatId && !promptStartedChatIdsRef.current.has(chatId)) {
+      deleteChatIfEmpty(chatId).catch((error) => {
+        console.warn('Failed to clean up an empty chat on exit', error)
+      })
+    }
   }, [])
   const [globalColors, setGlobalColors] = useState(() => loadColorsFromStorage())
   const [penSize, setPenSize] = useState(DEFAULT_PEN_SIZE)
@@ -1584,6 +1595,10 @@ function App({
     setChatStatusTone(tone)
   }, [])
 
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId
+  }, [activeChatId])
+
   const refreshChatSummaries = useCallback(async (preferredChatId = null) => {
     if (!isMinimalEditorMode) {
       return []
@@ -1618,6 +1633,34 @@ function App({
       setIsChatListLoading(false)
     }
   }, [isMinimalEditorMode, showChatStatusMessage])
+
+  const cleanupEmptyPlaceholderChat = useCallback(async (
+    chatId,
+    { preferredChatId = activeChatIdRef.current, refresh = true } = {},
+  ) => {
+    const normalizedChatId = String(chatId ?? '').trim()
+
+    if (
+      !isMinimalEditorMode ||
+      !normalizedChatId ||
+      promptStartedChatIdsRef.current.has(normalizedChatId)
+    ) {
+      return false
+    }
+
+    try {
+      const wasDeleted = await deleteChatIfEmpty(normalizedChatId)
+
+      if (wasDeleted && refresh) {
+        await refreshChatSummaries(preferredChatId === normalizedChatId ? null : preferredChatId)
+      }
+
+      return wasDeleted
+    } catch (error) {
+      console.warn('Failed to clean up an empty chat', error)
+      return false
+    }
+  }, [isMinimalEditorMode, refreshChatSummaries])
 
   const ensureActiveChat = useCallback(async (preferredTitle = documentName) => {
     if (activeChatId) {
@@ -4634,10 +4677,16 @@ function App({
   }, [])
 
   const handleSelectSidebarChat = useCallback((chatId) => {
+    const previousChatId = activeChatIdRef.current
+
     setActiveChatId(chatId)
     setChatStatusMessage('')
     clearPromptComposer()
-  }, [clearPromptComposer])
+
+    if (previousChatId && previousChatId !== chatId) {
+      void cleanupEmptyPlaceholderChat(previousChatId, { preferredChatId: chatId })
+    }
+  }, [cleanupEmptyPlaceholderChat, clearPromptComposer])
 
   const handleRenameSidebarChat = useCallback(async (chatId, nextTitle) => {
     try {
@@ -4839,6 +4888,7 @@ function App({
 
     try {
       chatId = await ensureActiveChat(documentName)
+      promptStartedChatIdsRef.current.add(chatId)
       const generationSize = resolvePromptGenerationSize(documentWidth, documentHeight)
 
       const generationStart = await generatePost({
@@ -5017,6 +5067,7 @@ function App({
 
     if (isMinimalEditorMode) {
       try {
+        await cleanupEmptyPlaceholderChat(activeChatIdRef.current, { refresh: false })
         const createdChat = await createChat({
           title: name,
           businessProfileId: defaultBusinessProfileId,
@@ -5040,6 +5091,7 @@ function App({
     }
   }, [
     clearPromptComposer,
+    cleanupEmptyPlaceholderChat,
     defaultBusinessProfileId,
     isMinimalEditorMode,
     loadDocumentState,

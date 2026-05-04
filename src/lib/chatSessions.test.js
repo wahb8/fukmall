@@ -44,6 +44,15 @@ function createMaybeSingleQuery(result) {
   return chain
 }
 
+function createLimitQuery(result) {
+  const chain = {
+    eq: vi.fn(() => chain),
+    limit: vi.fn(async () => result),
+  }
+
+  return chain
+}
+
 describe('chatSessions', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -227,6 +236,73 @@ describe('chatSessions', () => {
     expect(chats.map((chat) => chat.id)).toEqual(['chat-2', 'chat-1'])
     expect(chats[0].subtitle).toBe('Move the headline lower.')
     expect(chats[1].subtitle).toBe('Older generated caption')
+  })
+
+  it('hides placeholder chats from the sidebar until they have messages or generated posts', async () => {
+    const chatsQuery = createOrderQuery({
+      data: [
+        {
+          id: 'chat-empty',
+          title: 'Untitled',
+          last_message_at: null,
+          updated_at: '2026-04-28T12:00:00.000Z',
+          created_at: '2026-04-28T12:00:00.000Z',
+        },
+        {
+          id: 'chat-active',
+          title: 'Coffee launch',
+          last_message_at: '2026-04-28T12:05:00.000Z',
+          updated_at: '2026-04-28T12:05:00.000Z',
+          created_at: '2026-04-28T12:01:00.000Z',
+        },
+      ],
+      error: null,
+    })
+    const messagesQuery = createOrderQuery({
+      data: [
+        {
+          id: 'message-1',
+          chat_id: 'chat-active',
+          content_text: 'Create a coffee launch post.',
+          metadata: {},
+          created_at: '2026-04-28T12:05:00.000Z',
+        },
+      ],
+      error: null,
+    })
+    const postsQuery = createOrderQuery({
+      data: [],
+      error: null,
+    })
+
+    const supabase = {
+      from: vi.fn((table) => {
+        if (table === 'chats') {
+          return { select: vi.fn(() => chatsQuery) }
+        }
+
+        if (table === 'chat_messages') {
+          return { select: vi.fn(() => messagesQuery) }
+        }
+
+        if (table === 'generated_posts') {
+          return { select: vi.fn(() => postsQuery) }
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+    }
+
+    getRequiredSupabaseClientMock.mockReturnValue(supabase)
+
+    const { listChats } = await import('./chatSessions')
+    const chats = await listChats()
+
+    expect(chats.map((chat) => chat.id)).toEqual(['chat-active'])
+    expect(chats[0]).toMatchObject({
+      title: 'Coffee launch',
+      subtitle: 'Create a coffee launch post.',
+    })
   })
 
   it('loads a chat session with message attachments and generated results', async () => {
@@ -536,6 +612,77 @@ describe('chatSessions', () => {
     expect(supabase.from).toHaveBeenCalledWith('chats')
     expect(deleteMock).toHaveBeenCalledTimes(1)
     expect(eqMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('deletes a chat only when it has no messages or generated posts', async () => {
+    const messagesQuery = createLimitQuery({ data: [], error: null })
+    const generatedPostsQuery = createLimitQuery({ data: [], error: null })
+    const deleteEqMock = vi.fn(async () => ({ error: null }))
+    const deleteMock = vi.fn(() => ({
+      eq: deleteEqMock,
+    }))
+    const supabase = {
+      from: vi.fn((table) => {
+        if (table === 'chat_messages') {
+          return { select: vi.fn(() => messagesQuery) }
+        }
+
+        if (table === 'generated_posts') {
+          return { select: vi.fn(() => generatedPostsQuery) }
+        }
+
+        if (table === 'chats') {
+          return { delete: deleteMock }
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+    }
+
+    getRequiredSupabaseClientMock.mockReturnValue(supabase)
+
+    const { deleteChatIfEmpty } = await import('./chatSessions')
+    const wasDeleted = await deleteChatIfEmpty('chat-1')
+
+    expect(wasDeleted).toBe(true)
+    expect(messagesQuery.eq).toHaveBeenCalledWith('chat_id', 'chat-1')
+    expect(generatedPostsQuery.eq).toHaveBeenCalledWith('chat_id', 'chat-1')
+    expect(deleteMock).toHaveBeenCalledTimes(1)
+    expect(deleteEqMock).toHaveBeenCalledWith('id', 'chat-1')
+  })
+
+  it('does not delete a chat that already has prompt history', async () => {
+    const messagesQuery = createLimitQuery({
+      data: [{ id: 'message-1' }],
+      error: null,
+    })
+    const generatedPostsQuery = createLimitQuery({ data: [], error: null })
+    const deleteMock = vi.fn()
+    const supabase = {
+      from: vi.fn((table) => {
+        if (table === 'chat_messages') {
+          return { select: vi.fn(() => messagesQuery) }
+        }
+
+        if (table === 'generated_posts') {
+          return { select: vi.fn(() => generatedPostsQuery) }
+        }
+
+        if (table === 'chats') {
+          return { delete: deleteMock }
+        }
+
+        throw new Error(`Unexpected table: ${table}`)
+      }),
+    }
+
+    getRequiredSupabaseClientMock.mockReturnValue(supabase)
+
+    const { deleteChatIfEmpty } = await import('./chatSessions')
+    const wasDeleted = await deleteChatIfEmpty('chat-1')
+
+    expect(wasDeleted).toBe(false)
+    expect(deleteMock).not.toHaveBeenCalled()
   })
 
   it('invokes the generate-post edge function with normalized data', async () => {

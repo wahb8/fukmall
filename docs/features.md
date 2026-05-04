@@ -106,8 +106,11 @@ visual prompt mockup.
 Current behavior:
 
 - the left sidebar now lists the user's saved chats instead of placeholder posts
+- empty New Post placeholder chats stay hidden from the left sidebar until the user sends a prompt
 - creating a new file in the minimal editor mode also creates a matching chat record
 - the sidebar supports selecting, renaming, and deleting chats
+- placeholder chats are automatically cleaned up when the user leaves or replaces them if no
+  prompts were ever sent and no generated posts exist
 - the right-side conversation panel loads previous prompts, saved prompt attachments, and saved
   generated-post records for the active chat without pushing the main canvas column off-center
 - the Instagram-style caption preview below the canvas shows the profile name beside the latest
